@@ -39,8 +39,8 @@ export default function TableManagement() {
 
   const generateQRCode = async (tableCode: string) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const qrUrl = `${baseUrl}/t/${tableCode}`
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim()
+      const qrUrl = `${baseUrl}/t/${tableCode}`.trim()
       return await QRCode.toDataURL(qrUrl, {
         width: 256,
         margin: 2,
