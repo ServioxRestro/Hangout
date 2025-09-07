@@ -125,6 +125,33 @@ export default function TableManagement() {
     }
   }
 
+  const deleteTable = async (tableId: string, tableNumber: number) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete Table ${tableNumber}? This action cannot be undone.`
+    )
+    
+    if (!confirmed) return
+
+    try {
+      const { error } = await supabase
+        .from('restaurant_tables')
+        .delete()
+        .eq('id', tableId)
+
+      if (error) {
+        console.error('Error deleting table:', error)
+        alert('Error deleting table')
+        return
+      }
+
+      setTables(prev => prev.filter(table => table.id !== tableId))
+      alert(`Table ${tableNumber} deleted successfully`)
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error deleting table')
+    }
+  }
+
   const downloadQRCode = (qrCodeUrl: string, tableNumber: number) => {
     const link = document.createElement('a')
     link.href = qrCodeUrl
@@ -249,11 +276,18 @@ export default function TableManagement() {
                     onClick={() => toggleTableStatus(table.id, table.is_active || false)}
                     className={`flex-1 px-3 py-2 rounded text-sm font-medium ${
                       table.is_active 
-                        ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                        ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
                         : 'bg-green-100 text-green-800 hover:bg-green-200'
                     }`}
                   >
                     {table.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                  <button
+                    onClick={() => deleteTable(table.id, table.table_number)}
+                    className="px-3 py-2 rounded text-sm font-medium bg-red-100 text-red-800 hover:bg-red-200"
+                    title="Delete table permanently"
+                  >
+                    Delete
                   </button>
                 </div>
               </div>

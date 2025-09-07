@@ -4,15 +4,8 @@ import type { NextRequest } from 'next/server'
 export function middleware(request: NextRequest) {
   const host = request.headers.get('host') || ''
   
-  // Handle admin subdomain routing
-  if (host.includes('admin') || request.nextUrl.pathname.startsWith('/admin')) {
-    // In production, restrict admin access to admin subdomain only
-    if (process.env.NODE_ENV === 'production' && !host.includes('admin')) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Admin access restricted to admin subdomain' },
-        { status: 403 }
-      )
-    }
+  // Handle admin routes
+  if (request.nextUrl.pathname.startsWith('/admin')) {
 
     // Check if accessing admin routes (except login)
     if (request.nextUrl.pathname.startsWith('/admin') && 
@@ -57,13 +50,6 @@ export function middleware(request: NextRequest) {
       
       return NextResponse.redirect(new URL('/admin/dashboard', request.url))
     }
-  } 
-  // Block admin routes on non-admin domains in production
-  else if (request.nextUrl.pathname.startsWith('/admin') && process.env.NODE_ENV === 'production') {
-    return NextResponse.json(
-      { error: 'Not Found' },
-      { status: 404 }
-    )
   }
 
   return NextResponse.next()
