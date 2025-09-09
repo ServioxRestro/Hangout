@@ -1,47 +1,87 @@
-'use client'
+"use client";
 
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 
 interface GuestHeaderProps {
-  tableCode: string
-  tableNumber?: number
-  showBackButton?: boolean
-  title?: string
-  subtitle?: string
-  userEmail?: string | null
-  activeOrdersCount?: number
-  actions?: React.ReactNode
+  tableCode: string;
+  tableNumber?: number;
+  showBackButton?: boolean;
+  title?: string;
+  subtitle?: string;
+  userEmail?: string | null;
+  activeOrdersCount?: number;
+  actions?: React.ReactNode;
 }
 
 const headerIcons = {
   back: (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 19l-7-7 7-7"
+      />
     </svg>
   ),
   orders: (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+      />
     </svg>
   ),
   menu: (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M4 6h16M4 12h16M4 18h16"
+      />
     </svg>
   ),
   user: (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+      />
     </svg>
   ),
   sparkle: (
     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 0L14.59 8.41L23 11L14.59 13.59L12 22L9.41 13.59L1 11L9.41 8.41L12 0Z"/>
+      <path d="M12 0L14.59 8.41L23 11L14.59 13.59L12 22L9.41 13.59L1 11L9.41 8.41L12 0Z" />
     </svg>
   ),
-}
+};
 
 export function GuestHeader({
   tableCode,
@@ -51,10 +91,10 @@ export function GuestHeader({
   subtitle,
   userEmail,
   activeOrdersCount = 0,
-  actions
+  actions,
 }: GuestHeaderProps) {
-  const router = useRouter()
-  
+  const router = useRouter();
+
   return (
     <header className="bg-white/90 backdrop-blur-xl shadow-sm sticky top-0 z-40 border-b border-border">
       <div className="max-w-4xl mx-auto px-4 py-4">
@@ -71,7 +111,7 @@ export function GuestHeader({
                 Back
               </Button>
             )}
-            
+
             <div className="flex items-center gap-3">
               {/* Restaurant icon */}
               <div className="relative">
@@ -82,10 +122,12 @@ export function GuestHeader({
                   {headerIcons.sparkle}
                 </div>
               </div>
-              
+
               <div>
                 <h1 className="text-xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
-                  {title || (process.env.NEXT_PUBLIC_RESTAURANT_NAME || 'Hangout Restaurant')}
+                  {title ||
+                    process.env.NEXT_PUBLIC_RESTAURANT_NAME ||
+                    "Hangout Restaurant"}
                 </h1>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   {tableNumber && (
@@ -104,7 +146,7 @@ export function GuestHeader({
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             {actions}
             {activeOrdersCount > 0 && (
@@ -116,25 +158,27 @@ export function GuestHeader({
                 leftIcon={headerIcons.orders}
               >
                 <span className="font-medium">{activeOrdersCount} Active</span>
-                <Badge variant="warning" size="sm" className="ml-2 animate-bounce">
+                <Badge
+                  variant="warning"
+                  size="sm"
+                  className="ml-2 animate-bounce"
+                >
                   {activeOrdersCount}
                 </Badge>
               </Button>
             )}
           </div>
         </div>
-        
+
         {/* Enhanced Quick Navigation Bar */}
         {(userEmail || activeOrdersCount > 0) && (
           <div className="flex justify-between items-center mt-4 pt-4 border-t border-gradient-subtle">
             <div className="flex items-center gap-3">
               {userEmail && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-surface rounded-xl border border-border">
-                  <div className="text-brand-orange">
-                    {headerIcons.user}
-                  </div>
+                  <div className="text-brand-orange">{headerIcons.user}</div>
                   <span className="text-sm font-medium text-foreground">
-                    {userEmail.split('@')[0]}
+                    {userEmail.split("@")[0]}
                   </span>
                   <div className="w-2 h-2 bg-brand-green rounded-full animate-pulse" />
                 </div>
@@ -151,7 +195,7 @@ export function GuestHeader({
                 </Button>
               )}
             </div>
-            
+
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
@@ -166,9 +210,9 @@ export function GuestHeader({
           </div>
         )}
       </div>
-      
+
       {/* Bottom gradient line */}
       <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-brand-orange/20 to-transparent" />
     </header>
-  )
+  );
 }

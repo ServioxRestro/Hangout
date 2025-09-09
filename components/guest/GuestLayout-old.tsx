@@ -54,6 +54,7 @@ export function GuestLayout({
     const handleStorageChange = () => {
       fetchCartCount()
     }
+    }
     
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
@@ -129,7 +130,7 @@ export function GuestLayout({
   }
 
   return (
-    <div className={`min-h-screen bg-surface ${className}`}>
+    <div className="min-h-screen bg-gray-50">
       {showNavigation && (
         <GuestNavigation
           tableCode={tableCode}
@@ -141,16 +142,8 @@ export function GuestLayout({
       )}
       
       {/* Main content with proper spacing for navigation */}
-      <main className="relative">
-        {/* Content container with modern spacing */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="animate-fade-in">
-            {children}
-          </div>
-        </div>
-        
-        {/* Mobile bottom spacing for navigation */}
-        <div className="h-20 md:hidden" />
+      <main className={showNavigation ? 'pt-0 md:pt-16 pb-20 md:pb-0' : ''}>
+        {children}
       </main>
     </div>
   )

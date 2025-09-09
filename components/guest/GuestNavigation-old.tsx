@@ -62,12 +62,7 @@ const navigationIcons = {
   ),
   restaurant: (
     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z" />
-    </svg>
-  ),
-  sparkle: (
-    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 0L14.59 8.41L23 11L14.59 13.59L12 22L9.41 13.59L1 11L9.41 8.41L12 0Z" />
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
     </svg>
   ),
 };
@@ -142,51 +137,42 @@ export function GuestNavigation({
           hidden md:block fixed top-0 left-0 right-0 z-50 transition-all duration-300
           ${
             isScrolled
-              ? "bg-white/95 backdrop-blur-xl shadow-lg border-b border-border"
-              : "bg-white/90 backdrop-blur-md border-b border-border/50"
+              ? "bg-white/95 backdrop-blur-lg shadow-lg border-b border-border-light"
+              : "bg-white/90 backdrop-blur-md border-b border-border"
           }
         `}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Left - Restaurant Branding */}
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-brand-orange to-brand-orange-light rounded-xl text-white shadow-lg">
-                  {navigationIcons.restaurant}
-                </div>
-                {/* Sparkle effect */}
-                <div className="absolute -top-1 -right-1 text-brand-yellow animate-pulse">
-                  {navigationIcons.sparkle}
-                </div>
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center justify-center w-10 h-10 bg-brand-primary rounded-lg text-white">
+                {navigationIcons.restaurant}
               </div>
               <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+                <h1 className="text-lg font-bold text-text-primary">
                   {restaurantName}
                 </h1>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-brand-green rounded-full animate-pulse" />
-                  <p className="text-sm text-muted-foreground font-medium">
-                    Table {tableNumber || tableCode}
-                  </p>
-                </div>
+                <p className="text-sm text-text-secondary">
+                  Table {tableNumber || tableCode}
+                </p>
               </div>
             </div>
 
             {/* Center - Navigation Items */}
-            <div className="flex items-center bg-surface/80 backdrop-blur-sm rounded-2xl p-2 border border-border shadow-md">
-              {navItems.map((item, index) => (
+            <div className="flex items-center bg-surface rounded-full p-1 border border-border shadow-sm">
+              {navItems.map((item) => (
                 <Button
                   key={item.id}
                   variant={isActive(item.path) ? "primary" : "ghost"}
                   size="sm"
                   onClick={() => router.push(item.path)}
                   className={`
-                    relative rounded-xl transition-all duration-300 mx-1
+                    relative rounded-full transition-all duration-200
                     ${
                       isActive(item.path)
-                        ? "shadow-lg shadow-brand-orange/30 scale-105"
-                        : "hover:bg-surface-variant hover:scale-102"
+                        ? "shadow-md"
+                        : "hover:bg-interactive-hover"
                     }
                   `}
                   leftIcon={item.icon}
@@ -196,15 +182,10 @@ export function GuestNavigation({
                     <Badge
                       variant={item.badgeVariant}
                       size="xs"
-                      className="ml-2 min-w-[20px] h-[20px] text-xs animate-bounce"
+                      className="ml-2 min-w-[18px] h-[18px] text-xs"
                     >
                       {item.badge}
                     </Badge>
-                  )}
-
-                  {/* Active indicator */}
-                  {isActive(item.path) && (
-                    <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-brand-green rounded-full" />
                   )}
                 </Button>
               ))}
@@ -216,90 +197,63 @@ export function GuestNavigation({
             </div>
           </div>
         </div>
-
-        {/* Bottom glow effect */}
-        <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-brand-orange/30 to-transparent" />
       </nav>
       {/* Mobile Navigation - Bottom Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-border shadow-2xl">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-border-light">
         <div className="safe-area-bottom">
-          <div className="flex items-center justify-around px-3 py-3">
+          <div className="flex items-center justify-around px-2 py-2">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => router.push(item.path)}
                 className={`
-                  flex flex-col items-center justify-center p-3 rounded-2xl transition-all duration-300 min-w-[72px] group
+                  flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200 min-w-[64px]
                   ${
                     isActive(item.path)
-                      ? "bg-gradient-to-br from-brand-orange to-brand-orange-light text-white shadow-lg shadow-brand-orange/30 scale-105"
-                      : "text-muted-foreground hover:text-foreground hover:bg-surface-variant hover:scale-102"
+                      ? "bg-brand-primary text-white shadow-lg"
+                      : "text-text-secondary hover:text-text-primary hover:bg-interactive-hover"
                   }
                 `}
               >
                 <div className="relative">
-                  <div
-                    className={`
-                    transition-transform duration-300 
-                    ${
-                      isActive(item.path)
-                        ? "text-white scale-110"
-                        : "group-hover:scale-110"
-                    }`}
-                  >
+                  <div className={`${isActive(item.path) ? "text-white" : ""}`}>
                     {item.icon}
                   </div>
                   {item.badge && (
                     <Badge
                       variant={
-                        isActive(item.path) ? "outline" : item.badgeVariant
+                        isActive(item.path) ? "warning" : item.badgeVariant
                       }
                       size="xs"
-                      className="absolute -top-2 -right-2 min-w-[20px] h-[20px] text-xs animate-bounce shadow-md"
+                      className="absolute -top-2 -right-2 min-w-[18px] h-[18px] text-xs"
                     >
                       {item.badge}
                     </Badge>
                   )}
-
-                  {/* Active pulse effect */}
-                  {isActive(item.path) && (
-                    <div className="absolute inset-0 bg-white/20 rounded-full animate-ping" />
-                  )}
                 </div>
                 <span
                   className={`
-                    text-xs font-medium mt-2 transition-all duration-300
+                    text-xs font-medium mt-1
                     ${
-                      isActive(item.path)
-                        ? "text-white"
-                        : "text-muted-foreground group-hover:text-foreground"
+                      isActive(item.path) ? "text-white" : "text-text-secondary"
                     }
                   `}
                 >
                   {item.label}
                 </span>
-
-                {/* Active indicator dot */}
-                {isActive(item.path) && (
-                  <div className="absolute bottom-1 w-1 h-1 bg-brand-green rounded-full animate-pulse" />
-                )}
               </button>
             ))}
 
             {/* Mobile Auth Button */}
-            <div className="flex flex-col items-center justify-center min-w-[72px] p-3">
+            <div className="flex flex-col items-center justify-center min-w-[64px]">
               <GuestAuth onAuthChange={handleAuthChange} compact />
             </div>
           </div>
         </div>
-
-        {/* Top glow effect */}
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-brand-orange/30 to-transparent" />
       </nav>
       {/* Spacers to prevent content from being hidden */}
       <div className="hidden md:block h-16" /> {/* Desktop spacer */}
-      <div className="md:hidden h-24" />{" "}
-      {/* Mobile spacer - increased for better spacing */}
+      <div className="md:hidden h-20" /> {/* Mobile spacer */}
     </>
   );
 }
