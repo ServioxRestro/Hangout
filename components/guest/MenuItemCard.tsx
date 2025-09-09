@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { formatCurrency } from '@/lib/constants'
 
 interface MenuItem {
   id: string
@@ -58,7 +59,7 @@ export function MenuItemCard({
           
           <div className="flex items-center justify-between mt-4">
             <div className="text-2xl font-bold text-green-600">
-              ₹{item.price.toFixed(2)}
+              {formatCurrency(item.price)}
             </div>
             
             <div className="flex items-center gap-2">

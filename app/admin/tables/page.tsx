@@ -1,312 +1,456 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import QRCode from 'qrcode'
-import type { Tables } from '@/types/database.types'
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase/client";
+import QRCode from "qrcode";
+import type { Tables } from "@/types/database.types";
+import PageHeader from "@/components/admin/PageHeader";
+import Card from "@/components/admin/Card";
+import Button from "@/components/admin/Button";
+import Modal from "@/components/admin/Modal";
+import FormField from "@/components/admin/FormField";
+import Input from "@/components/admin/Input";
+import Table from "@/components/admin/Table";
+import {
+  Plus,
+  QrCode,
+  Download,
+  Eye,
+  EyeOff,
+  Trash2,
+  Copy,
+  CheckCircle,
+} from "lucide-react";
 
-type RestaurantTable = Tables<'restaurant_tables'>
+type RestaurantTable = Tables<"restaurant_tables">;
 
 export default function TableManagement() {
-  const [tables, setTables] = useState<RestaurantTable[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newTableNumber, setNewTableNumber] = useState('')
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(
+    null
+  );
+  const [newTableNumber, setNewTableNumber] = useState("");
+  const [addLoading, setAddLoading] = useState(false);
 
   useEffect(() => {
-    fetchTables()
-  }, [])
+    fetchTables();
+  }, []);
 
   const fetchTables = async () => {
     try {
       const { data, error } = await supabase
-        .from('restaurant_tables')
-        .select('*')
-        .order('table_number', { ascending: true })
+        .from("restaurant_tables")
+        .select("*")
+        .order("table_number", { ascending: true });
 
       if (error) {
-        console.error('Error fetching tables:', error)
-        return
+        console.error("Error fetching tables:", error);
+        return;
       }
 
-      setTables(data || [])
+      setTables(data || []);
     } catch (error) {
-      console.error('Error:', error)
+      console.error("Error:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const generateQRCode = async (tableCode: string) => {
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim()
-      const qrUrl = `${baseUrl}/t/${tableCode}`.trim()
+      const baseUrl = (
+        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+      ).trim();
+      const qrUrl = `${baseUrl}/t/${tableCode}`.trim();
       return await QRCode.toDataURL(qrUrl, {
         width: 256,
         margin: 2,
         color: {
-          dark: '#000000',
-          light: '#FFFFFF',
+          dark: "#000000",
+          light: "#FFFFFF",
         },
-      })
+      });
     } catch (error) {
-      console.error('Error generating QR code:', error)
-      return null
+      console.error("Error generating QR code:", error);
+      return null;
     }
-  }
+  };
 
   const addTable = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    const tableNumber = parseInt(newTableNumber)
+    e.preventDefault();
+    setAddLoading(true);
+
+    const tableNumber = parseInt(newTableNumber);
     if (isNaN(tableNumber) || tableNumber <= 0) {
-      alert('Please enter a valid table number')
-      return
+      alert("Please enter a valid table number");
+      setAddLoading(false);
+      return;
     }
 
     // Check if table number already exists
-    const existing = tables.find(t => t.table_number === tableNumber)
+    const existing = tables.find((t) => t.table_number === tableNumber);
     if (existing) {
-      alert('Table number already exists')
-      return
+      alert("Table number already exists");
+      setAddLoading(false);
+      return;
     }
 
     try {
-      const tableCode = `table_${tableNumber}_${Date.now().toString(36)}`
-      const qrCodeDataUrl = await generateQRCode(tableCode)
+      const tableCode = `table_${tableNumber}_${Date.now().toString(36)}`;
+      const qrCodeDataUrl = await generateQRCode(tableCode);
 
       const { data, error } = await supabase
-        .from('restaurant_tables')
+        .from("restaurant_tables")
         .insert({
           table_number: tableNumber,
           table_code: tableCode,
           qr_code_url: qrCodeDataUrl,
-          is_active: true
+          is_active: true,
         })
         .select()
-        .single()
+        .single();
 
       if (error) {
-        console.error('Error adding table:', error)
-        alert('Error adding table')
-        return
+        console.error("Error adding table:", error);
+        alert("Error adding table");
+        setAddLoading(false);
+        return;
       }
 
-      setTables(prev => [...prev, data])
-      setNewTableNumber('')
-      setShowAddForm(false)
+      setTables((prev) => [...prev, data]);
+      setNewTableNumber("");
+      setShowAddModal(false);
     } catch (error) {
-      console.error('Error:', error)
-      alert('Error adding table')
+      console.error("Error:", error);
+      alert("Error adding table");
+    } finally {
+      setAddLoading(false);
     }
-  }
+  };
 
   const toggleTableStatus = async (tableId: string, isActive: boolean) => {
     try {
       const { error } = await supabase
-        .from('restaurant_tables')
+        .from("restaurant_tables")
         .update({ is_active: !isActive })
-        .eq('id', tableId)
+        .eq("id", tableId);
 
       if (error) {
-        console.error('Error updating table:', error)
-        return
+        console.error("Error updating table:", error);
+        return;
       }
 
-      setTables(prev => 
-        prev.map(table => 
-          table.id === tableId 
-            ? { ...table, is_active: !isActive }
-            : table
+      setTables((prev) =>
+        prev.map((table) =>
+          table.id === tableId ? { ...table, is_active: !isActive } : table
         )
-      )
+      );
     } catch (error) {
-      console.error('Error:', error)
+      console.error("Error:", error);
     }
-  }
+  };
 
   const deleteTable = async (tableId: string, tableNumber: number) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete Table ${tableNumber}? This action cannot be undone.`
-    )
-    
-    if (!confirmed) return
+    );
+
+    if (!confirmed) return;
 
     try {
       const { error } = await supabase
-        .from('restaurant_tables')
+        .from("restaurant_tables")
         .delete()
-        .eq('id', tableId)
+        .eq("id", tableId);
 
       if (error) {
-        console.error('Error deleting table:', error)
-        alert('Error deleting table')
-        return
+        console.error("Error deleting table:", error);
+        alert("Error deleting table");
+        return;
       }
 
-      setTables(prev => prev.filter(table => table.id !== tableId))
-      alert(`Table ${tableNumber} deleted successfully`)
+      setTables((prev) => prev.filter((table) => table.id !== tableId));
+      alert(`Table ${tableNumber} deleted successfully`);
     } catch (error) {
-      console.error('Error:', error)
-      alert('Error deleting table')
+      console.error("Error:", error);
+      alert("Error deleting table");
     }
-  }
+  };
 
   const downloadQRCode = (qrCodeUrl: string, tableNumber: number) => {
-    const link = document.createElement('a')
-    link.href = qrCodeUrl
-    link.download = `table_${tableNumber}_qr.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
+    const link = document.createElement("a");
+    link.href = qrCodeUrl;
+    link.download = `table_${tableNumber}_qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
-    )
-  }
+  const copyTableCode = async (tableCode: string) => {
+    try {
+      await navigator.clipboard.writeText(tableCode);
+      alert("Table code copied to clipboard!");
+    } catch (error) {
+      console.error("Failed to copy:", error);
+    }
+  };
+
+  const viewQRCode = (table: RestaurantTable) => {
+    setSelectedTable(table);
+    setShowQRModal(true);
+  };
+
+  const tableColumns = [
+    {
+      key: "table_number",
+      title: "Table Number",
+      render: (tableNumber: number) => (
+        <div className="flex items-center">
+          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+            <span className="font-bold text-blue-600">{tableNumber}</span>
+          </div>
+          <span className="font-medium">Table {tableNumber}</span>
+        </div>
+      ),
+    },
+    {
+      key: "table_code",
+      title: "Table Code",
+      render: (code: string) => (
+        <div className="flex items-center space-x-2">
+          <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">
+            {code.length > 20 ? `${code.substring(0, 20)}...` : code}
+          </code>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => copyTableCode(code)}
+            leftIcon={<Copy className="w-3 h-3" />}
+          >
+            Copy
+          </Button>
+        </div>
+      ),
+    },
+    {
+      key: "is_active",
+      title: "Status",
+      render: (isActive: boolean) => (
+        <span
+          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+            isActive
+              ? "bg-green-50 text-green-700 border-green-200"
+              : "bg-red-50 text-red-700 border-red-200"
+          }`}
+        >
+          <CheckCircle
+            className={`w-3 h-3 mr-1 ${
+              isActive ? "text-green-500" : "text-red-500"
+            }`}
+          />
+          {isActive ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      title: "Actions",
+      render: (_: any, record: RestaurantTable) => (
+        <div className="flex items-center space-x-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => viewQRCode(record)}
+            leftIcon={<QrCode className="w-3 h-3" />}
+          >
+            QR Code
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              downloadQRCode(record.qr_code_url!, record.table_number)
+            }
+            leftIcon={<Download className="w-3 h-3" />}
+          >
+            Download
+          </Button>
+          <Button
+            size="sm"
+            variant={record.is_active ? "warning" : "success"}
+            onClick={() =>
+              toggleTableStatus(record.id, record.is_active || false)
+            }
+            leftIcon={
+              record.is_active ? (
+                <EyeOff className="w-3 h-3" />
+              ) : (
+                <Eye className="w-3 h-3" />
+              )
+            }
+          >
+            {record.is_active ? "Deactivate" : "Activate"}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => deleteTable(record.id, record.table_number)}
+            leftIcon={<Trash2 className="w-3 h-3" />}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
+    <div>
+      <PageHeader
+        title="Table Management"
+        description="Manage restaurant tables and their QR codes"
+        breadcrumbs={[
+          { name: "Dashboard", href: "/admin/dashboard" },
+          { name: "Tables" },
+        ]}
+      >
+        <Button
+          variant="primary"
+          onClick={() => setShowAddModal(true)}
+          leftIcon={<Plus className="w-4 h-4" />}
+        >
+          Add New Table
+        </Button>
+      </PageHeader>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card>
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <button
-                onClick={() => window.location.href = '/admin/dashboard'}
-                className="text-blue-600 hover:text-blue-800 mb-2"
-              >
-                ← Back to Dashboard
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">Table Management</h1>
+              <h2 className="text-lg font-semibold text-gray-900">
+                All Tables
+              </h2>
+              <p className="text-sm text-gray-500">
+                Manage your restaurant tables and generate QR codes
+              </p>
             </div>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
+            <div className="text-sm text-gray-500">
+              Total: {tables.length} table{tables.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+
+          <Table
+            data={tables}
+            columns={tableColumns}
+            loading={loading}
+            emptyText="No tables created yet. Add your first table to get started."
+          />
+        </Card>
+      </div>
+
+      {/* Add Table Modal */}
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => {
+          setShowAddModal(false);
+          setNewTableNumber("");
+        }}
+        title="Add New Table"
+        size="sm"
+      >
+        <form onSubmit={addTable} className="space-y-4">
+          <FormField
+            label="Table Number"
+            required
+            description="Enter a unique number for this table"
+          >
+            <Input
+              type="number"
+              value={newTableNumber}
+              onChange={(e) => setNewTableNumber(e.target.value)}
+              placeholder="e.g., 1, 2, 3..."
+              required
+              min="1"
+            />
+          </FormField>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowAddModal(false);
+                setNewTableNumber("");
+              }}
             >
-              Add New Table
-            </button>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="success"
+              loading={addLoading}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Add Table
+            </Button>
           </div>
-        </div>
-      </header>
+        </form>
+      </Modal>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          {showAddForm && (
-            <div className="mb-6 bg-white p-6 rounded-lg shadow">
-              <h2 className="text-lg font-semibold mb-4">Add New Table</h2>
-              <form onSubmit={addTable} className="flex gap-4 items-end">
-                <div>
-                  <label htmlFor="tableNumber" className="block text-sm font-medium text-gray-700">
-                    Table Number
-                  </label>
-                  <input
-                    type="number"
-                    id="tableNumber"
-                    value={newTableNumber}
-                    onChange={(e) => setNewTableNumber(e.target.value)}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter table number"
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
-                >
-                  Add Table
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddForm(false)
-                    setNewTableNumber('')
-                  }}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md"
-                >
-                  Cancel
-                </button>
-              </form>
+      {/* QR Code Modal */}
+      <Modal
+        isOpen={showQRModal}
+        onClose={() => {
+          setShowQRModal(false);
+          setSelectedTable(null);
+        }}
+        title={`Table ${selectedTable?.table_number} QR Code`}
+        size="sm"
+      >
+        {selectedTable && (
+          <div className="text-center space-y-4">
+            <div className="bg-gray-50 p-6 rounded-lg">
+              <img
+                src={selectedTable.qr_code_url!}
+                alt={`QR Code for Table ${selectedTable.table_number}`}
+                className="w-64 h-64 mx-auto border-2 border-gray-200 rounded-lg"
+              />
             </div>
-          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tables.map((table) => (
-              <div key={table.id} className="bg-white p-6 rounded-lg shadow">
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-lg font-semibold">Table {table.table_number}</h3>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    table.is_active 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {table.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">Table Code:</p>
+              <code className="block text-xs bg-gray-100 p-2 rounded font-mono break-all">
+                {selectedTable.table_code}
+              </code>
+            </div>
 
-                <div className="mb-4">
-                  <p className="text-sm text-gray-600 mb-2">Table Code:</p>
-                  <code className="text-xs bg-gray-100 p-1 rounded">{table.table_code}</code>
-                </div>
-
-                {table.qr_code_url && (
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-600 mb-2">QR Code:</p>
-                    <div className="flex flex-col items-center space-y-2">
-                      <img 
-                        src={table.qr_code_url} 
-                        alt={`QR Code for Table ${table.table_number}`}
-                        className="w-32 h-32 border"
-                      />
-                      <button
-                        onClick={() => downloadQRCode(table.qr_code_url!, table.table_number)}
-                        className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hover:bg-blue-200"
-                      >
-                        Download QR
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => toggleTableStatus(table.id, table.is_active || false)}
-                    className={`flex-1 px-3 py-2 rounded text-sm font-medium ${
-                      table.is_active 
-                        ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                        : 'bg-green-100 text-green-800 hover:bg-green-200'
-                    }`}
-                  >
-                    {table.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
-                  <button
-                    onClick={() => deleteTable(table.id, table.table_number)}
-                    className="px-3 py-2 rounded text-sm font-medium bg-red-100 text-red-800 hover:bg-red-200"
-                    title="Delete table permanently"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {tables.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-gray-500">No tables created yet</div>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
+            <div className="flex justify-center space-x-3 pt-4">
+              <Button
+                variant="secondary"
+                onClick={() => copyTableCode(selectedTable.table_code)}
+                leftIcon={<Copy className="w-4 h-4" />}
               >
-                Add Your First Table
-              </button>
+                Copy Code
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  downloadQRCode(
+                    selectedTable.qr_code_url!,
+                    selectedTable.table_number
+                  )
+                }
+                leftIcon={<Download className="w-4 h-4" />}
+              >
+                Download QR
+              </Button>
             </div>
-          )}
-        </div>
-      </main>
+          </div>
+        )}
+      </Modal>
     </div>
-  )
+  );
 }
