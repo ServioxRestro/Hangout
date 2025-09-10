@@ -12,6 +12,8 @@ import { GuestLayout } from "@/components/guest/GuestLayout";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import CartWithOffers from "@/components/guest/CartWithOffers";
+import { OfferCalculator, type OfferCalculationResult } from "@/lib/offers/calculator";
 import type { Tables } from "@/types/database.types";
 
 type RestaurantTable = Tables<"restaurant_tables">;
@@ -23,6 +25,7 @@ interface CartItem {
   quantity: number;
   is_veg: boolean;
   description?: string | null;
+  category_id?: string;
 }
 
 export default function UnifiedCartPage() {
@@ -48,6 +51,7 @@ export default function UnifiedCartPage() {
   // Order state
   const [notes, setNotes] = useState("");
   const [isOrdering, setIsOrdering] = useState(false);
+  const [offerResult, setOfferResult] = useState<OfferCalculationResult | null>(null);
 
   useEffect(() => {
     if (tableCode) {
@@ -231,7 +235,8 @@ export default function UnifiedCartPage() {
 
   const placeOrder = async () => {
     try {
-      const total = getCartTotal();
+      const originalTotal = getCartTotal();
+      const finalTotal = offerResult ? offerResult.final_amount : originalTotal;
 
       // Create order
       const { data: orderData, error: orderError } = await supabase
@@ -239,7 +244,7 @@ export default function UnifiedCartPage() {
         .insert({
           table_id: table?.id,
           customer_email: currentUser?.email || email,
-          total_amount: total,
+          total_amount: finalTotal,
           notes: notes || null,
           status: "placed",
         })
@@ -265,6 +270,16 @@ export default function UnifiedCartPage() {
 
       if (itemsError) {
         throw new Error("Failed to save order items");
+      }
+
+      // Record offer usage if offers were applied
+      if (offerResult && offerResult.applied_offers.length > 0) {
+        const calculator = new OfferCalculator(cart, {
+          email: currentUser?.email || email,
+          phone: "",
+          tableCode
+        });
+        await calculator.recordOfferUsage(offerResult.applied_offers, orderData.id);
       }
 
       // Clear cart and redirect
@@ -400,46 +415,13 @@ export default function UnifiedCartPage() {
               ))}
             </div>
 
-            {/* Order Summary */}
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-900">
-                  Order Summary
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearCart}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  Clear Cart
-                </Button>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">
-                    Items ({getCartItemCount()})
-                  </span>
-                  <span className="font-medium">
-                    ₹{getCartTotal().toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Taxes & Charges</span>
-                  <span className="font-medium text-green-600">₹0.00</span>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xl font-bold text-gray-900">Total</span>
-                  <span className="text-2xl font-bold text-green-600">
-                    ₹{getCartTotal().toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            </div>
+            {/* Order Summary with Offers */}
+            <CartWithOffers
+              cart={cart}
+              customerEmail={currentUser?.email || email || undefined}
+              tableCode={tableCode}
+              onUpdateTotal={(result) => setOfferResult(result)}
+            />
 
             {/* Special Instructions */}
             {isOrdering && (

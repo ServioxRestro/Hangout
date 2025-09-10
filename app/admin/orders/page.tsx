@@ -5,20 +5,14 @@ import { supabase } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database.types";
 import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
-import Table from "@/components/admin/Table";
 import Button from "@/components/admin/Button";
 import {
-  Calendar,
-  Download,
-  Filter,
-  Search,
-  Eye,
+  RefreshCw,
   Clock,
   CheckCircle,
   AlertCircle,
-  DollarSign,
-  User,
-  Hash,
+  Bell,
+  Archive,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
 
@@ -31,41 +25,49 @@ type Order = Tables<"orders"> & {
   >;
 };
 
-type FilterStatus =
-  | "all"
-  | "placed"
-  | "preparing"
-  | "served"
-  | "completed"
-  | "paid";
+type TableWithOrders = {
+  table: Tables<"restaurant_tables">;
+  orders: Order[];
+  totalAmount: number;
+  oldestOrderTime: string;
+};
 
-export default function OrdersHistoryPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
+export default function ActiveOrdersPage() {
+  const [activeTableOrders, setActiveTableOrders] = useState<TableWithOrders[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [dateFilter, setDateFilter] = useState("today");
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    fetchOrders();
+    fetchActiveOrders();
+    // Auto-refresh every 30 seconds for real-time updates
+    const interval = setInterval(fetchActiveOrders, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    filterOrders();
-  }, [orders, statusFilter, searchTerm, dateFilter]);
+  const fetchActiveOrders = async (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
 
-  const fetchOrders = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch active orders (not completed or paid)
+      const { data: activeOrders, error } = await supabase
         .from("orders")
         .select(
           `
-          *,
+          id,
+          status,
+          total_amount,
+          customer_phone,
+          customer_email,
+          notes,
+          created_at,
           restaurant_tables!inner (
             id,
             table_number,
-            table_code
+            table_code,
+            is_active,
+            qr_code_url,
+            created_at,
+            updated_at
           ),
           order_items!inner (
             id,
@@ -76,67 +78,107 @@ export default function OrdersHistoryPage() {
               id,
               name,
               price,
-              is_veg
+              is_veg,
+              subcategory
             )
           )
         `
         )
-        .order("created_at", { ascending: false });
+        .in("status", ["placed", "preparing", "served"])
+        .order("created_at", { ascending: true });
 
       if (error) {
-        console.error("Error fetching orders:", error);
+        console.error("Error fetching active orders:", error);
         return;
       }
 
-      setOrders(data as Order[]);
+      // Group active orders by table
+      const tableOrdersMap = new Map<string, TableWithOrders>();
+      activeOrders?.forEach((order) => {
+        if (!order.restaurant_tables) return;
+        const tableId = order.restaurant_tables.id;
+        if (tableOrdersMap.has(tableId)) {
+          const existing = tableOrdersMap.get(tableId)!;
+          existing.orders.push(order as Order);
+          existing.totalAmount += order.total_amount || 0;
+          if (new Date(order.created_at || "") < new Date(existing.oldestOrderTime)) {
+            existing.oldestOrderTime = order.created_at || "";
+          }
+        } else {
+          tableOrdersMap.set(tableId, {
+            table: order.restaurant_tables,
+            orders: [order as Order],
+            totalAmount: order.total_amount || 0,
+            oldestOrderTime: order.created_at || "",
+          });
+        }
+      });
+
+      // Sort by oldest order first (most urgent)
+      const sortedTableOrders = Array.from(tableOrdersMap.values()).sort(
+        (a, b) => new Date(a.oldestOrderTime).getTime() - new Date(b.oldestOrderTime).getTime()
+      );
+      setActiveTableOrders(sortedTableOrders);
     } catch (error) {
       console.error("Error:", error);
     } finally {
       setLoading(false);
+      if (showRefresh) setRefreshing(false);
     }
   };
 
-  const filterOrders = () => {
-    let filtered = orders;
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status })
+        .eq("id", orderId);
 
-    // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((order) => order.status === statusFilter);
+      if (error) {
+        console.error("Error updating order:", error);
+        return;
+      }
+
+      // Refresh data
+      fetchActiveOrders();
+    } catch (error) {
+      console.error("Error:", error);
     }
+  };
 
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (order) =>
-          order.customer_phone?.includes(searchTerm) ||
-          order.customer_email?.includes(searchTerm) ||
-          order.restaurant_tables?.table_number
-            .toString()
-            .includes(searchTerm) ||
-          order.id.includes(searchTerm)
-      );
-    }
+  const getOrderPriority = (createdAt: string) => {
+    const now = new Date().getTime();
+    const orderTime = new Date(createdAt).getTime();
+    const minutesAgo = (now - orderTime) / (1000 * 60);
 
-    // Date filter
-    const now = new Date();
-    if (dateFilter === "today") {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      filtered = filtered.filter(
-        (order) => new Date(order.created_at || "") >= today
-      );
-    } else if (dateFilter === "week") {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter(
-        (order) => new Date(order.created_at || "") >= weekAgo
-      );
-    } else if (dateFilter === "month") {
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter(
-        (order) => new Date(order.created_at || "") >= monthAgo
-      );
-    }
+    if (minutesAgo > 30)
+      return {
+        level: "urgent",
+        color: "text-red-600",
+        bg: "bg-red-50 border-red-200",
+      };
+    if (minutesAgo > 15)
+      return {
+        level: "high",
+        color: "text-orange-600",
+        bg: "bg-orange-50 border-orange-200",
+      };
+    return {
+      level: "normal",
+      color: "text-green-600",
+      bg: "bg-green-50 border-green-200",
+    };
+  };
 
-    setFilteredOrders(filtered);
+  const getTimeSince = (createdAt: string) => {
+    const now = new Date().getTime();
+    const orderTime = new Date(createdAt).getTime();
+    const minutesAgo = Math.floor((now - orderTime) / (1000 * 60));
+
+    if (minutesAgo < 1) return "Just now";
+    if (minutesAgo < 60) return `${minutesAgo}m ago`;
+    const hoursAgo = Math.floor(minutesAgo / 60);
+    return `${hoursAgo}h ${minutesAgo % 60}m ago`;
   };
 
   const getStatusBadge = (status: string) => {
@@ -153,14 +195,6 @@ export default function OrdersHistoryPage() {
         color: "bg-green-50 text-green-700 border-green-200",
         icon: CheckCircle,
       },
-      completed: {
-        color: "bg-gray-50 text-gray-700 border-gray-200",
-        icon: CheckCircle,
-      },
-      paid: {
-        color: "bg-purple-50 text-purple-700 border-purple-200",
-        icon: CheckCircle,
-      },
     };
 
     const config =
@@ -172,261 +206,211 @@ export default function OrdersHistoryPage() {
         className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${config.color}`}
       >
         <Icon className="w-3 h-3 mr-1" />
-        {status || "placed"}
+        {status}
       </span>
     );
   };
 
-  const exportOrders = () => {
-    // Create CSV content
-    const headers = [
-      "Order ID",
-      "Date",
-      "Table",
-      "Customer Phone",
-      "Items",
-      "Total Amount",
-      "Status",
-    ];
-    const csvContent = [
-      headers.join(","),
-      ...filteredOrders.map((order) =>
-        [
-          order.id,
-          new Date(order.created_at || "").toLocaleDateString(),
-          `Table ${order.restaurant_tables?.table_number || "Unknown"}`,
-          order.customer_phone || "",
-          order.order_items.length + " items",
-          `${formatCurrency(order.total_amount)}`,
-          order.status || "placed",
-        ].join(",")
-      ),
-    ].join("\n");
-
-    // Download CSV
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `orders-history-${new Date().toISOString().split("T")[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
-
-  const orderColumns = [
-    {
-      key: "id",
-      title: "Order",
-      render: (id: string, record: Order) => (
-        <div className="flex items-center">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-            <Hash className="w-5 h-5 text-blue-600" />
-          </div>
-          <div>
-            <div className="font-medium text-gray-900">#{id.slice(-6)}</div>
-            <div className="text-xs text-gray-500">
-              {new Date(record.created_at || "").toLocaleDateString()}{" "}
-              {new Date(record.created_at || "").toLocaleTimeString()}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "table_info",
-      title: "Table",
-      render: (_: any, record: Order) => (
-        <div className="text-center">
-          <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-1">
-            <span className="font-bold text-sm">
-              {record.restaurant_tables?.table_number || "?"}
-            </span>
-          </div>
-          <div className="text-xs text-gray-500">
-            Table {record.restaurant_tables?.table_number || "Unknown"}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "customer_phone",
-      title: "Customer",
-      render: (phone: string, record: Order) => (
-        <div className="flex items-center">
-          <User className="w-4 h-4 text-gray-400 mr-2" />
-          <div>
-            <div className="font-medium text-gray-900">{phone || "N/A"}</div>
-            {record.customer_email && (
-              <div className="text-xs text-gray-500">
-                {record.customer_email}
-              </div>
-            )}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "items",
-      title: "Items",
-      render: (_: any, record: Order) => (
-        <div>
-          <div className="font-medium">
-            {record.order_items.length} item
-            {record.order_items.length !== 1 ? "s" : ""}
-          </div>
-          <div className="text-xs text-gray-500">
-            {record.order_items
-              .slice(0, 2)
-              .map((item) => item.menu_items?.name)
-              .join(", ")}
-            {record.order_items.length > 2 &&
-              ` +${record.order_items.length - 2} more`}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "total_amount",
-      title: "Total",
-      render: (amount: number) => (
-        <div className="flex items-center font-semibold text-green-600">
-          <DollarSign className="w-4 h-4 mr-1" />
-          {formatCurrency(amount)}
-        </div>
-      ),
-    },
-    {
-      key: "status",
-      title: "Status",
-      render: (status: string) => getStatusBadge(status),
-    },
-    {
-      key: "actions",
-      title: "Actions",
-      render: (_: any, record: Order) => (
-        <Button
-          size="sm"
-          variant="secondary"
-          leftIcon={<Eye className="w-3 h-3" />}
-          onClick={() => {
-            // TODO: Implement order details modal
-            alert(`Order details for #${record.id.slice(-6)}`);
-          }}
-        >
-          View
-        </Button>
-      ),
-    },
-  ];
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader
-        title="Orders History"
-        description="View and manage all past orders"
+        title="Active Orders"
+        description="Manage orders that need to be served"
         breadcrumbs={[
           { name: "Dashboard", href: "/admin/dashboard" },
-          { name: "Orders History" },
+          { name: "Active Orders" },
         ]}
       >
-        <Button
-          variant="secondary"
-          onClick={exportOrders}
-          leftIcon={<Download className="w-4 h-4" />}
-        >
-          Export CSV
-        </Button>
+        <div className="flex items-center space-x-3">
+          <Button
+            variant="secondary"
+            onClick={() => fetchActiveOrders(true)}
+            leftIcon={
+              <RefreshCw
+                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+              />
+            }
+            disabled={refreshing}
+          >
+            Refresh
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => (window.location.href = "/admin/orders/history")}
+            leftIcon={<Archive className="w-4 h-4" />}
+          >
+            View History
+          </Button>
+        </div>
       </PageHeader>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Filters */}
-        <Card className="mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Search */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Search
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Phone, email, table..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 block w-full rounded-lg border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(e.target.value as FilterStatus)
-                }
-                className="block w-full rounded-lg border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Status</option>
-                <option value="placed">Placed</option>
-                <option value="preparing">Preparing</option>
-                <option value="served">Served</option>
-                <option value="completed">Completed</option>
-                <option value="paid">Paid</option>
-              </select>
-            </div>
-
-            {/* Date Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Date Range
-              </label>
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="block w-full rounded-lg border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Time</option>
-                <option value="today">Today</option>
-                <option value="week">Last 7 Days</option>
-                <option value="month">Last 30 Days</option>
-              </select>
-            </div>
-
-            {/* Results Count */}
-            <div className="flex items-end">
-              <div className="text-sm text-gray-500">
-                Showing {filteredOrders.length} of {orders.length} orders
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Orders Table */}
+        {/* Active Orders by Table */}
         <Card>
           <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Order History
-              </h2>
-              <p className="text-sm text-gray-500">
-                Complete history of all restaurant orders
-              </p>
+            <div className="flex items-center">
+              <Bell className="w-5 h-5 text-orange-500 mr-2" />
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Active Orders - Serve Now
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Orders grouped by table, sorted by urgency
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center text-xs text-gray-500">
+                <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
+                Urgent (30+ min)
+              </div>
+              <div className="flex items-center text-xs text-gray-500">
+                <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
+                High (15+ min)
+              </div>
+              <div className="flex items-center text-xs text-gray-500">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                Normal
+              </div>
             </div>
           </div>
 
-          <Table
-            data={filteredOrders}
-            columns={orderColumns}
-            loading={loading}
-            emptyText="No orders found matching your criteria."
-          />
+          {activeTableOrders.length === 0 ? (
+            <div className="text-center py-12">
+              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                All Caught Up!
+              </h3>
+              <p className="text-gray-500">
+                No active orders to serve right now.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {activeTableOrders.map((tableOrder) => {
+                const priority = getOrderPriority(tableOrder.oldestOrderTime);
+                return (
+                  <div
+                    key={tableOrder.table.id}
+                    className={`border rounded-lg p-6 ${priority.bg} border-2`}
+                  >
+                    {/* Table Header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center">
+                        <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center mr-4 shadow-sm">
+                          <span className="font-bold text-lg text-gray-700">
+                            {tableOrder.table.table_number}
+                          </span>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            Table {tableOrder.table.table_number}
+                          </h3>
+                          <p className="text-sm text-gray-600">
+                            {tableOrder.orders.length} order
+                            {tableOrder.orders.length !== 1 ? "s" : ""} •
+                            Oldest: {getTimeSince(tableOrder.oldestOrderTime)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-bold text-gray-900">
+                          {formatCurrency(tableOrder.totalAmount)}
+                        </div>
+                        <div className={`text-sm font-medium ${priority.color}`}>
+                          {priority.level.toUpperCase()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Orders for this table */}
+                    <div className="space-y-4">
+                      {tableOrder.orders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="bg-white rounded-lg p-4 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <span className="text-sm font-medium text-gray-500">
+                                #{order.id.slice(-6)}
+                              </span>
+                              {getStatusBadge(order.status || "placed")}
+                              <span className="text-sm text-gray-500">
+                                {order.customer_phone}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <select
+                                value={order.status || "placed"}
+                                onChange={(e) =>
+                                  updateOrderStatus(order.id, e.target.value)
+                                }
+                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                <option value="placed">Placed</option>
+                                <option value="preparing">Preparing</option>
+                                <option value="served">Served</option>
+                                <option value="completed">Completed</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Order Items */}
+                          <div className="space-y-2">
+                            {order.order_items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between text-sm"
+                              >
+                                <div className="flex items-center">
+                                  <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium mr-2">
+                                    {item.quantity}
+                                  </span>
+                                  <span className="font-medium">
+                                    {item.menu_items?.name || "Unknown Item"}
+                                  </span>
+                                  {item.menu_items?.is_veg && (
+                                    <span className="ml-2 text-green-500">
+                                      🟢
+                                    </span>
+                                  )}
+                                  {item.menu_items?.is_veg === false && (
+                                    <span className="ml-2 text-red-500">
+                                      🔴
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-medium">
+                                  {formatCurrency(item.total_price)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {order.notes && (
+                            <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                              <p className="text-xs text-yellow-800">
+                                <strong>Note:</strong> {order.notes}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Card>
       </div>
     </div>

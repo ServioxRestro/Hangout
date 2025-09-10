@@ -14,6 +14,7 @@ import {
   Search,
   User,
   ClipboardList,
+  Gift,
 } from "lucide-react";
 
 interface AdminLayoutProps {
@@ -35,9 +36,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   const navigation: NavigationItem[] = [
     { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-    { name: "Orders History", href: "/admin/orders", icon: ClipboardList },
+    { name: "Orders", href: "/admin/orders", icon: ClipboardList },
     { name: "Tables", href: "/admin/tables", icon: Table2 },
     { name: "Menu", href: "/admin/menu", icon: MenuIcon },
+    { name: "Offers", href: "/admin/offers", icon: Gift },
   ];
 
   useEffect(() => {

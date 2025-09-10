@@ -9,17 +9,12 @@ import Button from "@/components/admin/Button";
 import {
   ShoppingBag,
   DollarSign,
-  Clock,
-  CheckCircle,
-  AlertCircle,
+  Timer,
   Table2,
   Menu as MenuIcon,
   RefreshCw,
-  Timer,
-  Users,
-  Utensils,
-  Bell,
   ChevronRight,
+  Archive,
 } from "lucide-react";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/constants";
 
@@ -215,24 +210,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const updateOrderStatus = async (orderId: string, status: string) => {
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status })
-        .eq("id", orderId);
-
-      if (error) {
-        console.error("Error updating order:", error);
-        return;
-      }
-
-      // Refresh dashboard data
-      fetchDashboardData();
-    } catch (error) {
-      console.error("Error:", error);
-    }
-  };
 
   const getOrderPriority = (createdAt: string) => {
     const now = new Date().getTime();
@@ -315,10 +292,10 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                Kitchen Dashboard
+                Dashboard Overview
               </h1>
               <p className="text-gray-600 mt-1">
-                Monitor active orders and serve guests efficiently
+                Monitor restaurant performance and key metrics
               </p>
             </div>
             <div className="flex items-center space-x-3">
@@ -339,13 +316,13 @@ export default function AdminDashboard() {
                 onClick={() => (window.location.href = "/admin/orders")}
                 leftIcon={<ChevronRight className="w-4 h-4" />}
               >
-                View All Orders
+                Manage Orders
               </Button>
             </div>
           </div>
         </div>
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* Simple Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <StatsCard
             title="Active Orders"
             value={stats.activeOrders}
@@ -365,190 +342,89 @@ export default function AdminDashboard() {
           <StatsCard
             title="Today's Orders"
             value={stats.today}
-            change={{ value: `${stats.total} total`, trend: "up" }}
+            change={{ value: "Today", trend: "up" }}
             icon={<ShoppingBag className="w-6 h-6" />}
             color="blue"
           />
           <StatsCard
             title="Today's Revenue"
             value={formatCurrencyCompact(stats.todayRevenue)}
-            change={{
-              value: `${formatCurrencyCompact(stats.totalRevenue)} total`,
-              trend: "up",
-            }}
+            change={{ value: "Today", trend: "up" }}
             icon={<DollarSign className="w-6 h-6" />}
             color="green"
           />
-          <StatsCard
-            title="Tables Active"
-            value={activeTableOrders.length}
-            change={{ value: "Currently serving", trend: "neutral" }}
-            icon={<Utensils className="w-6 h-6" />}
-            color="purple"
-          />
         </div>
 
-        {/* Active Orders by Table */}
-        <Card>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-              <Bell className="w-5 h-5 text-orange-500 mr-2" />
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Active Orders - Serve Now
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Orders grouped by table, sorted by urgency
-                </p>
+        {/* Quick Navigation */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <div className="p-4 text-center">
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <Timer className="w-6 h-6 text-blue-600" />
               </div>
+              <h3 className="font-medium text-gray-900 mb-2">Active Orders</h3>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => (window.location.href = "/admin/orders")}
+                className="w-full"
+              >
+                Manage
+              </Button>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center text-xs text-gray-500">
-                <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
-                Urgent (30+ min)
+          </Card>
+
+          <Card>
+            <div className="p-4 text-center">
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <Table2 className="w-6 h-6 text-purple-600" />
               </div>
-              <div className="flex items-center text-xs text-gray-500">
-                <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
-                High (15+ min)
+              <h3 className="font-medium text-gray-900 mb-2">Tables</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => (window.location.href = "/admin/tables")}
+                className="w-full"
+              >
+                Manage
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="p-4 text-center">
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <MenuIcon className="w-6 h-6 text-orange-600" />
               </div>
-              <div className="flex items-center text-xs text-gray-500">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                Normal
+              <h3 className="font-medium text-gray-900 mb-2">Menu</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => (window.location.href = "/admin/menu")}
+                className="w-full"
+              >
+                Manage
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="p-4 text-center">
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <Archive className="w-6 h-6 text-green-600" />
               </div>
+              <h3 className="font-medium text-gray-900 mb-2">History</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => (window.location.href = "/admin/orders/history")}
+                className="w-full"
+              >
+                View
+              </Button>
             </div>
-          </div>
-
-          {activeTableOrders.length === 0 ? (
-            <div className="text-center py-12">
-              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                All Caught Up!
-              </h3>
-              <p className="text-gray-500">
-                No active orders to serve right now.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {activeTableOrders.map((tableOrder) => {
-                const priority = getOrderPriority(tableOrder.oldestOrderTime);
-                return (
-                  <div
-                    key={tableOrder.table.id}
-                    className={`border rounded-lg p-6 ${priority.bg} border-2`}
-                  >
-                    {/* Table Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center">
-                        <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center mr-4 shadow-sm">
-                          <span className="font-bold text-lg text-gray-700">
-                            {tableOrder.table.table_number}
-                          </span>
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            Table {tableOrder.table.table_number}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            {tableOrder.orders.length} order
-                            {tableOrder.orders.length !== 1 ? "s" : ""} •
-                            Oldest: {getTimeSince(tableOrder.oldestOrderTime)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xl font-bold text-gray-900">
-                          {formatCurrency(tableOrder.totalAmount)}
-                        </div>
-                        <div
-                          className={`text-sm font-medium ${priority.color}`}
-                        >
-                          {priority.level.toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Orders for this table */}
-                    <div className="space-y-4">
-                      {tableOrder.orders.map((order) => (
-                        <div
-                          key={order.id}
-                          className="bg-white rounded-lg p-4 shadow-sm"
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-sm font-medium text-gray-500">
-                                #{order.id.slice(-6)}
-                              </span>
-                              {getStatusBadge(order.status || "placed")}
-                              <span className="text-sm text-gray-500">
-                                {order.customer_phone}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <select
-                                value={order.status || "placed"}
-                                onChange={(e) =>
-                                  updateOrderStatus(order.id, e.target.value)
-                                }
-                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                <option value="placed">Placed</option>
-                                <option value="preparing">Preparing</option>
-                                <option value="served">Served</option>
-                                <option value="completed">Completed</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Order Items */}
-                          <div className="space-y-2">
-                            {order.order_items.map((item) => (
-                              <div
-                                key={item.id}
-                                className="flex items-center justify-between text-sm"
-                              >
-                                <div className="flex items-center">
-                                  <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium mr-2">
-                                    {item.quantity}
-                                  </span>
-                                  <span className="font-medium">
-                                    {item.menu_items?.name || "Unknown Item"}
-                                  </span>
-                                  {item.menu_items?.is_veg && (
-                                    <span className="ml-2 text-green-500">
-                                      🟢
-                                    </span>
-                                  )}
-                                  {item.menu_items?.is_veg === false && (
-                                    <span className="ml-2 text-red-500">
-                                      🔴
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="font-medium">
-                                  {formatCurrency(item.total_price)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-
-                          {order.notes && (
-                            <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                              <p className="text-xs text-yellow-800">
-                                <strong>Note:</strong> {order.notes}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );
