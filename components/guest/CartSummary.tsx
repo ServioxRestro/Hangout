@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@/components/ui/Button";
-import { formatCurrency } from "@/lib/constants";
+import { ShoppingCart } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 
 interface CartItem {
   id: string;
@@ -14,65 +14,61 @@ interface CartItem {
 interface CartSummaryProps {
   cart: CartItem[];
   onCheckout: () => void;
-  onViewCart?: () => void;
-  className?: string;
+  onViewCart: () => void;
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
-export function CartSummary({
-  cart,
-  onCheckout,
-  onViewCart,
-  className = "",
-}: CartSummaryProps) {
+export function CartSummary({ cart, onCheckout, onViewCart, disabled = false, disabledMessage }: CartSummaryProps) {
   if (cart.length === 0) return null;
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalAmount = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  );
+  const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
-    <div
-      className={`fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50 ${className}`}
-    >
-      <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-4">
-              <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-                {totalItems} item{totalItems !== 1 ? "s" : ""}
-              </div>
-              <div className="text-2xl font-bold text-green-600">
-                {formatCurrency(totalAmount)}
-              </div>
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <ShoppingCart className="w-6 h-6 text-blue-600" />
+            <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {totalItems}
+            </span>
+          </div>
+          <div>
+            <div className="font-semibold text-gray-900">
+              {totalItems} item{totalItems !== 1 ? 's' : ''}
             </div>
-            <div className="text-sm text-gray-600 mt-1">
-              🛒 {cart.length} unique item{cart.length !== 1 ? "s" : ""}{" "}
-              selected
+            <div className="text-sm text-gray-600">
+              {formatCurrency(totalAmount)}
             </div>
           </div>
+        </div>
 
-          <div className="flex gap-2 ml-4">
-            {onViewCart && (
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={onViewCart}
-                className="font-bold shadow-lg"
-              >
-                View Cart
-              </Button>
-            )}
-            <Button
-              variant="success"
-              size="lg"
-              onClick={onCheckout}
-              className="font-bold shadow-lg"
-            >
-              Place Order →
-            </Button>
-          </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onViewCart}
+            disabled={disabled}
+            className={`px-4 py-2 border rounded-lg font-medium transition-colors ${
+              disabled
+                ? "border-gray-300 text-gray-400 cursor-not-allowed"
+                : "border-orange-600 text-orange-600 hover:bg-orange-50"
+            }`}
+          >
+            View Cart
+          </button>
+          <button
+            onClick={disabled ? undefined : onCheckout}
+            disabled={disabled}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              disabled
+                ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                : "bg-orange-600 text-white hover:bg-orange-700"
+            }`}
+            title={disabled ? disabledMessage : undefined}
+          >
+            {disabled ? "Unavailable" : "Place Order"}
+          </button>
         </div>
       </div>
     </div>

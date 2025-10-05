@@ -8,8 +8,9 @@ import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import Modal from "@/components/admin/Modal";
 import FormField from "@/components/admin/FormField";
+import RoleGuard from "@/components/admin/RoleGuard";
 import Input from "@/components/admin/Input";
-import Table from "@/components/admin/Table";
+import AccordionCategoryMenu from "@/components/admin/AccordionCategoryMenu";
 import {
   Plus,
   Edit,
@@ -24,6 +25,7 @@ import {
   Beef,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
+import ImageUpload from "@/components/admin/ImageUpload";
 
 type MenuCategory = Tables<"menu_categories">;
 type MenuItem = Tables<"menu_items"> & {
@@ -34,9 +36,6 @@ export default function MenuManagement() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"categories" | "items">(
-    "categories"
-  );
 
   // Modals
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -58,6 +57,9 @@ export default function MenuManagement() {
     name: "",
     description: "",
     price: "",
+    original_price: "",
+    discounted_price: "",
+    has_discount: false,
     category_id: "",
     image_url: "",
     is_available: true,
@@ -202,22 +204,167 @@ export default function MenuManagement() {
     }
   };
 
+  const handleCategoryReorder = async (newOrder: MenuCategory[]) => {
+    try {
+      // Update display_order for each category
+      const updates = newOrder.map((category, index) => ({
+        id: category.id,
+        display_order: index,
+      }));
+
+      // Update all categories in parallel
+      const updatePromises = updates.map((update) =>
+        supabase
+          .from("menu_categories")
+          .update({ display_order: update.display_order })
+          .eq("id", update.id)
+      );
+
+      const results = await Promise.all(updatePromises);
+
+      // Check for errors
+      const errors = results.filter((result) => result.error);
+      if (errors.length > 0) {
+        console.error("Error updating category order:", errors);
+        alert("Error updating category order");
+        fetchData(); // Refresh to revert changes
+        return;
+      }
+
+      // Update local state
+      setCategories(newOrder);
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Error updating category order");
+      fetchData(); // Refresh to revert changes
+    }
+  };
+
+  const handleItemReorder = async (categoryId: string, newOrder: MenuItem[]) => {
+    console.log("🔄 handleItemReorder called:", {
+      categoryId,
+      itemCount: newOrder.length,
+      items: newOrder.map((item, idx) => ({ name: item.name, newOrder: idx }))
+    });
+
+    try {
+      // Update display_order for each item
+      const updates = newOrder.map((item, index) => ({
+        id: item.id,
+        display_order: index,
+      }));
+
+      console.log("📤 Sending updates to database:", updates);
+
+      // Update all items in parallel
+      const updatePromises = updates.map((update) =>
+        supabase
+          .from("menu_items")
+          .update({ display_order: update.display_order })
+          .eq("id", update.id)
+      );
+
+      const results = await Promise.all(updatePromises);
+
+      console.log("📥 Database update results:", results);
+
+      // Check for errors
+      const errors = results.filter((result) => result.error);
+      if (errors.length > 0) {
+        console.error("❌ Error updating item order:", errors);
+        alert("Error updating item order");
+        fetchData(); // Refresh to revert changes
+        return;
+      }
+
+      console.log("✅ Items reordered successfully in database");
+
+      // Update local state - replace items with the new order
+      setMenuItems((prevItems) => {
+        // Remove all items from this category
+        const otherItems = prevItems.filter((item) => item.category_id !== categoryId);
+
+        // Add the reordered items back with updated display_order
+        const reorderedWithOrder = newOrder.map((item, index) => ({
+          ...item,
+          display_order: index
+        }));
+
+        const updatedItems = [...otherItems, ...reorderedWithOrder];
+        console.log("🔄 Local state updated:", {
+          totalItems: updatedItems.length,
+          categoryItems: reorderedWithOrder.map(i => ({ name: i.name, order: i.display_order }))
+        });
+        return updatedItems;
+      });
+    } catch (error) {
+      console.error("❌ Error:", error);
+      alert("Error updating item order");
+      fetchData(); // Refresh to revert changes
+    }
+  };
+
   // Menu item functions
   const handleItemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setItemLoading(true);
 
-    if (!itemForm.name.trim() || !itemForm.price || !itemForm.category_id) {
-      alert("Name, price, and category are required");
+    if (!itemForm.name.trim() || !itemForm.category_id) {
+      alert("Name and category are required");
       setItemLoading(false);
       return;
     }
 
-    const price = parseFloat(itemForm.price);
-    if (isNaN(price) || price <= 0) {
-      alert("Please enter a valid price");
-      setItemLoading(false);
-      return;
+    // Calculate pricing
+    let finalPrice: number;
+    let originalPrice: number;
+    let discountPercentage = 0;
+
+    if (itemForm.has_discount) {
+      if (!itemForm.original_price || !itemForm.discounted_price) {
+        alert("Original price and discounted price are required when discount is enabled");
+        setItemLoading(false);
+        return;
+      }
+
+      originalPrice = parseFloat(itemForm.original_price);
+      finalPrice = parseFloat(itemForm.discounted_price);
+
+      if (isNaN(originalPrice) || originalPrice <= 0) {
+        alert("Please enter a valid original price");
+        setItemLoading(false);
+        return;
+      }
+
+      if (isNaN(finalPrice) || finalPrice <= 0) {
+        alert("Please enter a valid discounted price");
+        setItemLoading(false);
+        return;
+      }
+
+      if (finalPrice >= originalPrice) {
+        alert("Discounted price must be less than original price");
+        setItemLoading(false);
+        return;
+      }
+
+      // Calculate discount percentage for display
+      discountPercentage = Math.round(((originalPrice - finalPrice) / originalPrice) * 100);
+    } else {
+      if (!itemForm.price) {
+        alert("Price is required");
+        setItemLoading(false);
+        return;
+      }
+
+      finalPrice = parseFloat(itemForm.price);
+      originalPrice = finalPrice;
+
+      if (isNaN(finalPrice) || finalPrice <= 0) {
+        alert("Please enter a valid price");
+        setItemLoading(false);
+        return;
+      }
     }
 
     try {
@@ -228,7 +375,10 @@ export default function MenuManagement() {
           .update({
             name: itemForm.name,
             description: itemForm.description,
-            price: price,
+            price: finalPrice,
+            original_price: originalPrice,
+            discount_percentage: discountPercentage,
+            has_discount: itemForm.has_discount,
             category_id: itemForm.category_id,
             image_url: itemForm.image_url || null,
             is_available: itemForm.is_available,
@@ -252,7 +402,10 @@ export default function MenuManagement() {
         const { error } = await supabase.from("menu_items").insert({
           name: itemForm.name,
           description: itemForm.description,
-          price: price,
+          price: finalPrice,
+          original_price: originalPrice,
+          discount_percentage: discountPercentage,
+          has_discount: itemForm.has_discount,
           category_id: itemForm.category_id,
           image_url: itemForm.image_url || null,
           is_available: itemForm.is_available,
@@ -274,6 +427,9 @@ export default function MenuManagement() {
         name: "",
         description: "",
         price: "",
+        original_price: "",
+        discounted_price: "",
+        has_discount: false,
         category_id: categories[0]?.id || "",
         image_url: "",
         is_available: true,
@@ -297,6 +453,9 @@ export default function MenuManagement() {
       name: item.name,
       description: item.description || "",
       price: item.price.toString(),
+      original_price: (item as any).original_price?.toString() || item.price.toString(),
+      discounted_price: (item as any).has_discount ? item.price.toString() : "",
+      has_discount: (item as any).has_discount || false,
       category_id: item.category_id || "",
       image_url: item.image_url || "",
       is_available: item.is_available || true,
@@ -351,334 +510,91 @@ export default function MenuManagement() {
     }
   };
 
-  const categoryColumns = [
-    {
-      key: "name",
-      title: "Category",
-      render: (name: string, record: MenuCategory) => (
-        <div className="flex items-center">
-          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-            <Utensils className="w-5 h-5 text-purple-600" />
-          </div>
-          <div>
-            <div className="font-medium text-gray-900">{name}</div>
-            {record.description && (
-              <div className="text-sm text-gray-500">{record.description}</div>
-            )}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "items_count",
-      title: "Items",
-      render: (_: any, record: MenuCategory) => {
-        const count = menuItems.filter(
-          (item) => item.category_id === record.id
-        ).length;
-        return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-            {count} item{count !== 1 ? "s" : ""}
-          </span>
-        );
-      },
-    },
-    {
-      key: "is_active",
-      title: "Status",
-      render: (isActive: boolean) => (
-        <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
-            isActive
-              ? "bg-green-50 text-green-700 border-green-200"
-              : "bg-red-50 text-red-700 border-red-200"
-          }`}
-        >
-          {isActive ? "Active" : "Inactive"}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      title: "Actions",
-      render: (_: any, record: MenuCategory) => (
-        <div className="flex items-center space-x-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => editCategory(record)}
-            leftIcon={<Edit className="w-3 h-3" />}
-          >
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => deleteCategory(record.id, record.name)}
-            leftIcon={<Trash2 className="w-3 h-3" />}
-          >
-            Delete
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  const itemColumns = [
-    {
-      key: "name",
-      title: "Item",
-      render: (name: string, record: MenuItem) => (
-        <div className="flex items-center">
-          {record.image_url ? (
-            <img
-              src={record.image_url}
-              alt={name}
-              className="w-12 h-12 rounded-lg object-cover mr-3"
-            />
-          ) : (
-            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mr-3">
-              <Image className="w-6 h-6 text-gray-400" />
-            </div>
-          )}
-          <div>
-            <div className="flex items-center">
-              <span className="font-medium text-gray-900">{name}</span>
-              <span className="ml-2">
-                {record.is_veg ? (
-                  <Leaf className="w-4 h-4 text-green-500" />
-                ) : (
-                  <Beef className="w-4 h-4 text-red-500" />
-                )}
-              </span>
-            </div>
-            {record.description && (
-              <div className="text-sm text-gray-500 line-clamp-2">
-                {record.description}
-              </div>
-            )}
-            <div className="text-xs text-gray-400 mt-1">
-              {record.menu_categories?.name || "No Category"}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "price",
-      title: "Price",
-      render: (price: number) => (
-        <div className="flex items-center text-green-600 font-semibold">
-          <DollarSign className="w-4 h-4 mr-1" />
-          {formatCurrency(price)}
-        </div>
-      ),
-    },
-    {
-      key: "subcategory",
-      title: "Type",
-      render: (subcategory: string) => (
-        <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
-            subcategory === "veg"
-              ? "bg-green-50 text-green-700 border-green-200"
-              : "bg-red-50 text-red-700 border-red-200"
-          }`}
-        >
-          <Tag className="w-3 h-3 mr-1" />
-          {subcategory === "veg" ? "Vegetarian" : "Non-Vegetarian"}
-        </span>
-      ),
-    },
-    {
-      key: "is_available",
-      title: "Status",
-      render: (isAvailable: boolean) => (
-        <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
-            isAvailable
-              ? "bg-green-50 text-green-700 border-green-200"
-              : "bg-red-50 text-red-700 border-red-200"
-          }`}
-        >
-          {isAvailable ? "Available" : "Unavailable"}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      title: "Actions",
-      render: (_: any, record: MenuItem) => (
-        <div className="flex items-center space-x-2">
-          <Button
-            size="sm"
-            variant={record.is_available ? "warning" : "success"}
-            onClick={() =>
-              toggleItemAvailability(record.id, record.is_available || false)
-            }
-            leftIcon={
-              record.is_available ? (
-                <EyeOff className="w-3 h-3" />
-              ) : (
-                <Eye className="w-3 h-3" />
-              )
-            }
-          >
-            {record.is_available ? "Disable" : "Enable"}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => editItem(record)}
-            leftIcon={<Edit className="w-3 h-3" />}
-          >
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => deleteItem(record.id, record.name)}
-            leftIcon={<Trash2 className="w-3 h-3" />}
-          >
-            Delete
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  const handleAddItemInCategory = (categoryId: string) => {
+    if (categories.length === 0) {
+      alert("Please create at least one category before adding menu items");
+      return;
+    }
+    setItemForm({
+      name: "",
+      description: "",
+      price: "",
+      original_price: "",
+      discounted_price: "",
+      has_discount: false,
+      category_id: categoryId,
+      image_url: "",
+      is_available: true,
+      is_veg: true,
+      subcategory: "veg",
+    });
+    setEditingItem(null);
+    setShowItemModal(true);
+  };
 
   return (
-    <div>
-      <PageHeader
-        title="Menu Management"
-        description="Manage your restaurant's menu categories and items"
-        breadcrumbs={[
-          { name: "Dashboard", href: "/admin/dashboard" },
-          { name: "Menu" },
-        ]}
-      >
-        <Button
-          variant="primary"
-          onClick={() => {
-            if (activeTab === "categories") {
+    <RoleGuard requiredRoute="/admin/menu">
+      <div>
+        <PageHeader
+          title="Menu Management"
+          description="Manage your restaurant's menu categories and items"
+          breadcrumbs={[
+            { name: "Dashboard", href: "/admin/dashboard" },
+            { name: "Menu" },
+          ]}
+        >
+          <Button
+            variant="primary"
+            onClick={() => {
               setCategoryForm({ name: "", description: "" });
               setEditingCategory(null);
               setShowCategoryModal(true);
-            } else {
-              if (categories.length === 0) {
-                alert(
-                  "Please create at least one category before adding menu items"
-                );
-                setActiveTab("categories");
-                return;
-              }
-              setItemForm({
-                name: "",
-                description: "",
-                price: "",
-                category_id: categories[0]?.id || "",
-                image_url: "",
-                is_available: true,
-                is_veg: true,
-                subcategory: "veg",
-              });
-              setEditingItem(null);
-              setShowItemModal(true);
-            }
-          }}
-          leftIcon={<Plus className="w-4 h-4" />}
-        >
-          Add {activeTab === "categories" ? "Category" : "Menu Item"}
-        </Button>
-      </PageHeader>
+            }}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Add Category
+          </Button>
+        </PageHeader>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tabs */}
-        <div className="border-b border-gray-200 mb-8">
-          <nav className="flex space-x-8">
-            <button
-              onClick={() => setActiveTab("categories")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === "categories"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Categories ({categories.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("items")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === "items"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Menu Items ({menuItems.length})
-            </button>
-          </nav>
-        </div>
-
-        {/* Categories Tab */}
-        {activeTab === "categories" && (
-          <Card>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Menu Categories
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Organize your menu items into categories
-                </p>
-              </div>
+        <Card>
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="text-gray-400 text-lg">Loading menu...</div>
             </div>
-
-            <Table
-              data={categories}
-              columns={categoryColumns}
-              loading={loading}
-              emptyText="No categories created yet. Create your first category to organize menu items."
+          ) : categories.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-gray-400 text-4xl mb-4">🍽️</div>
+              <p className="text-gray-500 mb-4">
+                No categories created yet. Create your first category to organize menu items.
+              </p>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setCategoryForm({ name: "", description: "" });
+                  setEditingCategory(null);
+                  setShowCategoryModal(true);
+                }}
+                leftIcon={<Plus className="w-4 h-4" />}
+              >
+                Create First Category
+              </Button>
+            </div>
+          ) : (
+            <AccordionCategoryMenu
+              categories={categories}
+              menuItems={menuItems}
+              onEditCategory={editCategory}
+              onDeleteCategory={deleteCategory}
+              onReorderCategories={handleCategoryReorder}
+              onAddItem={handleAddItemInCategory}
+              onEditItem={editItem}
+              onDeleteItem={deleteItem}
+              onToggleItemAvailability={toggleItemAvailability}
+              onReorderItems={handleItemReorder}
             />
-          </Card>
-        )}
-
-        {/* Menu Items Tab */}
-        {activeTab === "items" && (
-          <Card>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Menu Items
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Manage your restaurant's menu items and availability
-                </p>
-              </div>
-            </div>
-
-            {categories.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="text-gray-400 text-4xl mb-4">🍽️</div>
-                <p className="text-gray-500 mb-4">
-                  Create categories first to organize your menu items
-                </p>
-                <Button
-                  variant="primary"
-                  onClick={() => setActiveTab("categories")}
-                >
-                  Go to Categories
-                </Button>
-              </div>
-            ) : (
-              <Table
-                data={menuItems}
-                columns={itemColumns}
-                loading={loading}
-                emptyText="No menu items yet. Add your first menu item to get started."
-              />
-            )}
-          </Card>
-        )}
+          )}
+        </Card>
       </div>
 
       {/* Category Modal */}
@@ -754,13 +670,16 @@ export default function MenuManagement() {
             name: "",
             description: "",
             price: "",
+            original_price: "",
+            discounted_price: "",
+            has_discount: false,
             category_id: categories[0]?.id || "",
             image_url: "",
-            is_available: true,
+                is_available: true,
             is_veg: true,
             subcategory: "veg",
           });
-        }}
+            }}
         title={editingItem ? "Edit Menu Item" : "Add New Menu Item"}
         size="lg"
       >
@@ -778,19 +697,88 @@ export default function MenuManagement() {
               />
             </FormField>
 
-            <FormField label="Price" required>
-              <Input
-                type="number"
-                step="0.01"
-                value={itemForm.price}
-                onChange={(e) =>
-                  setItemForm((prev) => ({ ...prev, price: e.target.value }))
-                }
-                placeholder="0.00"
-                leftIcon={<DollarSign className="w-4 h-4" />}
-                required
-                min="0"
-              />
+            <FormField label="Pricing" required>
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="hasDiscount"
+                    checked={itemForm.has_discount}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({
+                        ...prev,
+                        has_discount: e.target.checked,
+                        price: e.target.checked ? "" : prev.price,
+                      }))
+                    }
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                  />
+                  <label htmlFor="hasDiscount" className="text-sm text-gray-700 font-medium">
+                    This item has a discount
+                  </label>
+                </div>
+
+                {itemForm.has_discount ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Original Price</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={itemForm.original_price}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({ ...prev, original_price: e.target.value }))
+                        }
+                        placeholder="0.00"
+                        leftIcon={<DollarSign className="w-4 h-4" />}
+                        required
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Discounted Price</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={itemForm.discounted_price}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({ ...prev, discounted_price: e.target.value }))
+                        }
+                        placeholder="0.00"
+                        leftIcon={<DollarSign className="w-4 h-4" />}
+                        required
+                        min="0"
+                      />
+                    </div>
+                    {itemForm.original_price && itemForm.discounted_price && (
+                      <div className="col-span-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="text-sm text-green-800">
+                          <span className="font-medium">Discount: </span>
+                          <span className="text-lg font-bold">
+                            {Math.round(((parseFloat(itemForm.original_price) - parseFloat(itemForm.discounted_price)) / parseFloat(itemForm.original_price)) * 100)}% OFF
+                          </span>
+                          <span className="ml-2">
+                            (Save {formatCurrency(parseFloat(itemForm.original_price) - parseFloat(itemForm.discounted_price))})
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={itemForm.price}
+                    onChange={(e) =>
+                      setItemForm((prev) => ({ ...prev, price: e.target.value }))
+                    }
+                    placeholder="0.00"
+                    leftIcon={<DollarSign className="w-4 h-4" />}
+                    required
+                    min="0"
+                  />
+                )}
+              </div>
             </FormField>
           </div>
 
@@ -873,15 +861,15 @@ export default function MenuManagement() {
             />
           </FormField>
 
-          <FormField label="Image URL">
-            <Input
-              type="url"
-              value={itemForm.image_url}
-              onChange={(e) =>
-                setItemForm((prev) => ({ ...prev, image_url: e.target.value }))
+          <FormField label="Menu Item Image">
+            <ImageUpload
+              currentImage={itemForm.image_url}
+              onImageChange={(imageUrl) =>
+                setItemForm((prev) => ({ ...prev, image_url: imageUrl || "" }))
               }
-              placeholder="https://example.com/image.jpg"
-              leftIcon={<Image className="w-4 h-4" />}
+              folder="menu-items"
+              maxSizeInMB={5}
+              disabled={itemLoading}
             />
           </FormField>
 
@@ -917,13 +905,16 @@ export default function MenuManagement() {
                   name: "",
                   description: "",
                   price: "",
+                  original_price: "",
+                  discounted_price: "",
+                  has_discount: false,
                   category_id: categories[0]?.id || "",
                   image_url: "",
-                  is_available: true,
+                            is_available: true,
                   is_veg: true,
                   subcategory: "veg",
                 });
-              }}
+                        }}
             >
               Cancel
             </Button>
@@ -938,6 +929,7 @@ export default function MenuManagement() {
           </div>
         </form>
       </Modal>
-    </div>
+      </div>
+    </RoleGuard>
   );
 }

@@ -2,43 +2,23 @@
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  LayoutDashboard,
-  Table2,
-  MenuIcon,
-  LogOut,
-  ChevronLeft,
-  Menu,
-  X,
-  Bell,
-  Search,
-  User,
-  ClipboardList,
-} from "lucide-react";
+import { LogOut, ChevronLeft, Menu, X, Bell, Search, User } from "lucide-react";
+import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
+import DynamicNavbar from "./DynamicNavbar";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
 }
 
-interface NavigationItem {
-  name: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  current?: boolean;
-}
-
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
 
-  const navigation: NavigationItem[] = [
-    { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-    { name: "Orders History", href: "/admin/orders", icon: ClipboardList },
-    { name: "Tables", href: "/admin/tables", icon: Table2 },
-    { name: "Menu", href: "/admin/menu", icon: MenuIcon },
-  ];
+  // Navigation is now handled by DynamicNavbar component
 
   useEffect(() => {
     const handleResize = () => {
@@ -50,6 +30,51 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    // Fetch current user session
+    const fetchCurrentUser = async (retryCount = 0) => {
+      try {
+        console.log("AdminLayout: Verifying authentication...");
+        const response = await fetch("/api/admin/verify", {
+          method: "GET",
+          credentials: "include",
+        });
+
+        console.log("AdminLayout: Verify response status:", response.status);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log("AdminLayout: Authentication successful:", data.user);
+          setCurrentUser(data.user);
+          setLoading(false);
+        } else {
+          // Retry once in case of timing issues
+          if (retryCount < 1) {
+            console.log("AdminLayout: Authentication failed, retrying...");
+            setTimeout(() => fetchCurrentUser(retryCount + 1), 500);
+            return;
+          }
+
+          // If not authenticated after retry, redirect to login
+          console.log("AdminLayout: Not authenticated, redirecting to login");
+          setLoading(false);
+          router.push("/admin/login");
+        }
+      } catch (error) {
+        console.error("AdminLayout: Error fetching user session:", error);
+        // Retry once in case of network issues
+        if (retryCount < 1) {
+          setTimeout(() => fetchCurrentUser(retryCount + 1), 500);
+          return;
+        }
+        setLoading(false);
+        router.push("/admin/login");
+      }
+    };
+
+    fetchCurrentUser();
+  }, [router]);
 
   const handleLogout = async () => {
     if (confirm("Are you sure you want to logout?")) {
@@ -75,6 +100,23 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       }
     }
   };
+
+  // Show loading spinner while checking authentication
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+          <div className="text-gray-600">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render anything if no user (will redirect)
+  if (!currentUser) {
+    return null;
+  }
 
   return (
     <div className="h-screen flex bg-gray-50">
@@ -124,31 +166,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* Navigation */}
             <div className="mt-5 flex-grow flex flex-col">
-              <nav className="flex-1 px-2 space-y-1">
-                {navigation.map((item) => {
-                  const isActive = pathname === item.href;
-                  return (
-                    <a
-                      key={item.name}
-                      href={item.href}
-                      className={`group flex items-center px-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
-                        isActive
-                          ? "bg-blue-50 text-blue-600 border-r-2 border-blue-600"
-                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                      }`}
-                    >
-                      <item.icon
-                        className={`flex-shrink-0 w-5 h-5 ${
-                          isActive
-                            ? "text-blue-500"
-                            : "text-gray-400 group-hover:text-gray-500"
-                        }`}
-                      />
-                      {!collapsed && <span className="ml-3">{item.name}</span>}
-                    </a>
-                  );
-                })}
-              </nav>
+              <DynamicNavbar currentUser={currentUser} collapsed={collapsed} />
 
               {/* Logout Button */}
               <div className="px-2 pb-4">
@@ -193,32 +211,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
 
           {/* Mobile Navigation */}
-          <nav className="mt-5 flex-1 px-2 space-y-1">
-            {navigation.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <a
-                  key={item.name}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`group flex items-center px-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
-                >
-                  <item.icon
-                    className={`mr-3 flex-shrink-0 w-5 h-5 ${
-                      isActive
-                        ? "text-blue-500"
-                        : "text-gray-400 group-hover:text-gray-500"
-                    }`}
-                  />
-                  {item.name}
-                </a>
-              );
-            })}
-          </nav>
+          <div className="mt-5 flex-1">
+            <DynamicNavbar
+              currentUser={currentUser}
+              collapsed={false}
+              onMobileNavigate={() => setSidebarOpen(false)}
+            />
+          </div>
 
           {/* Mobile Logout */}
           <div className="px-2 pb-4">
@@ -276,7 +275,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   <User className="h-5 w-5 text-gray-600" />
                 </div>
                 <div className="hidden md:block">
-                  <div className="text-sm font-medium text-gray-900">Admin</div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {currentUser?.name || currentUser?.email || "User"}
+                  </div>
+                  {currentUser?.role && (
+                    <div className="text-xs text-gray-500 capitalize">
+                      {currentUser.role.replace("_", " ")}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

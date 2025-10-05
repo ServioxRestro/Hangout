@@ -1,256 +1,343 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import { getCurrentUser } from '@/lib/auth/email-auth'
-import type { Tables } from '@/types/database.types'
-import { GuestLayout } from '@/components/guest/GuestLayout'
-import { OrderStatusBadge } from '@/components/guest/OrderStatusBadge'
-import { Button } from '@/components/ui/Button'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { Badge } from '@/components/ui/Badge'
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+import { getCurrentUser } from "@/lib/auth/email-auth";
+import { formatCurrency } from "@/lib/utils";
+import {
+  Clock,
+  CheckCircle,
+  ChefHat,
+  Utensils,
+  Receipt,
+  AlertCircle,
+  User
+} from "lucide-react";
+import type { Tables } from "@/types/database.types";
+import { GuestLayout } from "@/components/guest/GuestLayout";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { Button } from "@/components/ui/Button";
+import { formatDate } from "@/lib/utils";
 
-type Order = Tables<'orders'> & {
-  restaurant_tables: Tables<'restaurant_tables'> | null
+type Order = Tables<"orders"> & {
   order_items: Array<
-    Tables<'order_items'> & {
-      menu_items: Tables<'menu_items'> | null
+    Tables<"order_items"> & {
+      menu_items: Tables<"menu_items"> | null;
     }
-  >
-}
+  >;
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case "placed":
+      return <Clock className="w-5 h-5 text-blue-600" />;
+    case "preparing":
+      return <ChefHat className="w-5 h-5 text-orange-600" />;
+    case "served":
+      return <Utensils className="w-5 h-5 text-green-600" />;
+    case "completed":
+    case "paid":
+      return <CheckCircle className="w-5 h-5 text-green-600" />;
+    default:
+      return <Receipt className="w-5 h-5 text-gray-600" />;
+  }
+};
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case "placed":
+      return "bg-blue-50 text-blue-800 border-blue-200";
+    case "preparing":
+      return "bg-orange-50 text-orange-800 border-orange-200";
+    case "served":
+      return "bg-green-50 text-green-800 border-green-200";
+    case "completed":
+    case "paid":
+      return "bg-gray-50 text-gray-800 border-gray-200";
+    default:
+      return "bg-gray-50 text-gray-800 border-gray-200";
+  }
+};
+
+const getStatusText = (status: string) => {
+  switch (status) {
+    case "placed":
+      return "Order Placed";
+    case "preparing":
+      return "Being Prepared";
+    case "served":
+      return "Served";
+    case "completed":
+      return "Completed";
+    case "paid":
+      return "Paid";
+    default:
+      return status;
+  }
+};
 
 export default function OrdersPage() {
-  const params = useParams()
-  const router = useRouter()
-  const tableCode = params?.tableCode as string
+  const params = useParams();
+  const tableCode = params?.tableCode as string;
 
-  const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    fetchUserAndOrders()
-  }, [tableCode])
+    if (tableCode) {
+      checkUserAndFetchOrders();
+    }
+  }, [tableCode]);
 
-  const fetchUserAndOrders = async () => {
+  const checkUserAndFetchOrders = async () => {
     try {
-      // Get current authenticated user
-      const user = await getCurrentUser()
+      const user = await getCurrentUser();
       if (!user) {
-        setError('Please authenticate to view your orders')
-        setLoading(false)
-        return
+        setError("Please sign in to view your orders");
+        setLoading(false);
+        return;
       }
 
-      setUserEmail(user.email || null)
+      setCurrentUser(user);
+      await fetchOrders(user.email);
+    } catch (error) {
+      console.error("Error checking user:", error);
+      setError("Failed to load user session");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchOrders = async (userEmail: string, showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
+
+    try {
+      // Get table info first
+      const { data: tableData, error: tableError } = await supabase
+        .from("restaurant_tables")
+        .select("id")
+        .eq("table_code", tableCode)
+        .single();
+
+      if (tableError || !tableData) {
+        setError("Table not found");
+        return;
+      }
 
       // Fetch orders for this user at this table
-      const { data, error } = await supabase
-        .from('orders')
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
         .select(`
           *,
-          restaurant_tables (*),
           order_items (
             *,
             menu_items (*)
           )
         `)
-        .eq('customer_email', user.email || '')
-        .order('created_at', { ascending: false })
+        .eq("table_id", tableData.id)
+        .eq("customer_email", userEmail)
+        .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error('Error fetching orders:', error)
-        setError('Failed to load your orders')
-        return
+      if (ordersError) {
+        throw new Error(ordersError.message);
       }
 
-      // Filter orders for this table if available
-      const filteredOrders = data?.filter(order => 
-        order.restaurant_tables?.table_code === tableCode
-      ) || []
-
-      setOrders(filteredOrders as Order[])
-    } catch (error) {
-      console.error('Error:', error)
-      setError('Failed to load your orders')
+      setOrders((ordersData as Order[]) || []);
+    } catch (error: any) {
+      console.error("Error fetching orders:", error);
+      setError(error.message || "Failed to load orders");
     } finally {
-      setLoading(false)
+      if (showRefresh) setRefreshing(false);
     }
-  }
+  };
 
-  const getStatusMessage = (status: string) => {
-    switch (status) {
-      case 'placed': return 'Order Placed'
-      case 'preparing': return 'Being Prepared'
-      case 'served': return 'Served'
-      case 'completed': return 'Completed'
-      default: return 'Unknown Status'
+  const handleRefresh = () => {
+    if (currentUser) {
+      fetchOrders(currentUser.email, true);
     }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'placed': return 'bg-blue-100 text-blue-800'
-      case 'preparing': return 'bg-yellow-100 text-yellow-800'
-      case 'served': return 'bg-green-100 text-green-800'
-      case 'completed': return 'bg-gray-100 text-gray-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
+  };
 
   if (loading) {
     return (
-      <GuestLayout>
+      <GuestLayout showNavigation={false}>
         <div className="min-h-screen flex items-center justify-center">
-          <LoadingSpinner text="Loading your orders..." />
+          <LoadingSpinner text="Loading orders..." />
         </div>
       </GuestLayout>
-    )
+    );
   }
 
-  if (error) {
+  if (error && !currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="text-red-600 text-xl mb-4">⚠️ {error}</div>
-          <button
-            onClick={() => router.push(`/t/${tableCode}`)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
-          >
-            Browse Menu
-          </button>
+      <GuestLayout>
+        <div className="p-4">
+          <div className="text-center py-16">
+            <User className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Sign In Required</h3>
+            <p className="text-gray-500 mb-6">
+              You need to sign in to view your order history
+            </p>
+            <Button
+              variant="primary"
+              onClick={() => window.location.href = `/t/${tableCode}/cart`}
+            >
+              Go to Cart & Sign In
+            </Button>
+          </div>
         </div>
-      </div>
-    )
+      </GuestLayout>
+    );
   }
 
   return (
     <GuestLayout>
-      {/* Page Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4">
-        <div className="text-center">
-          <h1 className="text-xl font-bold text-gray-900">My Orders</h1>
-          <p className="text-sm text-gray-600">View your order history</p>
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-40">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Your Orders</h1>
+            <p className="text-sm text-gray-600">
+              Orders for Table {tableCode}
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </Button>
         </div>
       </div>
 
-      <div className="px-4 py-6">
-        {userEmail && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              Showing orders for: <span className="font-medium">{userEmail}</span>
-            </p>
+      <div className="p-4">
+        {currentUser && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div className="flex items-center gap-2 text-blue-800 text-sm">
+              <User className="w-4 h-4" />
+              <span>Signed in as {currentUser.email}</span>
+            </div>
           </div>
         )}
 
         {orders.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-gray-500 mb-4">
-              <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <p className="text-xl mb-2">No orders found</p>
-              <p>You haven't placed any orders at this table yet.</p>
+          <div className="text-center py-16">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Receipt className="w-10 h-10 text-gray-400" />
             </div>
-            <button
-              onClick={() => router.push(`/t/${tableCode}`)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold"
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No orders yet</h3>
+            <p className="text-gray-500 mb-6">
+              Your order history will appear here once you place an order
+            </p>
+            <Button
+              variant="primary"
+              onClick={() => window.location.href = `/t/${tableCode}`}
             >
-              Browse Menu & Order
-            </button>
+              Browse Menu
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <div key={order.id} className="bg-white rounded-lg shadow-sm p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-semibold">Order #{order.id.slice(-8).toUpperCase()}</h3>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status || 'placed')}`}>
-                        {getStatusMessage(order.status || 'placed')}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      {new Date(order.created_at || '').toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xl font-bold text-green-600">
-                      ₹{order.total_amount.toFixed(2)}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {order.order_items.length} item{order.order_items.length !== 1 ? 's' : ''}
+              <div key={order.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                {/* Order Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(order.status || "placed")}
+                    <div>
+                      <div className="font-semibold text-gray-900">
+                        Order #{order.id.slice(-8).toUpperCase()}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        {formatDate(order.created_at || "")}
+                      </div>
                     </div>
                   </div>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                      order.status || "placed"
+                    )}`}
+                  >
+                    {getStatusText(order.status || "placed")}
+                  </span>
                 </div>
 
-                <div className="space-y-2 mb-4">
+                {/* Order Items */}
+                <div className="space-y-2 mb-3">
                   {order.order_items.map((item) => (
                     <div key={item.id} className="flex justify-between items-center text-sm">
                       <div className="flex items-center gap-2">
-                        <span className={item.menu_items?.is_veg ? 'text-green-600' : 'text-red-600'}>
-                          {item.menu_items?.is_veg ? '🟢' : '🔴'}
+                        <span className="font-medium">
+                          {item.quantity}x {item.menu_items?.name || "Unknown Item"}
                         </span>
-                        <span>{item.menu_items?.name || 'Unknown Item'}</span>
-                        <span className="text-gray-500">x{item.quantity}</span>
+                        {item.menu_items?.is_veg && (
+                          <span className="text-green-600 text-xs">🟢</span>
+                        )}
                       </div>
-                      <span>₹{item.total_price.toFixed(2)}</span>
+                      <span className="text-gray-600">
+                        {formatCurrency(item.total_price)}
+                      </span>
                     </div>
                   ))}
                 </div>
 
+                {/* Order Total */}
+                <div className="border-t pt-3 flex justify-between items-center">
+                  <span className="font-semibold text-gray-900">Total</span>
+                  <span className="font-bold text-lg text-gray-900">
+                    {formatCurrency(order.total_amount)}
+                  </span>
+                </div>
+
+                {/* Order Notes */}
                 {order.notes && (
-                  <div className="p-3 bg-yellow-50 rounded-lg mb-4">
-                    <div className="text-sm">
-                      <span className="font-medium text-yellow-800">Notes: </span>
-                      <span className="text-yellow-700">{order.notes}</span>
-                    </div>
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="text-xs text-gray-500 mb-1">Notes:</div>
+                    <div className="text-sm text-gray-700">{order.notes}</div>
                   </div>
                 )}
 
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => router.push(`/t/${tableCode}/success?orderId=${order.id}`)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg text-sm font-medium"
-                  >
-                    View Details
-                  </button>
-                  {(order.status === 'placed' || order.status === 'preparing') && (
-                    <button
-                      onClick={() => window.location.reload()}
-                      className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-4 rounded-lg text-sm font-medium"
-                    >
-                      Refresh Status
-                    </button>
-                  )}
+                {/* Status Timeline */}
+                <div className="mt-4 pt-3 border-t">
+                  <div className="text-xs text-gray-500 mb-2">Order Status:</div>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${
+                      ["placed", "preparing", "served", "completed", "paid"].includes(order.status || "")
+                        ? "bg-blue-600" : "bg-gray-300"
+                    }`} />
+                    <span className="text-xs text-gray-600">Placed</span>
+
+                    <div className={`w-4 h-0.5 ${
+                      ["preparing", "served", "completed", "paid"].includes(order.status || "")
+                        ? "bg-orange-600" : "bg-gray-300"
+                    }`} />
+                    <div className={`w-2 h-2 rounded-full ${
+                      ["preparing", "served", "completed", "paid"].includes(order.status || "")
+                        ? "bg-orange-600" : "bg-gray-300"
+                    }`} />
+                    <span className="text-xs text-gray-600">Preparing</span>
+
+                    <div className={`w-4 h-0.5 ${
+                      ["served", "completed", "paid"].includes(order.status || "")
+                        ? "bg-green-600" : "bg-gray-300"
+                    }`} />
+                    <div className={`w-2 h-2 rounded-full ${
+                      ["served", "completed", "paid"].includes(order.status || "")
+                        ? "bg-green-600" : "bg-gray-300"
+                    }`} />
+                    <span className="text-xs text-gray-600">Served</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-
-        {/* Quick Actions */}
-        <div className="mt-8 space-y-3">
-          <button
-            onClick={() => router.push(`/t/${tableCode}`)}
-            className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-semibold"
-          >
-            Order More Items
-          </button>
-        </div>
-
-        {/* Help Section */}
-        <div className="mt-8 text-center text-sm text-gray-600">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="font-medium text-blue-800 mb-1">Need help with your orders?</p>
-            <p className="text-blue-700">Please contact our staff at your table</p>
-            <p className="text-blue-600 mt-2">Orders are automatically tracked and updated in real-time</p>
-          </div>
-        </div>
       </div>
     </GuestLayout>
-  )
+  );
 }

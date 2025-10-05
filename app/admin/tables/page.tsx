@@ -20,6 +20,7 @@ import {
   Trash2,
   Copy,
   CheckCircle,
+  Users,
 } from "lucide-react";
 
 type RestaurantTable = Tables<"restaurant_tables">;
@@ -309,14 +310,12 @@ export default function TableManagement() {
 
   return (
     <div>
-      <PageHeader
-        title="Table Management"
-        description="Manage restaurant tables and their QR codes"
-        breadcrumbs={[
-          { name: "Dashboard", href: "/admin/dashboard" },
-          { name: "Tables" },
-        ]}
-      >
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Table Management</h1>
+          <p className="text-gray-600 mt-1">Manage restaurant tables and their QR codes</p>
+        </div>
         <Button
           variant="primary"
           onClick={() => setShowAddModal(true)}
@@ -324,9 +323,9 @@ export default function TableManagement() {
         >
           Add New Table
         </Button>
-      </PageHeader>
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div>
         <Card>
           <div className="flex items-center justify-between mb-6">
             <div>

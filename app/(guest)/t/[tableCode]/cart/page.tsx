@@ -3,16 +3,23 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import {
-  sendEmailOTP,
-  verifyEmailOTP,
-  getCurrentUser,
-} from "@/lib/auth/email-auth";
-import { GuestLayout } from "@/components/guest/GuestLayout";
-import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { getCurrentUser, sendEmailOTP, verifyEmailOTP } from "@/lib/auth/email-auth";
 import type { Tables } from "@/types/database.types";
+import { GuestLayout } from "@/components/guest/GuestLayout";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { formatCurrency } from "@/lib/utils";
+import {
+  ArrowLeft,
+  Mail,
+  CheckCircle,
+  AlertCircle,
+  Plus,
+  Minus,
+  Trash2,
+  ShoppingCart
+} from "lucide-react";
 
 type RestaurantTable = Tables<"restaurant_tables">;
 
@@ -22,71 +29,52 @@ interface CartItem {
   price: number;
   quantity: number;
   is_veg: boolean;
-  description?: string | null;
 }
 
-export default function UnifiedCartPage() {
+export default function CartPage() {
   const params = useParams();
   const router = useRouter();
   const tableCode = params?.tableCode as string;
 
-  // State management
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [table, setTable] = useState<RestaurantTable | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  // Auth state
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Checkout State
+  const [step, setStep] = useState<"cart" | "email" | "otp" | "placing" | "success">("cart");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
-  const [authStep, setAuthStep] = useState<
-    "none" | "email" | "otp" | "placing"
-  >("none");
-  const [authLoading, setAuthLoading] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [orderPlacing, setOrderPlacing] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
 
-  // Order state
-  const [notes, setNotes] = useState("");
-  const [isOrdering, setIsOrdering] = useState(false);
+  // Table occupation state
+  const [occupiedByDifferentUser, setOccupiedByDifferentUser] = useState(false);
 
   useEffect(() => {
     if (tableCode) {
-      initializePage();
+      fetchTableAndCart();
+      checkCurrentUser();
     }
   }, [tableCode]);
 
-  // Listen for Supabase auth state changes
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setCurrentUser(session.user);
-        setEmail(session.user.email || "");
-        setAuthStep("none");
-      } else {
-        setCurrentUser(null);
-        setEmail("");
-        setAuthStep("none");
-        setIsOrdering(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const initializePage = async () => {
+  const checkCurrentUser = async () => {
     try {
-      setLoading(true);
-
-      // Check if user is already authenticated
       const user = await getCurrentUser();
       if (user) {
         setCurrentUser(user);
         setEmail(user.email || "");
-        setAuthStep("none");
       }
+    } catch (error) {
+      console.error("Error checking user:", error);
+    }
+  };
 
+  const fetchTableAndCart = async () => {
+    try {
       // Fetch table details
       const { data: tableData, error: tableError } = await supabase
         .from("restaurant_tables")
@@ -95,168 +83,204 @@ export default function UnifiedCartPage() {
         .eq("is_active", true)
         .single();
 
-      if (!tableError && tableData) {
-        setTable(tableData);
+      if (tableError || !tableData) {
+        setError("Table not found or inactive");
+        setLoading(false);
+        return;
       }
 
       // Load cart from localStorage
       const savedCart = localStorage.getItem(`cart_${tableCode}`);
-      if (savedCart) {
-        setCart(JSON.parse(savedCart));
+      const cartItems = savedCart ? JSON.parse(savedCart) : [];
+
+      // Check table session occupation
+      const { data: activeSession, error: sessionError } = await supabase
+        .from("table_sessions")
+        .select("customer_email")
+        .eq("table_id", tableData.id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (!sessionError && activeSession) {
+        const currentUserEmail = (await getCurrentUser())?.email;
+        if (currentUserEmail) {
+          setOccupiedByDifferentUser(activeSession.customer_email !== currentUserEmail);
+        } else {
+          setOccupiedByDifferentUser(true);
+        }
       }
+
+      setTable(tableData);
+      setCart(cartItems);
     } catch (error) {
-      console.error("Error initializing page:", error);
-      setError("Failed to load page");
+      console.error("Error:", error);
+      setError("Failed to load cart");
     } finally {
       setLoading(false);
     }
   };
 
-  const updateCartInStorage = (newCart: CartItem[]) => {
+  const updateCart = (newCart: CartItem[]) => {
+    setCart(newCart);
     if (newCart.length > 0) {
       localStorage.setItem(`cart_${tableCode}`, JSON.stringify(newCart));
     } else {
       localStorage.removeItem(`cart_${tableCode}`);
     }
+    // Trigger cart update event for layout
     window.dispatchEvent(new Event("storage"));
   };
 
-  const addToCart = (itemId: string) => {
-    const newCart = cart.map((item) =>
-      item.id === itemId ? { ...item, quantity: item.quantity + 1 } : item
-    );
-    setCart(newCart);
-    updateCartInStorage(newCart);
-  };
-
-  const removeFromCart = (itemId: string) => {
-    const newCart = cart
-      .map((item) =>
-        item.id === itemId
-          ? { ...item, quantity: Math.max(0, item.quantity - 1) }
-          : item
-      )
-      .filter((item) => item.quantity > 0);
-
-    setCart(newCart);
-    updateCartInStorage(newCart);
-  };
-
-  const removeItemCompletely = (itemId: string) => {
-    const newCart = cart.filter((item) => item.id !== itemId);
-    setCart(newCart);
-    updateCartInStorage(newCart);
-  };
-
-  const clearCart = () => {
-    setCart([]);
-    localStorage.removeItem(`cart_${tableCode}`);
-    window.dispatchEvent(new Event("storage"));
-  };
-
-  const getCartTotal = () => {
-    return cart.reduce((total, item) => total + item.price * item.quantity, 0);
-  };
-
-  const getCartItemCount = () => {
-    return cart.reduce((total, item) => total + item.quantity, 0);
-  };
-
-  const handlePlaceOrder = () => {
-    if (currentUser) {
-      // User is already authenticated, proceed directly to order placement
-      setAuthStep("placing");
-      placeOrder();
-    } else {
-      // User needs to authenticate
-      setIsOrdering(true);
-      setAuthStep("email");
-    }
-  };
-
-  const sendOTP = async () => {
-    if (!email || !email.includes("@")) {
-      setError("Please enter a valid email address");
+  const updateQuantity = (itemId: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      removeItem(itemId);
       return;
     }
 
-    setAuthLoading(true);
+    const newCart = cart.map(item =>
+      item.id === itemId ? { ...item, quantity: newQuantity } : item
+    );
+    updateCart(newCart);
+  };
+
+  const removeItem = (itemId: string) => {
+    const newCart = cart.filter(item => item.id !== itemId);
+    updateCart(newCart);
+  };
+
+  const clearCart = () => {
+    updateCart([]);
+  };
+
+  const getTotalAmount = () => {
+    return cart.reduce((total, item) => total + item.price * item.quantity, 0);
+  };
+
+  const getTotalItems = () => {
+    return cart.reduce((total, item) => total + item.quantity, 0);
+  };
+
+  const handleSendOTP = async () => {
+    if (!email.trim()) {
+      setError("Please enter your email address");
+      return;
+    }
+
+    setOtpSending(true);
     setError("");
 
     try {
-      const result = await sendEmailOTP(email);
-
+      const result = await sendEmailOTP(email.trim());
       if (result.success) {
-        setAuthStep("otp");
+        setStep("otp");
       } else {
         setError(result.error || "Failed to send OTP");
       }
     } catch (error) {
-      console.error("Error:", error);
       setError("Failed to send OTP. Please try again.");
     } finally {
-      setAuthLoading(false);
+      setOtpSending(false);
     }
   };
 
-  const verifyOTPAndPlaceOrder = async () => {
-    if (!otp || otp.length !== 6) {
-      setError("Please enter a valid 6-digit OTP");
+  const handleVerifyOTP = async () => {
+    if (!otp.trim()) {
+      setError("Please enter the OTP");
       return;
     }
 
-    setAuthLoading(true);
+    setOtpVerifying(true);
     setError("");
-    setAuthStep("placing");
 
     try {
-      const verifyResult = await verifyEmailOTP(email, otp);
-
-      if (!verifyResult.success) {
-        setError(verifyResult.error || "Invalid OTP");
-        setAuthStep("otp");
-        setAuthLoading(false);
-        return;
+      const result = await verifyEmailOTP(email, otp.trim());
+      if (result.success) {
+        setCurrentUser(result.user);
+        await placeOrder();
+      } else {
+        setError(result.error || "Invalid OTP");
       }
-
-      setCurrentUser(verifyResult.user);
-      await placeOrder();
     } catch (error) {
-      console.error("Error:", error);
       setError("Failed to verify OTP. Please try again.");
-      setAuthStep("otp");
-      setAuthLoading(false);
+    } finally {
+      setOtpVerifying(false);
     }
   };
 
   const placeOrder = async () => {
-    try {
-      const total = getCartTotal();
+    if (!table || cart.length === 0) return;
 
-      // Create order
+    setOrderPlacing(true);
+    setStep("placing");
+    setError("");
+
+    try {
+      // Check for existing active table session
+      const { data: existingSession, error: sessionCheckError } = await supabase
+        .from("table_sessions")
+        .select("*")
+        .eq("table_id", table.id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (sessionCheckError) {
+        throw new Error("Failed to check table session");
+      }
+
+      let sessionId: string;
+
+      if (existingSession) {
+        // Check if session belongs to different customer
+        if (existingSession.customer_email !== email) {
+          throw new Error("This table is currently occupied by another customer. Please wait until their session is completed.");
+        }
+        sessionId = existingSession.id;
+      } else {
+        // Create new table session
+        const { data: newSession, error: sessionError } = await supabase
+          .from("table_sessions")
+          .insert({
+            table_id: table.id,
+            customer_email: email,
+            status: "active",
+            session_started_at: new Date().toISOString(),
+            total_orders: 0,
+            total_amount: 0
+          })
+          .select()
+          .single();
+
+        if (sessionError || !newSession) {
+          throw new Error(sessionError?.message || "Failed to create table session");
+        }
+        sessionId = newSession.id;
+      }
+
+      // Create the order with session reference
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert({
-          table_id: table?.id,
-          customer_email: currentUser?.email || email,
-          total_amount: total,
-          notes: notes || null,
+          table_id: table.id,
+          table_session_id: sessionId,
+          customer_email: email,
+          total_amount: getTotalAmount(),
           status: "placed",
+          notes: `Order placed via QR code for table ${table.table_number}`
         })
         .select()
         .single();
 
-      if (orderError) {
-        throw new Error("Failed to create order");
+      if (orderError || !orderData) {
+        throw new Error(orderError?.message || "Failed to create order");
       }
 
       // Create order items
-      const orderItems = cart.map((item) => ({
+      const orderItems = cart.map(item => ({
         order_id: orderData.id,
         menu_item_id: item.id,
         quantity: item.quantity,
         unit_price: item.price,
-        total_price: item.price * item.quantity,
+        total_price: item.price * item.quantity
       }));
 
       const { error: itemsError } = await supabase
@@ -264,23 +288,53 @@ export default function UnifiedCartPage() {
         .insert(orderItems);
 
       if (itemsError) {
-        throw new Error("Failed to save order items");
+        throw new Error(itemsError.message || "Failed to add order items");
       }
 
-      // Clear cart and redirect
-      clearCart();
-      router.push(`/t/${tableCode}/success?orderId=${orderData.id}`);
-    } catch (error) {
-      console.error("Error placing order:", error);
-      setError("Failed to place order. Please try again.");
-      setAuthStep(currentUser ? "none" : "otp");
-      setAuthLoading(false);
+      // Update session totals
+      const { error: updateSessionError } = await supabase
+        .from("table_sessions")
+        .update({
+          total_orders: (existingSession?.total_orders || 0) + 1,
+          total_amount: (existingSession?.total_amount || 0) + getTotalAmount()
+        })
+        .eq("id", sessionId);
+
+      if (updateSessionError) {
+        console.error("Failed to update session totals:", updateSessionError);
+        // Don't throw error as order is already placed successfully
+      }
+
+      // Clear cart
+      updateCart([]);
+      setOrderId(orderData.id);
+      setStep("success");
+
+    } catch (error: any) {
+      console.error("Order placement error:", error);
+      setError(error.message || "Failed to place order. Please try again.");
+      setStep("cart");
+    } finally {
+      setOrderPlacing(false);
+    }
+  };
+
+  const handlePlaceOrder = async () => {
+    if (occupiedByDifferentUser) {
+      setError("Table is currently occupied by another customer");
+      return;
+    }
+
+    if (currentUser) {
+      await placeOrder();
+    } else {
+      setStep("email");
     }
   };
 
   if (loading) {
     return (
-      <GuestLayout>
+      <GuestLayout showNavigation={false}>
         <div className="min-h-screen flex items-center justify-center">
           <LoadingSpinner text="Loading cart..." />
         </div>
@@ -290,357 +344,310 @@ export default function UnifiedCartPage() {
 
   return (
     <GuestLayout>
-      {/* Page Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4">
-        <div className="text-center">
-          <h1 className="text-xl font-bold text-gray-900">My Cart</h1>
-          <p className="text-sm text-gray-600">
-            Table {table?.table_number} • {getCartItemCount()} item
-            {getCartItemCount() !== 1 ? "s" : ""}
-          </p>
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          {(step === "email" || step === "otp") && (
+            <button
+              onClick={() => {
+                if (step === "otp") setStep("email");
+                else setStep("cart");
+              }}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-gray-900">
+              {step === "success" ? "Order Placed!" :
+               step === "placing" ? "Placing Order..." :
+               step === "email" ? "Enter Email" :
+               step === "otp" ? "Verify OTP" : "Your Cart"}
+            </h1>
+            <p className="text-sm text-gray-600">
+              Table {table?.table_number}
+            </p>
+          </div>
+          {step === "cart" && cart.length > 0 && (
+            <button
+              onClick={clearCart}
+              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="px-4 py-6">
-        {cart.length === 0 ? (
-          /* Empty Cart State */
-          <div className="text-center py-16">
-            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-4xl">🛒</span>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Your cart is empty
-            </h2>
-            <p className="text-gray-600 mb-8">
-              Browse our menu and add items to get started
-            </p>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => router.push(`/t/${tableCode}`)}
-            >
-              🍽️ Browse Menu
-            </Button>
-          </div>
-        ) : (
+      <div className="p-4">
+        {/* Cart View */}
+        {step === "cart" && (
           <>
-            {/* Cart Items */}
-            <div className="space-y-4 mb-6">
-              {cart.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-xl shadow-sm border border-gray-100 p-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge
-                          variant={item.is_veg ? "success" : "danger"}
-                          size="sm"
-                          className="flex items-center gap-1"
-                        >
-                          <span>{item.is_veg ? "🟢" : "🔴"}</span>
-                          {item.is_veg ? "VEG" : "NON-VEG"}
-                        </Badge>
-                      </div>
-                      <h3 className="font-bold text-lg text-gray-900 mb-1">
-                        {item.name}
-                      </h3>
-                      {item.description && (
-                        <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-                          {item.description}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <div className="text-xl font-bold text-green-600">
-                          ₹{item.price.toFixed(2)}{" "}
-                          <span className="text-sm text-gray-500">each</span>
-                        </div>
-                        <div className="text-lg font-bold text-gray-900">
-                          ₹{(item.price * item.quantity).toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Quantity Controls */}
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1">
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => removeFromCart(item.id)}
-                        className="w-10 h-10 rounded-full p-0"
-                      >
-                        −
-                      </Button>
-                      <span className="font-bold text-lg min-w-[3rem] text-center">
-                        {item.quantity}
-                      </span>
-                      <Button
-                        variant="success"
-                        size="sm"
-                        onClick={() => addToCart(item.id)}
-                        className="w-10 h-10 rounded-full p-0"
-                      >
-                        +
-                      </Button>
-                    </div>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeItemCompletely(item.id)}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      🗑️ Remove
-                    </Button>
-                  </div>
+            {cart.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ShoppingCart className="w-10 h-10 text-gray-400" />
                 </div>
-              ))}
-            </div>
-
-            {/* Order Summary */}
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-900">
-                  Order Summary
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearCart}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  Clear Cart
-                </Button>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">
-                    Items ({getCartItemCount()})
-                  </span>
-                  <span className="font-medium">
-                    ₹{getCartTotal().toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Taxes & Charges</span>
-                  <span className="font-medium text-green-600">₹0.00</span>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xl font-bold text-gray-900">Total</span>
-                  <span className="text-2xl font-bold text-green-600">
-                    ₹{getCartTotal().toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Special Instructions */}
-            {isOrdering && (
-              <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-3">
-                  Special Instructions (Optional)
-                </h3>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any special requests or dietary requirements..."
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            )}
-
-            {/* Authentication Section - Only show when ordering */}
-            {isOrdering && (
-              <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                {currentUser && authStep === "none" ? (
-                  /* User Already Authenticated */
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl">✅</span>
-                    </div>
-                    <h3 className="text-lg font-semibold text-green-800 mb-2">
-                      Ready to Order!
-                    </h3>
-                    <p className="text-gray-600 mb-4">
-                      Signed in as {currentUser.email}
-                    </p>
-                    <Button
-                      variant="success"
-                      size="lg"
-                      fullWidth
-                      onClick={() => {
-                        setAuthStep("placing");
-                        placeOrder();
-                      }}
-                      disabled={authLoading}
-                    >
-                      {authLoading ? "Placing Order..." : "🍽️ Place Order Now"}
-                    </Button>
-                  </div>
-                ) : (
-                  /* Authentication Required */
-                  <>
-                    {authStep === "email" && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-4">
-                          Enter Your Email Address
-                        </h3>
-                        <p className="text-gray-600 text-sm mb-4">
-                          We'll send you a verification code via email to
-                          confirm your order
-                        </p>
-                        <div className="space-y-4">
-                          <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="Enter your email address"
-                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                          />
-                          {error && (
-                            <div className="text-red-600 text-sm">{error}</div>
-                          )}
-                          <Button
-                            variant="primary"
-                            size="lg"
-                            fullWidth
-                            onClick={sendOTP}
-                            disabled={authLoading || !email.includes("@")}
-                          >
-                            {authLoading
-                              ? "Sending OTP..."
-                              : "Send Verification Code"}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    {authStep === "otp" && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-4">
-                          Verify OTP
-                        </h3>
-                        <p className="text-gray-600 text-sm mb-4">
-                          Enter the 6-digit OTP sent to {email}
-                        </p>
-                        <div className="space-y-4">
-                          <input
-                            type="text"
-                            value={otp}
-                            onChange={(e) =>
-                              setOtp(
-                                e.target.value.replace(/\D/g, "").slice(0, 6)
-                              )
-                            }
-                            placeholder="Enter 6-digit OTP"
-                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-center text-2xl tracking-widest"
-                            maxLength={6}
-                          />
-                          {error && (
-                            <div className="text-red-600 text-sm">{error}</div>
-                          )}
-                          <div className="flex gap-3">
-                            <Button
-                              variant="secondary"
-                              size="lg"
-                              fullWidth
-                              onClick={() => {
-                                setAuthStep("email");
-                                setOtp("");
-                                setError("");
-                              }}
-                            >
-                              Change Email
-                            </Button>
-                            <Button
-                              variant="success"
-                              size="lg"
-                              fullWidth
-                              onClick={verifyOTPAndPlaceOrder}
-                              disabled={authLoading || otp.length !== 6}
-                            >
-                              {authLoading ? "Placing Order..." : "Place Order"}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {authStep === "placing" && (
-                      <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                        <h3 className="text-lg font-semibold mb-2">
-                          Placing Your Order...
-                        </h3>
-                        <p className="text-gray-600">
-                          Please wait while we process your order
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            {!isOrdering ? (
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  fullWidth
-                  onClick={() => router.push(`/t/${tableCode}`)}
-                >
-                  🍽️ Add More Items
-                </Button>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Your cart is empty</h3>
+                <p className="text-gray-500 mb-6">Add items from the menu to get started</p>
                 <Button
                   variant="primary"
-                  size="lg"
-                  fullWidth
-                  onClick={handlePlaceOrder}
-                  className="font-bold"
+                  onClick={() => router.push(`/t/${tableCode}`)}
                 >
-                  {currentUser ? "🍽️ Place Order" : "🍽️ Place Order"}
+                  Browse Menu
                 </Button>
               </div>
             ) : (
-              <div className="mb-6">
+              <div className="space-y-6">
+                {/* Cart Items */}
+                <div className="space-y-4">
+                  {cart.map((item) => (
+                    <div key={item.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-gray-900">{item.name}</h3>
+                            {item.is_veg && <span className="text-green-600 text-sm">🟢</span>}
+                          </div>
+                          <div className="text-gray-600 text-sm">
+                            {formatCurrency(item.price)} each
+                          </div>
+                          <div className="font-bold text-gray-900 mt-1">
+                            {formatCurrency(item.price * item.quantity)}
+                          </div>
+                        </div>
+
+                        {/* Quantity Controls */}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="font-semibold text-lg min-w-[2rem] text-center">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                            className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Order Summary */}
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Order Summary</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Items ({getTotalItems()})</span>
+                      <span>{formatCurrency(getTotalAmount())}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Taxes & Fees</span>
+                      <span>Included</span>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between font-bold">
+                      <span>Total</span>
+                      <span>{formatCurrency(getTotalAmount())}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table Occupation Warning */}
+                {occupiedByDifferentUser && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex">
+                      <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                      <div className="ml-3">
+                        <p className="text-sm text-yellow-800">
+                          <span className="font-medium">Table Occupied:</span> This table is currently being used by another customer. Please wait until their order is completed.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* User Info */}
+                {currentUser && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 text-green-800">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="font-medium">Signed in as {currentUser.email}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Place Order Button */}
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   size="lg"
-                  fullWidth
-                  onClick={() => {
-                    setIsOrdering(false);
-                    setAuthStep("none");
-                    setError("");
-                    setOtp("");
-                  }}
+                  onClick={handlePlaceOrder}
+                  disabled={orderPlacing || occupiedByDifferentUser}
+                  className="w-full"
                 >
-                  ← Back to Cart
+                  {occupiedByDifferentUser ? "Table Occupied" :
+                   orderPlacing ? "Placing Order..." :
+                   `Place Order • ${formatCurrency(getTotalAmount())}`}
                 </Button>
               </div>
             )}
-
-            {/* Help Text */}
-            <div className="text-center text-sm text-gray-600">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="font-medium text-blue-800 mb-1">💡 Tip</p>
-                <p className="text-blue-700">
-                  {isOrdering
-                    ? "Your order will be sent directly to the kitchen once placed"
-                    : "You can modify quantities or remove items before ordering"}
-                </p>
-              </div>
-            </div>
           </>
+        )}
+
+        {/* Email Step */}
+        {step === "email" && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <Mail className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Enter Your Email
+              </h2>
+              <p className="text-gray-600">
+                We'll send you an OTP to confirm your order
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <Input
+                type="email"
+                placeholder="your.email@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full"
+              />
+
+              {error && (
+                <div className="flex items-center gap-2 text-red-600 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={handleSendOTP}
+                disabled={otpSending}
+                className="w-full"
+              >
+                {otpSending ? "Sending OTP..." : "Send OTP"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* OTP Step */}
+        {step === "otp" && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <Mail className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Enter OTP
+              </h2>
+              <p className="text-gray-600">
+                We've sent a 6-digit code to {email}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <Input
+                type="text"
+                placeholder="Enter 6-digit OTP"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                className="w-full text-center text-lg tracking-widest"
+                maxLength={6}
+              />
+
+              {error && (
+                <div className="flex items-center gap-2 text-red-600 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={handleVerifyOTP}
+                disabled={otpVerifying}
+                className="w-full"
+              >
+                {otpVerifying ? "Verifying..." : "Verify & Place Order"}
+              </Button>
+
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleSendOTP}
+                disabled={otpSending}
+                className="w-full"
+              >
+                {otpSending ? "Resending..." : "Resend OTP"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Placing Order */}
+        {step === "placing" && (
+          <div className="text-center py-16">
+            <LoadingSpinner size="lg" />
+            <div className="mt-4 text-lg font-medium text-gray-900">
+              Placing your order...
+            </div>
+            <div className="text-gray-600">
+              Please don't close this page
+            </div>
+          </div>
+        )}
+
+        {/* Success */}
+        {step === "success" && (
+          <div className="text-center py-16 space-y-6">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-10 h-10 text-green-600" />
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Order Placed Successfully!
+              </h2>
+              <p className="text-gray-600">
+                Your order has been sent to the kitchen
+              </p>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="text-sm text-gray-600 mb-1">Order ID</div>
+              <div className="font-mono text-lg font-semibold">{orderId}</div>
+            </div>
+
+            <div className="space-y-3">
+              <Button
+                variant="primary"
+                onClick={() => router.push(`/t/${tableCode}`)}
+                className="w-full"
+              >
+                Order More Items
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => router.push(`/t/${tableCode}/orders`)}
+                className="w-full"
+              >
+                View My Orders
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </GuestLayout>
