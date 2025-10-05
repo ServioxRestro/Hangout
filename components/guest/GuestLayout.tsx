@@ -1,10 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/email-auth";
-import { supabase } from "@/lib/supabase/client";
-import { GuestNavigation } from "./GuestNavigation";
+import { usePathname, useParams } from "next/navigation";
+import Link from "next/link";
+import {
+  Menu as MenuIcon,
+  ShoppingCart,
+  Clock,
+  Gift,
+  User,
+} from "lucide-react";
 
 interface GuestLayoutProps {
   children: React.ReactNode;
@@ -15,140 +20,126 @@ export function GuestLayout({
   children,
   showNavigation = true,
 }: GuestLayoutProps) {
+  const [cartCount, setCartCount] = useState(0);
+  const pathname = usePathname();
   const params = useParams();
   const tableCode = params?.tableCode as string;
 
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
-  const [cartItemCount, setCartItemCount] = useState(0);
-  const [tableNumber, setTableNumber] = useState<number | undefined>(undefined);
-
+  // Listen for cart updates from localStorage
   useEffect(() => {
-    if (tableCode) {
-      fetchUserData();
-      fetchCartCount();
-      fetchTableInfo();
+    const updateCartCount = () => {
+      if (!tableCode) return;
 
-      // Set up real-time subscriptions for orders
-      const subscription = supabase
-        .channel("guest-layout")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "orders",
-          },
-          () => {
-            fetchActiveOrders();
-          }
-        )
-        .subscribe();
-
-      return () => {
-        subscription.unsubscribe();
-      };
-    }
-  }, [tableCode]);
-
-  useEffect(() => {
-    // Listen for cart changes in localStorage
-    const handleStorageChange = () => {
-      fetchCartCount();
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [tableCode]);
-
-  const fetchTableInfo = async () => {
-    try {
-      const { data: table, error } = await supabase
-        .from("restaurant_tables")
-        .select("table_number")
-        .eq("table_code", tableCode)
-        .eq("is_active", true)
-        .single();
-
-      if (!error && table) {
-        setTableNumber(table.table_number);
-      }
-    } catch (error) {
-      console.error("Error fetching table info:", error);
-    }
-  };
-
-  const fetchUserData = async () => {
-    try {
-      const user = await getCurrentUser();
-      if (user) {
-        setUserEmail(user.email || null);
-        await fetchActiveOrders(user.email);
-      }
-    } catch (error) {
-      console.error("Error fetching user data:", error);
-    }
-  };
-
-  const fetchActiveOrders = async (email?: string) => {
-    try {
-      if (!email) {
-        const user = await getCurrentUser();
-        email = user?.email;
-      }
-
-      if (email) {
-        const { data, error } = await supabase
-          .from("orders")
-          .select("id, restaurant_tables!inner(table_code)")
-          .eq("customer_email", email)
-          .eq("restaurant_tables.table_code", tableCode)
-          .in("status", ["placed", "preparing", "served"]);
-
-        if (!error && data) {
-          setActiveOrdersCount(data.length);
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching active orders:", error);
-    }
-  };
-
-  const fetchCartCount = () => {
-    try {
-      const savedCart = localStorage.getItem(`cart_${tableCode}`);
-      if (savedCart) {
-        const cart = JSON.parse(savedCart);
-        const totalItems = cart.reduce(
+      try {
+        const cart = JSON.parse(
+          localStorage.getItem(`cart_${tableCode}`) || "[]"
+        );
+        const totalCount = cart.reduce(
           (sum: number, item: any) => sum + item.quantity,
           0
         );
-        setCartItemCount(totalItems);
-      } else {
-        setCartItemCount(0);
+        setCartCount(totalCount);
+      } catch (error) {
+        console.error("Error parsing cart:", error);
       }
-    } catch (error) {
-      console.error("Error fetching cart count:", error);
-      setCartItemCount(0);
-    }
-  };
+    };
+
+    // Initial count
+    updateCartCount();
+
+    // Listen for storage events
+    window.addEventListener("storage", updateCartCount);
+
+    // Custom event for same-page updates
+    const handleCartUpdate = () => updateCartCount();
+    window.addEventListener("cartUpdated", handleCartUpdate);
+
+    return () => {
+      window.removeEventListener("storage", updateCartCount);
+      window.removeEventListener("cartUpdated", handleCartUpdate);
+    };
+  }, [tableCode]);
+
+  const getTabProps = (path: string) => ({
+    isActive: pathname === path,
+    href: tableCode ? path : "#",
+  });
+
+  const menuTab = getTabProps(`/t/${tableCode}`);
+  const cartTab = getTabProps(`/t/${tableCode}/cart`);
+  const ordersTab = getTabProps(`/t/${tableCode}/orders`);
+  const offersTab = getTabProps(`/t/${tableCode}/offers`);
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {showNavigation && (
-        <GuestNavigation
-          tableCode={tableCode}
-          tableNumber={tableNumber}
-          activeOrdersCount={activeOrdersCount}
-          cartItemCount={cartItemCount}
-          userEmail={userEmail}
-        />
-      )}
+      {/* Main content with bottom padding for navigation */}
+      <div className={showNavigation ? "pb-20" : ""}>{children}</div>
 
-      {/* Main content with proper spacing for navigation */}
-      <main className={showNavigation ? "pt-0 md:pt-16 pb-20 md:pb-0" : ""}>
-        {children}
-      </main>
+      {/* Bottom Tab Navigation */}
+      {showNavigation && tableCode && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+          <div className="grid grid-cols-4 h-16">
+            {/* Offers Tab */}
+            <Link
+              href={offersTab.href}
+              className={`flex flex-col items-center justify-center space-y-1 transition-colors ${
+                offersTab.isActive
+                  ? "text-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Gift className="w-5 h-5" />
+              <span className="text-xs font-medium">Offers</span>
+            </Link>
+
+            {/* Menu Tab */}
+            <Link
+              href={menuTab.href}
+              className={`flex flex-col items-center justify-center space-y-1 transition-colors ${
+                menuTab.isActive
+                  ? "text-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <MenuIcon className="w-5 h-5" />
+              <span className="text-xs font-medium">Menu</span>
+            </Link>
+
+            {/* Cart Tab */}
+            <Link
+              href={cartTab.href}
+              className={`flex flex-col items-center justify-center space-y-1 transition-colors relative ${
+                cartTab.isActive
+                  ? "text-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <div className="relative">
+                <ShoppingCart className="w-5 h-5" />
+                {cartCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                    {cartCount > 9 ? "9+" : cartCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-xs font-medium">Cart</span>
+            </Link>
+
+            {/* Orders Tab */}
+            <Link
+              href={ordersTab.href}
+              className={`flex flex-col items-center justify-center space-y-1 transition-colors ${
+                ordersTab.isActive
+                  ? "text-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Clock className="w-5 h-5" />
+              <span className="text-xs font-medium">Orders</span>
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

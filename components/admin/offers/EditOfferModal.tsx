@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { X } from "lucide-react";
 import Button from "@/components/admin/Button";
+import ImageUpload from "@/components/admin/ImageUpload";
 
 type Offer = {
   id: string;
@@ -23,6 +24,7 @@ type Offer = {
   valid_hours_end: string | null;
   target_customer_type: string | null;
   promo_code: string | null;
+  image_url: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -41,7 +43,8 @@ export default function EditOfferModal({ offer, onClose, onSuccess }: EditOfferM
     priority: offer.priority,
     start_date: offer.start_date ? offer.start_date.split('T')[0] : '',
     end_date: offer.end_date ? offer.end_date.split('T')[0] : '',
-    usage_limit: offer.usage_limit
+    usage_limit: offer.usage_limit,
+    image_url: offer.image_url || ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -110,6 +113,21 @@ export default function EditOfferModal({ offer, onClose, onSuccess }: EditOfferM
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               rows={2}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Promotional Image (Optional)
+            </label>
+            <ImageUpload
+              currentImage={formData.image_url}
+              onImageChange={(imageUrl) =>
+                setFormData(prev => ({ ...prev, image_url: imageUrl || "" }))
+              }
+              folder="offers"
+              maxSizeInMB={5}
+              disabled={loading}
             />
           </div>
 

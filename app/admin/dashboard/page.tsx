@@ -15,6 +15,9 @@ import {
   RefreshCw,
   ChevronRight,
   Archive,
+  Clock,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/constants";
 
@@ -289,7 +292,7 @@ export default function AdminDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
                 Dashboard Overview
@@ -298,7 +301,7 @@ export default function AdminDashboard() {
                 Monitor restaurant performance and key metrics
               </p>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
               <Button
                 variant="secondary"
                 onClick={() => fetchDashboardData(true)}
@@ -308,6 +311,7 @@ export default function AdminDashboard() {
                   />
                 }
                 disabled={refreshing}
+                className="w-full sm:w-auto"
               >
                 Refresh
               </Button>
@@ -315,6 +319,7 @@ export default function AdminDashboard() {
                 variant="primary"
                 onClick={() => (window.location.href = "/admin/orders")}
                 leftIcon={<ChevronRight className="w-4 h-4" />}
+                className="w-full sm:w-auto"
               >
                 Manage Orders
               </Button>
@@ -322,7 +327,7 @@ export default function AdminDashboard() {
           </div>
         </div>
         {/* Simple Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
           <StatsCard
             title="Active Orders"
             value={stats.activeOrders}
@@ -356,7 +361,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Navigation */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Card>
             <div className="p-4 text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">

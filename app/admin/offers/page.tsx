@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
+import RoleGuard from "@/components/admin/RoleGuard";
 import {
   Plus,
   Edit,
@@ -45,6 +46,7 @@ type Offer = {
   valid_hours_end: string | null;
   target_customer_type: string | null;
   promo_code: string | null;
+  image_url: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -282,11 +284,12 @@ export default function OffersPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
+    <RoleGuard requiredRoute="/admin/offers">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
             <h1 className="text-2xl font-bold text-gray-900">Offer Management</h1>
             <p className="text-gray-600 mt-1">
               Create and manage promotional offers for your restaurant
@@ -525,10 +528,18 @@ export default function OffersPage() {
                         onChange={() => toggleOfferSelection(offer.id)}
                         className="rounded border-gray-300"
                       />
-                      <div className={`p-2 bg-${config?.color || 'gray'}-100 rounded-lg`}>
-                        <Icon className={`w-6 h-6 text-${config?.color || 'gray'}-600`} />
-                      </div>
-                      <div>
+                      {offer.image_url ? (
+                        <img
+                          src={offer.image_url}
+                          alt={offer.name}
+                          className="w-16 h-16 rounded-lg object-cover border border-gray-200"
+                        />
+                      ) : (
+                        <div className={`p-2 bg-${config?.color || 'gray'}-100 rounded-lg`}>
+                          <Icon className={`w-6 h-6 text-${config?.color || 'gray'}-600`} />
+                        </div>
+                      )}
+                      <div className="flex-1">
                         <div className="flex items-center space-x-2">
                           <h3 className="text-lg font-medium text-gray-900">{offer.name}</h3>
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${
@@ -629,6 +640,7 @@ export default function OffersPage() {
           }}
         />
       )}
-    </div>
+      </div>
+    </RoleGuard>
   );
 }

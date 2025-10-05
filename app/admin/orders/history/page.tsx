@@ -14,9 +14,11 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Bell,
   DollarSign,
   User,
   Hash,
+  X,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
 
@@ -33,9 +35,11 @@ type FilterStatus =
   | "all"
   | "placed"
   | "preparing"
+  | "ready"
   | "served"
   | "completed"
-  | "paid";
+  | "paid"
+  | "cancelled";
 
 export default function OrderHistoryPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -60,7 +64,7 @@ export default function OrderHistoryPage() {
         .select(
           `
           *,
-          restaurant_tables!inner (
+          restaurant_tables (
             id,
             table_number,
             table_code
@@ -76,6 +80,15 @@ export default function OrderHistoryPage() {
               price,
               is_veg
             )
+          ),
+          created_by_admin:admin!orders_created_by_admin_id_fkey (
+            id,
+            email
+          ),
+          created_by_staff:staff!orders_created_by_staff_id_fkey (
+            id,
+            email,
+            name
           )
         `
         )
@@ -137,6 +150,28 @@ export default function OrderHistoryPage() {
     setFilteredOrders(filtered);
   };
 
+  const getCreatorInfo = (order: Order) => {
+    if (order.created_by_type === 'admin' && order.created_by_admin) {
+      return {
+        type: 'Admin',
+        name: order.created_by_admin.email,
+        icon: '👑'
+      };
+    } else if (order.created_by_type === 'staff' && order.created_by_staff) {
+      return {
+        type: 'Staff',
+        name: order.created_by_staff.name || order.created_by_staff.email,
+        icon: '👤'
+      };
+    } else {
+      return {
+        type: 'System',
+        name: 'Unknown',
+        icon: '🤖'
+      };
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       placed: {
@@ -146,6 +181,10 @@ export default function OrderHistoryPage() {
       preparing: {
         color: "bg-yellow-50 text-yellow-700 border-yellow-200",
         icon: AlertCircle,
+      },
+      ready: {
+        color: "bg-orange-50 text-orange-700 border-orange-200",
+        icon: Bell,
       },
       served: {
         color: "bg-green-50 text-green-700 border-green-200",
@@ -158,6 +197,10 @@ export default function OrderHistoryPage() {
       paid: {
         color: "bg-purple-50 text-purple-700 border-purple-200",
         icon: CheckCircle,
+      },
+      cancelled: {
+        color: "bg-red-50 text-red-700 border-red-200",
+        icon: X,
       },
     };
 
@@ -192,7 +235,7 @@ export default function OrderHistoryPage() {
         [
           order.id,
           new Date(order.created_at || "").toLocaleDateString(),
-          `Table ${order.restaurant_tables?.table_number || "Unknown"}`,
+          order.restaurant_tables ? `Table ${order.restaurant_tables.table_number}` : "Takeaway",
           order.customer_phone || "",
           order.order_items.length + " items",
           `${formatCurrency(order.total_amount)}`,
@@ -239,11 +282,14 @@ export default function OrderHistoryPage() {
         <div className="text-center">
           <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-1">
             <span className="font-bold text-sm">
-              {record.restaurant_tables?.table_number || "?"}
+              {record.restaurant_tables?.table_number || "📦"}
             </span>
           </div>
           <div className="text-xs text-gray-500">
-            Table {record.restaurant_tables?.table_number || "Unknown"}
+            {record.restaurant_tables ?
+              `Table ${record.restaurant_tables.table_number}` :
+              "Takeaway"
+            }
           </div>
         </div>
       ),
@@ -299,6 +345,22 @@ export default function OrderHistoryPage() {
       key: "status",
       title: "Status",
       render: (status: string) => getStatusBadge(status),
+    },
+    {
+      key: "creator",
+      title: "Created By",
+      render: (_: any, record: Order) => {
+        const creator = getCreatorInfo(record);
+        return (
+          <div className="flex items-center">
+            <span className="mr-2">{creator.icon}</span>
+            <div>
+              <div className="text-xs text-gray-500">{creator.type}</div>
+              <div className="font-medium text-gray-900 text-sm">{creator.name}</div>
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: "actions",
@@ -375,9 +437,11 @@ export default function OrderHistoryPage() {
                 <option value="all">All Status</option>
                 <option value="placed">Placed</option>
                 <option value="preparing">Preparing</option>
+                <option value="ready">Ready</option>
                 <option value="served">Served</option>
                 <option value="completed">Completed</option>
                 <option value="paid">Paid</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </div>
 

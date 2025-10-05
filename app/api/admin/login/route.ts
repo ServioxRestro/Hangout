@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { adminId, email } = await request.json()
+    const { userId, email, role, name } = await request.json()
+    console.log('Creating session for:', { userId, email, role, name });
 
-    if (!adminId || !email) {
+    if (!userId || !email || !role) {
+      console.log('Missing required fields for session creation');
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -13,11 +15,14 @@ export async function POST(request: NextRequest) {
 
     // Create session data
     const sessionData = {
-      id: adminId,
+      id: userId,
       email,
-      role: 'super_admin',
+      role,
+      name: name || null,
       exp: Date.now() + (24 * 60 * 60 * 1000) // 24 hours expiration
     }
+
+    console.log('Session data created:', sessionData);
 
     const sessionCookie = btoa(JSON.stringify(sessionData))
 
@@ -34,6 +39,7 @@ export async function POST(request: NextRequest) {
       path: '/'
     })
 
+    console.log('Session cookie set successfully for:', email);
     return response
   } catch (error) {
     return NextResponse.json(

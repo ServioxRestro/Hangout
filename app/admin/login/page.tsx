@@ -1,50 +1,81 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { loginAdmin } from '@/lib/auth'
-import Card from '@/components/admin/Card'
-import Button from '@/components/admin/Button'
-import FormField from '@/components/admin/FormField'
-import Input from '@/components/admin/Input'
-import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Card from "@/components/admin/Card";
+import Button from "@/components/admin/Button";
+import FormField from "@/components/admin/FormField";
+import Input from "@/components/admin/Input";
+import { Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 export default function AdminLoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const router = useRouter()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
-    const result = await loginAdmin(email, password)
-
-    if (result.success && result.admin) {
-      // Store admin session in httpOnly cookie via API
-      const response = await fetch('/api/admin/login', {
-        method: 'POST',
+    try {
+      // Call server-side authentication API
+      const authResponse = await fetch("/api/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ adminId: result.admin.id, email: result.admin.email }),
-      })
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
 
-      if (response.ok) {
-        router.push('/admin/dashboard')
+      const authResult = await authResponse.json();
+
+      if (authResponse.ok && authResult.success && authResult.user) {
+        // Store session in httpOnly cookie via API
+        const sessionResponse = await fetch("/api/admin/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: authResult.user.id,
+            email: authResult.user.email,
+            role: authResult.user.role,
+            name: authResult.user.name,
+          }),
+        });
+
+        if (sessionResponse.ok) {
+          // Redirect based on user role
+          const defaultRoutes = {
+            super_admin: "/admin/dashboard",
+            manager: "/admin/dashboard",
+            waiter: "/admin/orders"
+          };
+
+          const redirectRoute = defaultRoutes[authResult.user.role as keyof typeof defaultRoutes] || "/admin/dashboard";
+
+          // Redirect user based on their role
+          router.push(redirectRoute);
+        } else {
+          setError("Session creation failed");
+        }
       } else {
-        setError('Session creation failed')
+        setError(authResult.error || "Login failed");
       }
-    } else {
-      setError(result.error || 'Login failed')
+    } catch (error) {
+      console.error("Login error:", error);
+      setError("Network error. Please try again.");
     }
 
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -55,7 +86,7 @@ export default function AdminLoginPage() {
             <span className="text-white font-bold text-2xl">H</span>
           </div>
         </div>
-        
+
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
             Welcome Back
@@ -93,7 +124,7 @@ export default function AdminLoginPage() {
 
             <FormField label="Password" required>
               <Input
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
@@ -125,13 +156,19 @@ export default function AdminLoginPage() {
                   type="checkbox"
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+                <label
+                  htmlFor="remember-me"
+                  className="ml-2 block text-sm text-gray-700"
+                >
                   Remember me
                 </label>
               </div>
 
               <div className="text-sm">
-                <a href="#" className="font-medium text-blue-600 hover:text-blue-500 transition-colors">
+                <a
+                  href="#"
+                  className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
+                >
                   Forgot password?
                 </a>
               </div>
@@ -145,7 +182,7 @@ export default function AdminLoginPage() {
               className="w-full"
               leftIcon={!loading ? <Lock className="w-4 h-4" /> : undefined}
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
@@ -153,9 +190,10 @@ export default function AdminLoginPage() {
           <div className="mt-6 pt-6 border-t border-gray-200">
             <div className="text-center">
               <div className="text-sm text-gray-500">
-                Secure access to{' '}
+                Secure access to{" "}
                 <span className="font-semibold text-gray-900">
-                  {process.env.NEXT_PUBLIC_RESTAURANT_NAME || 'Restaurant'} Admin
+                  {process.env.NEXT_PUBLIC_RESTAURANT_NAME || "Restaurant"}{" "}
+                  Admin
                 </span>
               </div>
             </div>
@@ -168,18 +206,27 @@ export default function AdminLoginPage() {
             © 2024 Hangout Restaurant System. All rights reserved.
           </div>
           <div className="mt-2 flex justify-center space-x-4 text-xs">
-            <a href="#" className="text-gray-400 hover:text-gray-600 transition-colors">
+            <a
+              href="#"
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
               Privacy Policy
             </a>
-            <a href="#" className="text-gray-400 hover:text-gray-600 transition-colors">
+            <a
+              href="#"
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
               Terms of Service
             </a>
-            <a href="#" className="text-gray-400 hover:text-gray-600 transition-colors">
+            <a
+              href="#"
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
               Support
             </a>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

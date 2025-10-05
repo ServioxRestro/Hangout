@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { X, Plus, Minus } from "lucide-react";
 import Button from "@/components/admin/Button";
+import ImageUpload from "@/components/admin/ImageUpload";
 
 type OfferFormData = {
   name: string;
@@ -21,6 +22,7 @@ type OfferFormData = {
   valid_hours_end: string;
   target_customer_type: string;
   promo_code: string;
+  image_url: string;
 };
 
 type MenuItem = {
@@ -86,7 +88,8 @@ export default function CreateOfferModal({ onClose, onSuccess }: CreateOfferModa
     valid_hours_start: '',
     valid_hours_end: '',
     target_customer_type: 'all',
-    promo_code: ''
+    promo_code: '',
+    image_url: ''
   });
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -1519,6 +1522,21 @@ export default function CreateOfferModal({ onClose, onSuccess }: CreateOfferModa
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 rows={2}
                 placeholder="Brief description of the offer..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Promotional Image (Optional)
+              </label>
+              <ImageUpload
+                currentImage={formData.image_url}
+                onImageChange={(imageUrl) =>
+                  setFormData(prev => ({ ...prev, image_url: imageUrl || "" }))
+                }
+                folder="offers"
+                maxSizeInMB={5}
+                disabled={loading}
               />
             </div>
 

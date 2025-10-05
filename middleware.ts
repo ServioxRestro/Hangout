@@ -27,8 +27,9 @@ export function middleware(request: NextRequest) {
           return response
         }
 
-        // Ensure only super_admin can access
-        if (sessionData.role !== 'super_admin') {
+        // Allow super_admin, manager, and waiter roles
+        const allowedRoles = ['super_admin', 'manager', 'waiter']
+        if (!allowedRoles.includes(sessionData.role)) {
           const response = NextResponse.redirect(new URL('/admin/login', request.url))
           response.cookies.delete('admin-session')
           return response

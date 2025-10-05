@@ -38,6 +38,50 @@ export type Database = {
         }
         Relationships: []
       }
+      staff: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          email: string
+          id: string
+          is_active: boolean
+          name: string
+          password_hash: string
+          role: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          email: string
+          id?: string
+          is_active?: boolean
+          name: string
+          password_hash: string
+          role: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          email?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          password_hash?: string
+          role?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       menu_categories: {
         Row: {
           created_at: string | null
@@ -175,6 +219,7 @@ export type Database = {
           notes: string | null
           status: string | null
           table_id: string | null
+          table_session_id: string | null
           total_amount: number
           updated_at: string | null
         }
@@ -186,6 +231,7 @@ export type Database = {
           notes?: string | null
           status?: string | null
           table_id?: string | null
+          table_session_id?: string | null
           total_amount: number
           updated_at?: string | null
         }
@@ -197,6 +243,7 @@ export type Database = {
           notes?: string | null
           status?: string | null
           table_id?: string | null
+          table_session_id?: string | null
           total_amount?: number
           updated_at?: string | null
         }
@@ -206,6 +253,13 @@ export type Database = {
             columns: ["table_id"]
             isOneToOne: false
             referencedRelation: "restaurant_tables"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_table_session_id_fkey"
+            columns: ["table_session_id"]
+            isOneToOne: false
+            referencedRelation: "table_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -505,12 +559,62 @@ export type Database = {
           },
         ]
       }
+      table_sessions: {
+        Row: {
+          created_at: string | null
+          customer_email: string
+          id: string
+          session_ended_at: string | null
+          session_started_at: string | null
+          status: string
+          table_id: string
+          total_amount: number | null
+          total_orders: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          customer_email: string
+          id?: string
+          session_ended_at?: string | null
+          session_started_at?: string | null
+          status?: string
+          table_id: string
+          total_amount?: number | null
+          total_orders?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          customer_email?: string
+          id?: string
+          session_ended_at?: string | null
+          session_started_at?: string | null
+          status?: string
+          table_id?: string
+          total_amount?: number | null
+          total_orders?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "table_sessions_table_id_fkey"
+            columns: ["table_id"]
+            isOneToOne: false
+            referencedRelation: "restaurant_tables"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      increment_offer_usage: {
+        Args: { offer_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
