@@ -7,8 +7,8 @@ interface FeaturedOffersCarouselProps {
   offers: Array<{
     id: string;
     name: string;
-    description?: string;
-    image_url?: string;
+    description?: string | null;
+    image_url?: string | null;
     offer_type: string;
   }>;
   onViewOffers?: () => void;

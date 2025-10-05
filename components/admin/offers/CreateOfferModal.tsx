@@ -114,8 +114,8 @@ export default function CreateOfferModal({ onClose, onSuccess }: CreateOfferModa
         supabase.from('menu_categories').select('id, name').eq('is_active', true)
       ]);
 
-      if (itemsResponse.data) setMenuItems(itemsResponse.data);
-      if (categoriesResponse.data) setMenuCategories(categoriesResponse.data);
+      if (itemsResponse.data) setMenuItems(itemsResponse.data as any);
+      if (categoriesResponse.data) setMenuCategories(categoriesResponse.data as any);
     } catch (error) {
       console.error('Error fetching menu data:', error);
     }
@@ -148,7 +148,7 @@ export default function CreateOfferModal({ onClose, onSuccess }: CreateOfferModa
       if (error) throw error;
 
       // Insert related data for item-based offers
-      const offerItems = [];
+      const offerItems: any[] = [];
 
       // Handle Buy X Get Y Free offers
       if (formData.offer_type === 'item_buy_get_free') {

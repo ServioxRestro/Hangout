@@ -254,7 +254,7 @@ export default function BillingPage() {
       // Update table sessions if any
       const sessionIds = selectedOrdersData
         .map(order => order.table_sessions?.id)
-        .filter(Boolean);
+        .filter((id): id is string => Boolean(id));
 
       if (sessionIds.length > 0) {
         await supabase

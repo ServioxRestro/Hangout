@@ -8,13 +8,13 @@ import { getAddButtonStyles } from "@/lib/guest-colors";
 interface MenuItem {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   price: number;
-  original_price?: number;
-  discount_percentage?: number;
-  has_discount?: boolean;
-  image_url?: string;
-  is_veg?: boolean;
+  original_price?: number | null;
+  discount_percentage?: number | null;
+  has_discount?: boolean | null;
+  image_url?: string | null;
+  is_veg?: boolean | null;
 }
 
 interface MenuItemCardProps {

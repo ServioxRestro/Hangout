@@ -167,7 +167,7 @@ export default function TablePage() {
         // Fetch table details
         supabase
           .from("restaurant_tables")
-          .select("id, table_number, table_code, is_active")
+          .select("*")
           .eq("table_code", tableCode)
           .eq("is_active", true)
           .single(),
@@ -175,7 +175,7 @@ export default function TablePage() {
         // Fetch menu categories
         supabase
           .from("menu_categories")
-          .select("id, name, description, display_order")
+          .select("*")
           .eq("is_active", true)
           .order("display_order", { ascending: true }),
 
@@ -248,7 +248,7 @@ export default function TablePage() {
     }
   };
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = (item: { id: string; name: string; price: number; is_veg?: boolean | null }) => {
     setCart((prev) => {
       const existingItem = prev.find((cartItem) => cartItem.id === item.id);
       if (existingItem) {

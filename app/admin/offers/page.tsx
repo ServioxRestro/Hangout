@@ -34,11 +34,11 @@ type Offer = {
   description: string | null;
   offer_type: string;
   is_active: boolean;
-  priority: number;
+  priority: number | null;
   start_date: string | null;
   end_date: string | null;
   usage_limit: number | null;
-  usage_count: number;
+  usage_count: number | null;
   conditions: any;
   benefits: any;
   valid_days: string[] | null;
@@ -47,8 +47,10 @@ type Offer = {
   target_customer_type: string | null;
   promo_code: string | null;
   image_url: string | null;
-  created_at: string;
-  updated_at: string;
+  image_path?: string | null;
+  min_orders_count?: number | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 const offerTypeConfig = {
@@ -562,7 +564,7 @@ export default function OffersPage() {
                           <span>{getOfferBenefitDisplay(offer)}</span>
                           <span>•</span>
                           <span>{getOfferConditionDisplay(offer)}</span>
-                          {offer.usage_count > 0 && (
+                          {(offer.usage_count || 0) > 0 && (
                             <>
                               <span>•</span>
                               <span>Used {offer.usage_count} times</span>

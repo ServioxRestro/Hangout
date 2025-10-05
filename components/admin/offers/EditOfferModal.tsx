@@ -12,11 +12,11 @@ type Offer = {
   description: string | null;
   offer_type: string;
   is_active: boolean;
-  priority: number;
+  priority: number | null;
   start_date: string | null;
   end_date: string | null;
   usage_limit: number | null;
-  usage_count: number;
+  usage_count: number | null;
   conditions: any;
   benefits: any;
   valid_days: string[] | null;
@@ -25,8 +25,10 @@ type Offer = {
   target_customer_type: string | null;
   promo_code: string | null;
   image_url: string | null;
-  created_at: string;
-  updated_at: string;
+  image_path?: string | null;
+  min_orders_count?: number | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 interface EditOfferModalProps {
@@ -184,7 +186,7 @@ export default function EditOfferModal({ offer, onClose, onSuccess }: EditOfferM
                 min="0"
                 max="10"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                value={formData.priority}
+                value={formData.priority || 0}
                 onChange={(e) => setFormData(prev => ({ ...prev, priority: Number(e.target.value) }))}
               />
             </div>

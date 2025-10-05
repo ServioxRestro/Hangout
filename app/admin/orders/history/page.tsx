@@ -99,7 +99,7 @@ export default function OrderHistoryPage() {
         return;
       }
 
-      setOrders(data as Order[]);
+      setOrders(data as any);
     } catch (error) {
       console.error("Error:", error);
     } finally {
@@ -150,7 +150,7 @@ export default function OrderHistoryPage() {
     setFilteredOrders(filtered);
   };
 
-  const getCreatorInfo = (order: Order) => {
+  const getCreatorInfo = (order: any) => {
     if (order.created_by_type === 'admin' && order.created_by_admin) {
       return {
         type: 'Admin',
