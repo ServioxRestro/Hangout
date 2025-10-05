@@ -65,7 +65,8 @@ export const guestColors = {
     },
     border: {
       200: 'border-red-200',
-      300: 'border-red-300'
+      300: 'border-red-300',
+      500: 'border-red-500'
     },
     hover: {
       50: 'hover:bg-red-50'

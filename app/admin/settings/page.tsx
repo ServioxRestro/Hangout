@@ -82,7 +82,7 @@ export default function SettingsPage() {
       if (restaurantError) throw restaurantError;
 
       const settingsMap: Record<string, string> = {};
-      restaurantData?.forEach((setting: RestaurantSetting) => {
+      restaurantData?.forEach((setting: any) => {
         settingsMap[setting.setting_key] = setting.setting_value;
       });
       setRestaurantSettings(settingsMap);
@@ -95,7 +95,7 @@ export default function SettingsPage() {
 
       if (taxError) throw taxError;
 
-      setTaxSettings(taxData || []);
+      setTaxSettings(taxData as any || []);
     } catch (error) {
       console.error("Error fetching settings:", error);
       setMessage({ type: 'error', text: 'Failed to load settings' });

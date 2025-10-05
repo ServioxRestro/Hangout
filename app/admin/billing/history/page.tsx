@@ -337,10 +337,10 @@ export default function PaymentHistoryPage() {
 
             <div class="receipt-info">
               <div>Bill No: ${billData.bill_number}</div>
-              <div>Date: ${formatDateTime(billData.created_at)}</div>
+              <div>Date: ${billData.created_at ? formatDateTime(billData.created_at) : 'N/A'}</div>
               <div>Table: ${billData.table_sessions?.restaurant_tables?.table_number || 'Takeaway'}</div>
               ${billData.table_sessions?.customer_email ? `<div>Email: ${billData.table_sessions.customer_email}</div>` : ''}
-              <div>Payment: ${payment.payment_method.toUpperCase()}</div>
+              <div>Payment: ${payment.payment_method?.toUpperCase() || 'N/A'}</div>
             </div>
 
             <div class="items-section">

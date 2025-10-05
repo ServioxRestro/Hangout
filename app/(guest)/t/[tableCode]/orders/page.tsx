@@ -103,7 +103,9 @@ export default function OrdersPage() {
       }
 
       setCurrentUser(user);
-      await fetchOrders(user.email);
+      if (user.email) {
+        await fetchOrders(user.email);
+      }
     } catch (error) {
       console.error("Error checking user:", error);
       setError("Failed to load user session");
