@@ -69,23 +69,23 @@ export default function OrderHistoryPage() {
             table_number,
             table_code
           ),
-          order_items!inner (
+          order_items (
             id,
             quantity,
             unit_price,
             total_price,
-            menu_items!inner (
+            menu_items (
               id,
               name,
               price,
               is_veg
             )
           ),
-          created_by_admin:admin!orders_created_by_admin_id_fkey (
+          created_by_admin:admin!orders_created_by_admin_fkey (
             id,
             email
           ),
-          created_by_staff:staff!orders_created_by_staff_id_fkey (
+          created_by_staff:staff!orders_created_by_staff_fkey (
             id,
             email,
             name

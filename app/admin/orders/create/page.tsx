@@ -197,6 +197,7 @@ export default function CreateOrderPage() {
       let sessionId: string | null = null;
       let existingSession: any = null;
 
+      // Only create sessions for dine-in orders
       if (orderType === 'dine-in') {
         // Handle dine-in orders with table
         const table = tables.find(t => t.id === selectedTable);
@@ -213,19 +214,17 @@ export default function CreateOrderPage() {
         if (sessionCheckError) throw sessionCheckError;
 
         if (sessionData) {
+          // Use existing session
           existingSession = sessionData;
           sessionId = sessionData.id;
         } else {
           // Create new session for dine-in
-          const customerIdentifier = customerInfo.email.trim() ||
-                                     customerInfo.phone.trim() ||
-                                     `table-${table.table_number}-${Date.now()}`;
-
           const { data: newSession, error: sessionError } = await supabase
             .from("table_sessions")
             .insert({
               table_id: selectedTable,
-              customer_email: customerIdentifier,
+              customer_email: customerInfo.email.trim() || null,
+              customer_phone: customerInfo.phone.trim() || null,
               status: "active",
               session_started_at: new Date().toISOString(),
               total_orders: 0,
@@ -237,28 +236,8 @@ export default function CreateOrderPage() {
           if (sessionError) throw sessionError;
           sessionId = newSession.id;
         }
-      } else {
-        // Handle takeaway orders without table
-        const customerIdentifier = customerInfo.email.trim() ||
-                                   customerInfo.phone.trim() ||
-                                   `takeaway-${Date.now()}`;
-
-        const { data: newSession, error: sessionError } = await supabase
-          .from("table_sessions")
-          .insert({
-            table_id: null, // No table for takeaway orders
-            customer_email: customerIdentifier,
-            status: "active",
-            session_started_at: new Date().toISOString(),
-            total_orders: 0,
-            total_amount: 0,
-          })
-          .select()
-          .single();
-
-        if (sessionError) throw sessionError;
-        sessionId = newSession.id;
       }
+      // For takeaway orders, no session is needed (sessionId remains null)
 
       // Create the order
       const orderNotes = customerInfo.notes.trim() ||
@@ -269,9 +248,10 @@ export default function CreateOrderPage() {
         .from("orders")
         .insert({
           table_id: orderType === 'dine-in' ? selectedTable : null,
-          table_session_id: sessionId,
+          table_session_id: sessionId, // null for takeaway, set for dine-in
           customer_email: customerInfo.email.trim() || null,
           customer_phone: customerInfo.phone.trim() || null,
+          // guest_user_id will be set by database trigger if phone matches existing guest
           order_type: orderType,
           total_amount: getTotalAmount(),
           status: "placed",

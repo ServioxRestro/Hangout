@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import { getCurrentUser, sendEmailOTP, verifyEmailOTP } from "@/lib/auth/email-auth";
+import { getCurrentUser, sendPhoneOTP, verifyPhoneOTP } from "@/lib/auth/msg91-widget";
+import { getGuestUserByPhone, updateLastVisitedTable } from "@/lib/guest-user";
 import type { Tables } from "@/types/database.types";
 import { GuestLayout } from "@/components/guest/GuestLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -12,7 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { formatCurrency } from "@/lib/utils";
 import {
   ArrowLeft,
-  Mail,
+  Smartphone,
   CheckCircle,
   AlertCircle,
   Plus,
@@ -43,8 +44,8 @@ export default function CartPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Checkout State
-  const [step, setStep] = useState<"cart" | "email" | "otp" | "placing" | "success">("cart");
-  const [email, setEmail] = useState("");
+  const [step, setStep] = useState<"cart" | "phone" | "otp" | "placing" | "success">("cart");
+  const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
@@ -66,7 +67,7 @@ export default function CartPage() {
       const user = await getCurrentUser();
       if (user) {
         setCurrentUser(user);
-        setEmail(user.email || "");
+        setPhone(user.phone || "");
       }
     } catch (error) {
       console.error("Error checking user:", error);
@@ -96,15 +97,15 @@ export default function CartPage() {
       // Check table session occupation
       const { data: activeSession, error: sessionError } = await supabase
         .from("table_sessions")
-        .select("customer_email")
+        .select("customer_phone")
         .eq("table_id", tableData.id)
         .eq("status", "active")
         .maybeSingle();
 
       if (!sessionError && activeSession) {
-        const currentUserEmail = (await getCurrentUser())?.email;
-        if (currentUserEmail) {
-          setOccupiedByDifferentUser(activeSession.customer_email !== currentUserEmail);
+        const currentUserPhone = (await getCurrentUser())?.phone;
+        if (currentUserPhone) {
+          setOccupiedByDifferentUser(activeSession.customer_phone !== currentUserPhone);
         } else {
           setOccupiedByDifferentUser(true);
         }
@@ -161,8 +162,10 @@ export default function CartPage() {
   };
 
   const handleSendOTP = async () => {
-    if (!email.trim()) {
-      setError("Please enter your email address");
+    // Validate phone number (must be 10 digits)
+    const cleaned = phone.replace(/\D/g, '');
+    if (!cleaned || cleaned.length !== 10) {
+      setError("Please enter a valid 10-digit phone number");
       return;
     }
 
@@ -170,11 +173,11 @@ export default function CartPage() {
     setError("");
 
     try {
-      const result = await sendEmailOTP(email.trim());
+      const result = await sendPhoneOTP(phone);
       if (result.success) {
         setStep("otp");
       } else {
-        setError(result.error || "Failed to send OTP");
+        setError(result.message || "Failed to send OTP");
       }
     } catch (error) {
       setError("Failed to send OTP. Please try again.");
@@ -193,12 +196,15 @@ export default function CartPage() {
     setError("");
 
     try {
-      const result = await verifyEmailOTP(email, otp.trim());
+      const result = await verifyPhoneOTP(phone, otp.trim());
       if (result.success) {
-        setCurrentUser(result.user);
+        // Update both currentUser and phone state with formatted phone number
+        const formattedPhone = result.data.phone;
+        setCurrentUser({ phone: formattedPhone });
+        setPhone(formattedPhone); // Update phone state to use formatted phone
         await placeOrder();
       } else {
-        setError(result.error || "Invalid OTP");
+        setError(result.message || "Invalid OTP");
       }
     } catch (error) {
       setError("Failed to verify OTP. Please try again.");
@@ -227,21 +233,39 @@ export default function CartPage() {
         throw new Error("Failed to check table session");
       }
 
+      // Get guest user to link with order
+      const guestUser = await getGuestUserByPhone(phone);
+      const guestUserId = guestUser?.id || null;
+
+      // Update last visited table
+      if (guestUserId && tableCode) {
+        await updateLastVisitedTable(phone, tableCode);
+      }
+
       let sessionId: string;
 
       if (existingSession) {
         // Check if session belongs to different customer
-        if (existingSession.customer_email !== email) {
+        if (existingSession.customer_phone !== phone) {
           throw new Error("This table is currently occupied by another customer. Please wait until their session is completed.");
         }
         sessionId = existingSession.id;
+
+        // Update session with guest_user_id if not set
+        if (!existingSession.guest_user_id && guestUserId) {
+          await supabase
+            .from("table_sessions")
+            .update({ guest_user_id: guestUserId })
+            .eq("id", sessionId);
+        }
       } else {
         // Create new table session
-        const { data: newSession, error: sessionError } = await supabase
+        const { data: newSession, error: sessionError} = await supabase
           .from("table_sessions")
           .insert({
             table_id: table.id,
-            customer_email: email,
+            customer_phone: phone,
+            guest_user_id: guestUserId,
             status: "active",
             session_started_at: new Date().toISOString(),
             total_orders: 0,
@@ -256,13 +280,14 @@ export default function CartPage() {
         sessionId = newSession.id;
       }
 
-      // Create the order with session reference
+      // Create the order with session reference and guest_user_id
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert({
           table_id: table.id,
           table_session_id: sessionId,
-          customer_email: email,
+          customer_phone: phone,
+          guest_user_id: guestUserId,
           total_amount: getTotalAmount(),
           status: "placed",
           notes: `Order placed via QR code for table ${table.table_number}`
@@ -328,7 +353,7 @@ export default function CartPage() {
     if (currentUser) {
       await placeOrder();
     } else {
-      setStep("email");
+      setStep("phone");
     }
   };
 
@@ -347,10 +372,10 @@ export default function CartPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-40">
         <div className="flex items-center gap-3">
-          {(step === "email" || step === "otp") && (
+          {(step === "phone" || step === "otp") && (
             <button
               onClick={() => {
-                if (step === "otp") setStep("email");
+                if (step === "otp") setStep("phone");
                 else setStep("cart");
               }}
               className="p-2 hover:bg-gray-100 rounded-lg"
@@ -362,7 +387,7 @@ export default function CartPage() {
             <h1 className="text-lg font-bold text-gray-900">
               {step === "success" ? "Order Placed!" :
                step === "placing" ? "Placing Order..." :
-               step === "email" ? "Enter Email" :
+               step === "phone" ? "Enter Phone Number" :
                step === "otp" ? "Verify OTP" : "Your Cart"}
             </h1>
             <p className="text-sm text-gray-600">
@@ -479,7 +504,7 @@ export default function CartPage() {
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center gap-2 text-green-800">
                       <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Signed in as {currentUser.email}</span>
+                      <span className="font-medium">Signed in as +91 {currentUser.phone}</span>
                     </div>
                   </div>
                 )}
@@ -501,13 +526,13 @@ export default function CartPage() {
           </>
         )}
 
-        {/* Email Step */}
-        {step === "email" && (
+        {/* Phone Step */}
+        {step === "phone" && (
           <div className="space-y-6">
             <div className="text-center">
-              <Mail className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+              <Smartphone className="w-16 h-16 text-blue-600 mx-auto mb-4" />
               <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Enter Your Email
+                Enter Your Mobile Number
               </h2>
               <p className="text-gray-600">
                 We'll send you an OTP to confirm your order
@@ -515,13 +540,19 @@ export default function CartPage() {
             </div>
 
             <div className="space-y-4">
-              <Input
-                type="email"
-                placeholder="your.email@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full"
-              />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 font-medium">
+                  +91
+                </span>
+                <Input
+                  type="tel"
+                  placeholder="Enter 10-digit mobile number"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  className="w-full pl-14"
+                  maxLength={10}
+                />
+              </div>
 
               {error && (
                 <div className="flex items-center gap-2 text-red-600 text-sm">
@@ -534,7 +565,7 @@ export default function CartPage() {
                 variant="primary"
                 size="lg"
                 onClick={handleSendOTP}
-                disabled={otpSending}
+                disabled={otpSending || phone.length !== 10}
                 className="w-full"
               >
                 {otpSending ? "Sending OTP..." : "Send OTP"}
@@ -547,12 +578,12 @@ export default function CartPage() {
         {step === "otp" && (
           <div className="space-y-6">
             <div className="text-center">
-              <Mail className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+              <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
               <h2 className="text-xl font-bold text-gray-900 mb-2">
                 Enter OTP
               </h2>
               <p className="text-gray-600">
-                We've sent a 6-digit code to {email}
+                We've sent a 6-digit code to +91 {phone}
               </p>
             </div>
 

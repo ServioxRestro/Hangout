@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useActiveOrders, useUpdateOrderStatus } from "@/hooks/useAdminQueries";
 import { supabase } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database.types";
-// Removed PageHeader import as we use layout now
 import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import {
@@ -38,158 +38,86 @@ type TableWithOrders = {
 
 
 export default function ActiveOrdersPage() {
-  const [activeTableOrders, setActiveTableOrders] = useState<TableWithOrders[]>([]);
-  const [takeawayOrders, setTakeawayOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { data: activeOrders, isLoading, error, refetch, isFetching } = useActiveOrders();
+  const updateOrderStatus = useUpdateOrderStatus();
+
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
-  useEffect(() => {
-    fetchActiveOrders();
-    // Auto-refresh every 30 seconds for real-time updates
-    const interval = setInterval(fetchActiveOrders, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Separate dine-in and takeaway orders
+  const { activeTableOrders, takeawayOrders } = (() => {
+    if (!activeOrders) return { activeTableOrders: [], takeawayOrders: [] };
 
-  const fetchActiveOrders = async (showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
+    const dineInOrders = activeOrders.filter((order: any) => order.order_type === 'dine-in') || [];
+    const takeawayOrdersList = activeOrders.filter((order: any) => order.order_type === 'takeaway') || [];
 
-    try {
-      // Fetch all active orders (both dine-in and takeaway)
-      const { data: activeOrders, error } = await supabase
-        .from("orders")
-        .select(
-          `
-          id,
-          status,
-          total_amount,
-          customer_phone,
-          customer_email,
-          notes,
-          order_type,
-          created_at,
-          created_by_type,
-          created_by_admin_id,
-          created_by_staff_id,
-          restaurant_tables (
-            id,
-            table_number,
-            table_code,
-            is_active,
-            qr_code_url,
-            created_at,
-            updated_at
-          ),
-          order_items!inner (
-            id,
-            quantity,
-            unit_price,
-            total_price,
-            menu_items!inner (
-              id,
-              name,
-              price,
-              is_veg,
-              subcategory
-            )
-          )
-        `
-        )
-        .in("status", ["placed", "preparing", "ready", "served"])
-        .order("created_at", { ascending: true });
+    // Group dine-in orders by table
+    const tableOrdersMap = new Map<string, TableWithOrders>();
+    dineInOrders.forEach((order: any) => {
+      const tableId = order.restaurant_tables!.id;
+      if (tableOrdersMap.has(tableId)) {
+        const existing = tableOrdersMap.get(tableId)!;
+        existing.orders.push(order as Order);
+        existing.totalAmount += order.total_amount || 0;
+        if (new Date(order.created_at || "") < new Date(existing.oldestOrderTime)) {
+          existing.oldestOrderTime = order.created_at || "";
+        }
+      } else {
+        tableOrdersMap.set(tableId, {
+          table: order.restaurant_tables,
+          orders: [order as Order],
+          totalAmount: order.total_amount || 0,
+          oldestOrderTime: order.created_at || "",
+          orderType: 'dine-in'
+        });
+      }
+    });
 
-      if (error) {
-        console.error("Error fetching active orders:", error);
-        return;
+    // Priority sorting function
+    const getStatusPriority = (status: string) => {
+      const priorities = { 'ready': 1, 'preparing': 2, 'placed': 3, 'served': 4 };
+      return priorities[status as keyof typeof priorities] || 5;
+    };
+
+    // Sort takeaway orders by priority (individual orders, no grouping)
+    const sortedTakeawayOrders = takeawayOrdersList.sort((a: any, b: any) => {
+      const aPriority = getStatusPriority(a.status || 'placed');
+      const bPriority = getStatusPriority(b.status || 'placed');
+
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
       }
 
-      // Separate dine-in and takeaway orders using order_type
-      const dineInOrders = activeOrders?.filter(order => order.order_type === 'dine-in') || [];
-      const takeawayOrdersList = activeOrders?.filter(order => order.order_type === 'takeaway') || [];
+      return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
+    });
 
-      // Group dine-in orders by table
-      const tableOrdersMap = new Map<string, TableWithOrders>();
-      dineInOrders.forEach((order) => {
-        const tableId = order.restaurant_tables!.id;
-        if (tableOrdersMap.has(tableId)) {
-          const existing = tableOrdersMap.get(tableId)!;
-          existing.orders.push(order as Order);
-          existing.totalAmount += order.total_amount || 0;
-          if (new Date(order.created_at || "") < new Date(existing.oldestOrderTime)) {
-            existing.oldestOrderTime = order.created_at || "";
-          }
-        } else {
-          tableOrdersMap.set(tableId, {
-            table: order.restaurant_tables,
-            orders: [order as Order],
-            totalAmount: order.total_amount || 0,
-            oldestOrderTime: order.created_at || "",
-            orderType: 'dine-in'
-          });
-        }
-      });
+    // Sort table orders by priority (status first, then time)
+    const sortedTableOrders = Array.from(tableOrdersMap.values()).sort((a, b) => {
+      // Get highest priority status in each table's orders
+      const aHighestPriority = Math.min(...a.orders.map(o => getStatusPriority(o.status || 'placed')));
+      const bHighestPriority = Math.min(...b.orders.map(o => getStatusPriority(o.status || 'placed')));
 
-      // Priority sorting function
-      const getStatusPriority = (status: string) => {
-        const priorities = { 'ready': 1, 'preparing': 2, 'placed': 3, 'served': 4 };
-        return priorities[status as keyof typeof priorities] || 5;
-      };
-
-      // Sort takeaway orders by priority (individual orders, no grouping)
-      const sortedTakeawayOrders = takeawayOrdersList.sort((a, b) => {
-        const aPriority = getStatusPriority(a.status || 'placed');
-        const bPriority = getStatusPriority(b.status || 'placed');
-
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority;
-        }
-
-        return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
-      });
-
-      // Sort table orders by priority (status first, then time)
-      const sortedTableOrders = Array.from(tableOrdersMap.values()).sort((a, b) => {
-        // Get highest priority status in each table's orders
-        const aHighestPriority = Math.min(...a.orders.map(o => getStatusPriority(o.status || 'placed')));
-        const bHighestPriority = Math.min(...b.orders.map(o => getStatusPriority(o.status || 'placed')));
-
-        if (aHighestPriority !== bHighestPriority) {
-          return aHighestPriority - bHighestPriority;
-        }
-
-        // If same priority, sort by oldest order time
-        return new Date(a.oldestOrderTime).getTime() - new Date(b.oldestOrderTime).getTime();
-      });
-
-      setActiveTableOrders(sortedTableOrders);
-      setTakeawayOrders(sortedTakeawayOrders as Order[]);
-    } catch (error) {
-      console.error("Error:", error);
-    } finally {
-      setLoading(false);
-      if (showRefresh) setRefreshing(false);
-    }
-  };
-
-  const updateOrderStatus = async (orderId: string, status: string) => {
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status })
-        .eq("id", orderId);
-
-      if (error) {
-        console.error("Error updating order:", error);
-        return;
+      if (aHighestPriority !== bHighestPriority) {
+        return aHighestPriority - bHighestPriority;
       }
 
-      // Refresh data
-      fetchActiveOrders();
+      // If same priority, sort by oldest order time
+      return new Date(a.oldestOrderTime).getTime() - new Date(b.oldestOrderTime).getTime();
+    });
+
+    return {
+      activeTableOrders: sortedTableOrders,
+      takeawayOrders: sortedTakeawayOrders as Order[]
+    };
+  })();
+
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      await updateOrderStatus.mutateAsync({ orderId, status });
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error updating order:", error);
     }
   };
 
@@ -242,7 +170,7 @@ export default function ActiveOrdersPage() {
       setShowCancelModal(false);
       setSelectedOrder(null);
       setCancelReason('');
-      fetchActiveOrders();
+      refetch();
     } catch (error) {
       console.error("Error:", error);
     } finally {
@@ -342,10 +270,24 @@ export default function ActiveOrdersPage() {
     );
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <p className="text-gray-600">Failed to load orders</p>
+          <Button onClick={() => refetch()} className="mt-4">
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
@@ -361,15 +303,15 @@ export default function ActiveOrdersPage() {
         <div className="flex items-center space-x-3">
           <Button
             variant="secondary"
-            onClick={() => fetchActiveOrders(true)}
+            onClick={() => refetch()}
             leftIcon={
               <RefreshCw
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+                className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
               />
             }
-            disabled={refreshing}
+            disabled={isFetching}
           >
-            Refresh
+            {isFetching ? "Refreshing..." : "Refresh"}
           </Button>
           <Button
             variant="primary"
@@ -482,6 +424,11 @@ export default function ActiveOrdersPage() {
                           <p className="text-sm text-gray-600">
                             {order.customer_phone || 'No phone'} •
                             {getTimeSince(order.created_at || "")}
+                            {order.guest_users && (
+                              <span className="ml-2 text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                                {order.guest_users.visit_count}x visitor • {formatCurrency(order.guest_users.total_spent || 0)} total
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -506,6 +453,12 @@ export default function ActiveOrdersPage() {
                             <span className="text-sm text-gray-500">
                               {order.customer_phone}
                             </span>
+                            {/* Guest user badge */}
+                            {order.guest_users && (
+                              <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
+                                {order.guest_users.visit_count}x • {order.guest_users.total_orders} orders
+                              </span>
+                            )}
                             {/* Creator indicator */}
                             <span className={`text-xs px-2 py-1 rounded ${
                               order.created_by_type === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
@@ -522,7 +475,7 @@ export default function ActiveOrdersPage() {
                                 <select
                                   value={order.status || "placed"}
                                   onChange={(e) =>
-                                    updateOrderStatus(order.id, e.target.value)
+                                    handleUpdateOrderStatus(order.id, e.target.value)
                                   }
                                   className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
                                 >
@@ -671,6 +624,12 @@ export default function ActiveOrdersPage() {
                               <span className="text-sm text-gray-500">
                                 {order.customer_phone}
                               </span>
+                              {/* Guest user badge */}
+                              {order.guest_users && (
+                                <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
+                                  {order.guest_users.visit_count}x • {order.guest_users.total_orders} orders
+                                </span>
+                              )}
                               {/* Creator indicator */}
                               <span className={`text-xs px-2 py-1 rounded ${
                                 order.created_by_type === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
@@ -684,7 +643,7 @@ export default function ActiveOrdersPage() {
                                   <select
                                     value={order.status || "placed"}
                                     onChange={(e) =>
-                                      updateOrderStatus(order.id, e.target.value)
+                                      handleUpdateOrderStatus(order.id, e.target.value)
                                     }
                                     className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
                                   >

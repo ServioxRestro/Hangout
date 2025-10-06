@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useUnpaidBills, useMenuItems, useMenuCategories } from "@/hooks/useAdminQueries";
 import { supabase } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database.types";
 import Card from "@/components/admin/Card";
@@ -20,6 +21,8 @@ import {
   Calendar,
   Users,
   ShoppingBag,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 interface OrderWithDetails {
@@ -30,8 +33,12 @@ interface OrderWithDetails {
   customer_phone: string | null;
   customer_email: string | null;
   notes: string | null;
+  table_session_id: string | null;
   table_sessions: {
     id: string;
+    status: string;
+    session_started_at: string;
+    customer_phone: string | null;
     restaurant_tables: {
       table_number: number;
     } | null;
@@ -49,6 +56,24 @@ interface OrderWithDetails {
   }>;
 }
 
+interface SessionGroup {
+  sessionId: string;
+  tableNumber: number;
+  customerPhone: string | null;
+  sessionStartedAt: string;
+  orders: OrderWithDetails[];
+  totalAmount: number;
+  orderCount: number;
+}
+
+interface ManualItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
 interface BillSummary {
   subtotal: number;
   discountPercentage: number;
@@ -64,7 +89,18 @@ interface BillSummary {
 
 export default function BillingPage() {
   const [orders, setOrders] = useState<OrderWithDetails[]>([]);
+  const [sessionGroups, setSessionGroups] = useState<SessionGroup[]>([]);
+  const [takeawayOrders, setTakeawayOrders] = useState<OrderWithDetails[]>([]);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
+  const [manualItems, setManualItems] = useState<ManualItem[]>([]);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [menuCategories, setMenuCategories] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedMenuItem, setSelectedMenuItem] = useState<string>("");
+  const [newItemQuantity, setNewItemQuantity] = useState(1);
+  const [itemSearchTerm, setItemSearchTerm] = useState("");
   const [billSummary, setBillSummary] = useState<BillSummary | null>(null);
   const [discountPercentage, setDiscountPercentage] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('cash');
@@ -83,15 +119,15 @@ export default function BillingPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedOrders.length > 0) {
+    if (selectedOrders.length > 0 || manualItems.length > 0) {
       calculateBill();
     } else {
       setBillSummary(null);
     }
-  }, [selectedOrders, discountPercentage]);
+  }, [selectedOrders, manualItems, discountPercentage]);
 
   const fetchData = async () => {
-    await Promise.all([fetchOrders(), fetchTaxSettings()]);
+    await Promise.all([fetchOrders(), fetchTaxSettings(), fetchMenuItems()]);
     setLoading(false);
   };
 
@@ -103,6 +139,9 @@ export default function BillingPage() {
           *,
           table_sessions (
             id,
+            status,
+            session_started_at,
+            customer_phone,
             restaurant_tables (
               table_number
             )
@@ -119,12 +158,49 @@ export default function BillingPage() {
             )
           )
         `)
-        .in('status', ['served', 'completed'])
+        .in('status', ['served'])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      setOrders(data as OrderWithDetails[] || []);
+      const ordersData = (data as OrderWithDetails[]) || [];
+      setOrders(ordersData);
+
+      // Group orders by session
+      const sessionMap = new Map<string, SessionGroup>();
+      const takeaway: OrderWithDetails[] = [];
+
+      ordersData.forEach(order => {
+        if (order.table_sessions && order.table_session_id) {
+          const sessionId = order.table_session_id;
+
+          if (sessionMap.has(sessionId)) {
+            const group = sessionMap.get(sessionId)!;
+            group.orders.push(order);
+            group.totalAmount += order.total_amount;
+            group.orderCount++;
+          } else {
+            sessionMap.set(sessionId, {
+              sessionId,
+              tableNumber: order.table_sessions.restaurant_tables?.table_number || 0,
+              customerPhone: order.table_sessions.customer_phone,
+              sessionStartedAt: order.table_sessions.session_started_at,
+              orders: [order],
+              totalAmount: order.total_amount,
+              orderCount: 1
+            });
+          }
+        } else {
+          // Takeaway orders (no session)
+          takeaway.push(order);
+        }
+      });
+
+      // Sort sessions by table number
+      const sessions = Array.from(sessionMap.values()).sort((a, b) => a.tableNumber - b.tableNumber);
+
+      setSessionGroups(sessions);
+      setTakeawayOrders(takeaway);
     } catch (error) {
       console.error("Error fetching orders:", error);
     }
@@ -145,9 +221,41 @@ export default function BillingPage() {
     }
   };
 
+  const fetchMenuItems = async () => {
+    try {
+      // Fetch categories
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from("menu_categories")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+
+      if (categoriesError) throw categoriesError;
+      setMenuCategories(categoriesData || []);
+      if (categoriesData && categoriesData.length > 0) {
+        setSelectedCategory(categoriesData[0].id);
+      }
+
+      // Fetch menu items
+      const { data: itemsData, error: itemsError } = await supabase
+        .from("menu_items")
+        .select("*")
+        .eq("is_available", true)
+        .order("display_order");
+
+      if (itemsError) throw itemsError;
+      setMenuItems(itemsData || []);
+    } catch (error) {
+      console.error("Error fetching menu items:", error);
+    }
+  };
+
   const calculateBill = () => {
     const selectedOrdersData = orders.filter(order => selectedOrders.includes(order.id));
-    const subtotal = selectedOrdersData.reduce((sum, order) => sum + order.total_amount, 0);
+    const ordersSubtotal = selectedOrdersData.reduce((sum, order) => sum + order.total_amount, 0);
+    const manualSubtotal = manualItems.reduce((sum, item) => sum + item.total_price, 0);
+    const subtotal = ordersSubtotal + manualSubtotal;
+
     const discountAmount = (subtotal * discountPercentage) / 100;
     const taxableAmount = subtotal - discountAmount;
 
@@ -170,12 +278,88 @@ export default function BillingPage() {
     });
   };
 
+  const addManualItem = () => {
+    if (!selectedMenuItem || newItemQuantity <= 0) {
+      alert("Please select a menu item and quantity");
+      return;
+    }
+
+    const menuItem = menuItems.find(item => item.id === selectedMenuItem);
+    if (!menuItem) {
+      alert("Selected item not found");
+      return;
+    }
+
+    const manualItem: ManualItem = {
+      id: `manual_${Date.now()}`,
+      name: menuItem.name,
+      quantity: newItemQuantity,
+      unit_price: menuItem.price,
+      total_price: newItemQuantity * menuItem.price
+    };
+
+    setManualItems(prev => [...prev, manualItem]);
+    setSelectedMenuItem("");
+    setNewItemQuantity(1);
+    setItemSearchTerm("");
+    setShowAddItemModal(false);
+  };
+
+  const removeManualItem = (id: string) => {
+    setManualItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const getFilteredMenuItems = () => {
+    let filtered = menuItems;
+
+    // Filter by category
+    if (selectedCategory) {
+      filtered = filtered.filter(item => item.category_id === selectedCategory);
+    }
+
+    // Filter by search term
+    if (itemSearchTerm.trim()) {
+      filtered = filtered.filter(item =>
+        item.name.toLowerCase().includes(itemSearchTerm.toLowerCase())
+      );
+    }
+
+    return filtered;
+  };
+
+  const toggleSessionSelection = (sessionId: string, orders: OrderWithDetails[]) => {
+    const sessionOrderIds = orders.map(o => o.id);
+    const allSelected = sessionOrderIds.every(id => selectedOrders.includes(id));
+
+    if (allSelected) {
+      // Deselect all orders in this session
+      setSelectedOrders(prev => prev.filter(id => !sessionOrderIds.includes(id)));
+      setSelectedSessions(prev => prev.filter(id => id !== sessionId));
+    } else {
+      // Select all orders in this session
+      setSelectedOrders(prev => [...new Set([...prev, ...sessionOrderIds])]);
+      setSelectedSessions(prev => [...new Set([...prev, sessionId])]);
+    }
+  };
+
   const toggleOrderSelection = (orderId: string) => {
     setSelectedOrders(prev =>
       prev.includes(orderId)
         ? prev.filter(id => id !== orderId)
         : [...prev, orderId]
     );
+  };
+
+  const getSessionDuration = (startTime: string) => {
+    const start = new Date(startTime);
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+
+    if (diffMins < 60) return `${diffMins}m`;
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return `${hours}h ${mins}m`;
   };
 
   const processPayment = async () => {
@@ -192,6 +376,15 @@ export default function BillingPage() {
       if (!response.ok) throw new Error("Failed to verify user");
       const { user } = await response.json();
 
+      // Get session IDs from selected orders
+      const selectedOrdersData = orders.filter(order => selectedOrders.includes(order.id));
+      const sessionIds = [...new Set(selectedOrdersData
+        .map(order => order.table_session_id)
+        .filter((id): id is string => Boolean(id)))];
+
+      // If all orders are from same session, link bill to that session
+      const billSessionId = sessionIds.length === 1 ? sessionIds[0] : null;
+
       // Create bill
       const billNumber = `BILL-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
@@ -199,7 +392,7 @@ export default function BillingPage() {
         .from("bills")
         .insert({
           bill_number: billNumber,
-          table_session_id: null, // For counter billing
+          table_session_id: billSessionId, // Link to session if all orders from same session
           subtotal: billSummary.subtotal,
           discount_percentage: discountPercentage,
           discount_amount: billSummary.discountAmount,
@@ -221,9 +414,8 @@ export default function BillingPage() {
 
       if (billError) throw billError;
 
-      // Create bill items
-      const selectedOrdersData = orders.filter(order => selectedOrders.includes(order.id));
-      const billItems = selectedOrdersData.flatMap(order =>
+      // Create bill items from orders
+      const orderBillItems = selectedOrdersData.flatMap(order =>
         order.order_items.map(item => ({
           bill_id: billData.id,
           order_item_id: item.id,
@@ -234,48 +426,75 @@ export default function BillingPage() {
         }))
       );
 
+      // Create bill items from manual items (no order_item_id)
+      const manualBillItems = manualItems.map(item => ({
+        bill_id: billData.id,
+        order_item_id: null, // Manual items don't have order_item_id
+        item_name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price
+      }));
+
+      // Combine all bill items
+      const allBillItems = [...orderBillItems, ...manualBillItems];
+
       const { error: itemsError } = await supabase
         .from("bill_items")
-        .insert(billItems);
+        .insert(allBillItems);
 
       if (itemsError) throw itemsError;
 
-      // Update orders status to completed
+      // Update orders status to paid
       const { error: ordersError } = await supabase
         .from("orders")
         .update({
-          status: 'completed',
+          status: 'paid',
           updated_at: new Date().toISOString()
         })
         .in('id', selectedOrders);
 
       if (ordersError) throw ordersError;
 
-      // Update table sessions if any
-      const sessionIds = selectedOrdersData
-        .map(order => order.table_sessions?.id)
-        .filter((id): id is string => Boolean(id));
-
+      // Check each session to see if ALL orders are now completed/paid/cancelled
+      // If yes, automatically complete the session
       if (sessionIds.length > 0) {
-        await supabase
-          .from("table_sessions")
-          .update({
-            status: 'completed',
-            payment_method: paymentMethod,
-            paid_at: new Date().toISOString(),
-            session_ended_at: new Date().toISOString()
-          })
-          .in('id', sessionIds);
+        for (const sessionId of sessionIds) {
+          // Get all orders in this session
+          const { data: sessionOrders } = await supabase
+            .from("orders")
+            .select("id, status")
+            .eq("table_session_id", sessionId);
+
+          // Check if all orders are in final states
+          const allOrdersComplete = sessionOrders?.every(o =>
+            ['completed', 'paid', 'cancelled'].includes(o.status || '')
+          );
+
+          if (allOrdersComplete) {
+            // Auto-complete the session
+            await supabase
+              .from("table_sessions")
+              .update({
+                status: 'completed',
+                payment_method: paymentMethod,
+                paid_at: new Date().toISOString(),
+                session_ended_at: new Date().toISOString()
+              })
+              .eq('id', sessionId);
+          }
+        }
       }
 
       // Show success and prepare for printing
       setLastBill({
         ...billData,
-        bill_items: billItems,
+        bill_items: allBillItems,
         orders: selectedOrdersData
       });
       setShowPaymentSuccess(true);
       setSelectedOrders([]);
+      setManualItems([]); // Clear manual items
       setBillSummary(null);
       setDiscountPercentage(0);
       await fetchOrders();
@@ -463,92 +682,162 @@ export default function BillingPage() {
             <Card>
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Select Orders to Bill</h2>
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Search orders..."
-                        className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value as any)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="all">All Orders</option>
-                      <option value="served">Served Only</option>
-                    </select>
+                  <h2 className="text-lg font-semibold">Select Tables/Orders to Bill</h2>
+                  <div className="text-sm text-gray-600">
+                    Click on a table to select all orders at once
                   </div>
                 </div>
 
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {filteredOrders.length === 0 ? (
+                <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                  {sessionGroups.length === 0 && takeawayOrders.length === 0 ? (
                     <div className="text-center py-8">
                       <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                       <h3 className="text-lg font-medium text-gray-900 mb-2">No Orders Found</h3>
                       <p className="text-gray-600">No served orders available for billing.</p>
                     </div>
                   ) : (
-                    filteredOrders.map(order => (
-                      <div
-                        key={order.id}
-                        onClick={() => toggleOrderSelection(order.id)}
-                        className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                          selectedOrders.includes(order.id)
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="font-medium text-gray-900">
-                                #{order.id.slice(-6)}
-                              </span>
-                              {order.table_sessions?.restaurant_tables ? (
-                                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                                  Table {order.table_sessions.restaurant_tables.table_number}
-                                </span>
-                              ) : (
-                                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                                  Takeaway
-                                </span>
-                              )}
-                              <span className={`px-2 py-1 text-xs rounded-full ${
-                                order.status === 'served'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {order.status}
-                              </span>
-                            </div>
+                    <>
+                      {/* Dine-in Sessions Grouped by Table */}
+                      {sessionGroups.length > 0 && (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                            Dine-In Tables ({sessionGroups.length})
+                          </h3>
+                          {sessionGroups.map(session => {
+                            const isSessionSelected = session.orders.every(o => selectedOrders.includes(o.id));
+                            return (
+                              <div key={session.sessionId} className="border-2 rounded-lg overflow-hidden transition-all">
+                                {/* Session Header - Clickable */}
+                                <div
+                                  onClick={() => toggleSessionSelection(session.sessionId, session.orders)}
+                                  className={`p-4 cursor-pointer transition-all ${
+                                    isSessionSelected
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-150 border-gray-200'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg ${
+                                        isSessionSelected ? 'bg-blue-500 text-white' : 'bg-white text-blue-600 border-2 border-blue-600'
+                                      }`}>
+                                        {session.tableNumber}
+                                      </div>
+                                      <div>
+                                        <div className={`font-semibold ${isSessionSelected ? 'text-white' : 'text-gray-900'}`}>
+                                          Table {session.tableNumber}
+                                        </div>
+                                        <div className={`text-sm ${isSessionSelected ? 'text-blue-100' : 'text-gray-600'}`}>
+                                          {session.orderCount} order{session.orderCount !== 1 ? 's' : ''} • {getSessionDuration(session.sessionStartedAt)}
+                                        </div>
+                                        {session.customerPhone && (
+                                          <div className={`text-xs ${isSessionSelected ? 'text-blue-100' : 'text-gray-500'}`}>
+                                            📱 {session.customerPhone}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className={`text-2xl font-bold ${isSessionSelected ? 'text-white' : 'text-gray-900'}`}>
+                                        {formatCurrency(session.totalAmount)}
+                                      </div>
+                                      <div className={`text-xs ${isSessionSelected ? 'text-blue-100' : 'text-gray-600'}`}>
+                                        Click to {isSessionSelected ? 'deselect' : 'select'} all
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
 
-                            <div className="text-sm text-gray-600 mb-2">
-                              {order.order_items.length} items • {formatCurrency(order.total_amount)}
-                            </div>
-
-                            <div className="text-xs text-gray-500">
-                              {new Date(order.created_at).toLocaleString()}
-                              {order.customer_phone && ` • ${order.customer_phone}`}
-                            </div>
-
-                            <div className="mt-2 text-xs text-gray-600">
-                              {order.order_items.slice(0, 2).map(item => item.menu_items?.name).join(', ')}
-                              {order.order_items.length > 2 && ` +${order.order_items.length - 2} more`}
-                            </div>
-                          </div>
-
-                          {selectedOrders.includes(order.id) && (
-                            <CheckCircle className="w-5 h-5 text-blue-500 mt-1" />
-                          )}
+                                {/* Orders in Session - Collapsible */}
+                                <div className="bg-white border-t">
+                                  {session.orders.map((order, idx) => (
+                                    <div
+                                      key={order.id}
+                                      className={`p-3 ${idx !== session.orders.length - 1 ? 'border-b' : ''} ${
+                                        selectedOrders.includes(order.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-xs text-gray-500">Order #{order.id.slice(-6)}</span>
+                                            <span className="text-xs text-gray-400">
+                                              {new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                          </div>
+                                          <div className="text-sm text-gray-700">
+                                            {order.order_items.map(item => (
+                                              <div key={item.id} className="flex justify-between">
+                                                <span>{item.quantity}x {item.menu_items?.name}</span>
+                                                <span className="text-gray-600">{formatCurrency(item.total_price)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div className="ml-3 text-right">
+                                          <div className="font-medium text-gray-900">{formatCurrency(order.total_amount)}</div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      </div>
-                    ))
+                      )}
+
+                      {/* Takeaway Orders */}
+                      {takeawayOrders.length > 0 && (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mt-6">
+                            Takeaway Orders ({takeawayOrders.length})
+                          </h3>
+                          {takeawayOrders.map(order => (
+                            <div
+                              key={order.id}
+                              onClick={() => toggleOrderSelection(order.id)}
+                              className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                selectedOrders.includes(order.id)
+                                  ? 'border-green-500 bg-green-50'
+                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="font-medium text-gray-900">
+                                      #{order.id.slice(-6)}
+                                    </span>
+                                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                      🥡 Takeaway
+                                    </span>
+                                  </div>
+
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    {order.order_items.length} items • {formatCurrency(order.total_amount)}
+                                  </div>
+
+                                  <div className="text-xs text-gray-500">
+                                    {new Date(order.created_at).toLocaleString()}
+                                    {order.customer_phone && ` • ${order.customer_phone}`}
+                                  </div>
+
+                                  <div className="mt-2 text-xs text-gray-600">
+                                    {order.order_items.slice(0, 2).map(item => item.menu_items?.name).join(', ')}
+                                    {order.order_items.length > 2 && ` +${order.order_items.length - 2} more`}
+                                  </div>
+                                </div>
+
+                                {selectedOrders.includes(order.id) && (
+                                  <CheckCircle className="w-5 h-5 text-green-500 mt-1" />
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -562,16 +851,59 @@ export default function BillingPage() {
                 <div className="p-6">
                   <h2 className="text-lg font-semibold mb-4">Bill Summary</h2>
 
-                  {selectedOrders.length === 0 ? (
+                  {selectedOrders.length === 0 && manualItems.length === 0 ? (
                     <div className="text-center py-8">
                       <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-600">Select orders to create bill</p>
+                      <p className="text-gray-600">Select orders or add manual items</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <div className="text-sm text-gray-600 mb-1">Selected Orders</div>
-                        <div className="font-medium">{selectedOrders.length} order{selectedOrders.length !== 1 ? 's' : ''}</div>
+                      {selectedOrders.length > 0 && (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <div className="text-sm text-gray-600 mb-1">Selected Orders</div>
+                          <div className="font-medium">{selectedOrders.length} order{selectedOrders.length !== 1 ? 's' : ''}</div>
+                        </div>
+                      )}
+
+                      {/* Additional Items Section */}
+                      <div className="border-t pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="font-medium text-sm">Additional Items</h3>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowAddItemModal(true)}
+                            leftIcon={<Plus className="w-3 h-3" />}
+                          >
+                            Add from Menu
+                          </Button>
+                        </div>
+
+                        {manualItems.length > 0 ? (
+                          <div className="space-y-2">
+                            {manualItems.map(item => (
+                              <div key={item.id} className="flex items-center justify-between text-sm bg-amber-50 p-2 rounded border border-amber-200">
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">{item.name}</div>
+                                  <div className="text-xs text-gray-600">
+                                    {item.quantity} × {formatCurrency(item.unit_price)}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{formatCurrency(item.total_price)}</span>
+                                  <button
+                                    onClick={() => removeManualItem(item.id)}
+                                    className="text-red-600 hover:text-red-800"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500 italic">No additional items</p>
+                        )}
                       </div>
 
                       {billSummary && (
@@ -662,6 +994,154 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+
+      {/* Add Menu Item Modal */}
+      {showAddItemModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Add Item from Menu</h3>
+              <button
+                onClick={() => {
+                  setShowAddItemModal(false);
+                  setSelectedMenuItem("");
+                  setNewItemQuantity(1);
+                  setItemSearchTerm("");
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <AlertCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={itemSearchTerm}
+                  onChange={(e) => setItemSearchTerm(e.target.value)}
+                  placeholder="Search menu items..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+
+              {/* Category Tabs */}
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {menuCategories.map(category => (
+                  <button
+                    key={category.id}
+                    onClick={() => setSelectedCategory(category.id)}
+                    className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                      selectedCategory === category.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {category.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Menu Items Grid */}
+              <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto border rounded-lg p-3">
+                {getFilteredMenuItems().length === 0 ? (
+                  <div className="col-span-2 text-center py-8 text-gray-500">
+                    No items found
+                  </div>
+                ) : (
+                  getFilteredMenuItems().map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => setSelectedMenuItem(item.id)}
+                      className={`p-3 border-2 rounded-lg text-left transition-all ${
+                        selectedMenuItem === item.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 truncate">
+                            {item.name}
+                          </div>
+                          <div className="text-sm font-medium text-blue-600 mt-1">
+                            {formatCurrency(item.price)}
+                          </div>
+                        </div>
+                        {item.is_veg && (
+                          <span className="text-green-600 text-xs">🟢</span>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* Quantity Input */}
+              {selectedMenuItem && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">
+                        {menuItems.find(i => i.id === selectedMenuItem)?.name}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        {formatCurrency(menuItems.find(i => i.id === selectedMenuItem)?.price || 0)} each
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-gray-700">
+                      Quantity:
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newItemQuantity}
+                      onChange={(e) => setNewItemQuantity(parseInt(e.target.value) || 1)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <div className="flex-1 text-right">
+                      <div className="text-sm text-gray-600">Total:</div>
+                      <div className="text-lg font-bold text-gray-900">
+                        {formatCurrency((menuItems.find(i => i.id === selectedMenuItem)?.price || 0) * newItemQuantity)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowAddItemModal(false);
+                    setSelectedMenuItem("");
+                    setNewItemQuantity(1);
+                    setItemSearchTerm("");
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={addManualItem}
+                  className="flex-1"
+                  disabled={!selectedMenuItem || newItemQuantity <= 0}
+                >
+                  Add to Bill
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Payment Success Modal */}
       {showPaymentSuccess && lastBill && (

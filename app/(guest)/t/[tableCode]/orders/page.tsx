@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import { getCurrentUser } from "@/lib/auth/email-auth";
+import { getCurrentUser } from "@/lib/auth/msg91-widget";
 import { formatCurrency } from "@/lib/utils";
 import {
   Clock,
@@ -103,8 +103,8 @@ export default function OrdersPage() {
       }
 
       setCurrentUser(user);
-      if (user.email) {
-        await fetchOrders(user.email);
+      if (user.phone) {
+        await fetchOrders(user.phone);
       }
     } catch (error) {
       console.error("Error checking user:", error);
@@ -114,7 +114,7 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async (userEmail: string, showRefresh = false) => {
+  const fetchOrders = async (userPhone: string, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
 
     try {
@@ -131,6 +131,53 @@ export default function OrdersPage() {
       }
 
       // Fetch orders for this user at this table
+      // Note: We need to handle both phone formats (with and without country code)
+      // Normalize phone to 10 digits for comparison
+      const normalizedPhone = userPhone.replace(/\D/g, '');
+      const phoneWithoutCode = normalizedPhone.length === 12 && normalizedPhone.startsWith('91')
+        ? normalizedPhone.substring(2)
+        : normalizedPhone;
+      const phoneWithCode = normalizedPhone.length === 10
+        ? `91${normalizedPhone}`
+        : normalizedPhone;
+
+      // First, get the current active session for this table (try both phone formats)
+      const { data: sessionData, error: sessionError } = await supabase
+        .from("table_sessions")
+        .select("id")
+        .eq("table_id", tableData.id)
+        .in("customer_phone", [phoneWithoutCode, phoneWithCode])
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (sessionError) {
+        throw new Error(sessionError.message);
+      }
+
+      // If there's an active session, fetch all orders from that session
+      if (sessionData) {
+        const { data: sessionOrders, error: sessionOrdersError } = await supabase
+          .from("orders")
+          .select(`
+            *,
+            order_items (
+              *,
+              menu_items (*)
+            )
+          `)
+          .eq("table_session_id", sessionData.id)
+          .order("created_at", { ascending: false });
+
+        if (sessionOrdersError) {
+          throw new Error(sessionOrdersError.message);
+        }
+
+        setOrders((sessionOrders as Order[]) || []);
+        return;
+      }
+
+      // If no active session, fetch all historical orders for this user at this table
+      // Try both phone formats
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
@@ -141,7 +188,7 @@ export default function OrdersPage() {
           )
         `)
         .eq("table_id", tableData.id)
-        .eq("customer_email", userEmail)
+        .in("customer_phone", [phoneWithoutCode, phoneWithCode])
         .order("created_at", { ascending: false });
 
       if (ordersError) {
@@ -159,7 +206,7 @@ export default function OrdersPage() {
 
   const handleRefresh = () => {
     if (currentUser) {
-      fetchOrders(currentUser.email, true);
+      fetchOrders(currentUser.phone, true);
     }
   };
 
@@ -222,7 +269,7 @@ export default function OrdersPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
             <div className="flex items-center gap-2 text-blue-800 text-sm">
               <User className="w-4 h-4" />
-              <span>Signed in as {currentUser.email}</span>
+              <span>Signed in as +91 {currentUser.phone}</span>
             </div>
           </div>
         )}

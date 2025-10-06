@@ -39,7 +39,15 @@ export default function TableSessionsPage() {
         .from("table_sessions")
         .select(`
           *,
-          restaurant_tables (*)
+          restaurant_tables (*),
+          guest_users (
+            id,
+            name,
+            phone,
+            visit_count,
+            total_orders,
+            total_spent
+          )
         `)
         .order("created_at", { ascending: false });
 
@@ -236,7 +244,14 @@ export default function TableSessionsPage() {
                   <div className="space-y-3 mb-4">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Users className="w-4 h-4" />
-                      <span>{session.customer_email}</span>
+                      <div className="flex flex-col">
+                        <span>{session.customer_phone || session.customer_email || 'N/A'}</span>
+                        {session.guest_users && (
+                          <span className="text-xs text-blue-600">
+                            {session.guest_users.visit_count}x visitor • {session.guest_users.total_orders} total orders
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -246,12 +261,17 @@ export default function TableSessionsPage() {
 
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <ShoppingCart className="w-4 h-4" />
-                      <span>{session.total_orders || 0} orders</span>
+                      <span>{session.total_orders || 0} orders (session)</span>
                     </div>
 
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <DollarSign className="w-4 h-4" />
                       <span>{formatCurrency(session.total_amount || 0)}</span>
+                      {session.guest_users && (
+                        <span className="text-xs text-gray-500">
+                          ({formatCurrency(session.guest_users.total_spent || 0)} lifetime)
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -314,7 +334,7 @@ export default function TableSessionsPage() {
                         Table {session.restaurant_tables?.table_number}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {session.customer_email}
+                        {session.customer_phone || session.customer_email || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDuration(
