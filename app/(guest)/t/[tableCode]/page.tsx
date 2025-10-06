@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import { getCurrentUser, signOut } from "@/lib/auth/email-auth";
+import { getCurrentUser, signOut } from "@/lib/auth/msg91-widget";
 import type { Tables } from "@/types/database.types";
 import { formatCurrency } from "@/lib/utils";
 import { GuestLayout } from "@/components/guest/GuestLayout";
@@ -45,7 +45,7 @@ export default function TablePage() {
   const [showVegOnly, setShowVegOnly] = useState(false);
   const [showNonVegOnly, setShowNonVegOnly] = useState(false);
   const [activeOrders, setActiveOrders] = useState<number>(0);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userPhone, setUserPhone] = useState<string | null>(null);
   const [tableOccupied, setTableOccupied] = useState<boolean>(false);
   const [occupiedByDifferentUser, setOccupiedByDifferentUser] =
     useState<boolean>(false);
@@ -107,13 +107,13 @@ export default function TablePage() {
     try {
       const user = await getCurrentUser();
       if (user) {
-        setUserEmail(user.email || null);
+        setUserPhone(user.phone || null);
 
         // Get active orders count for this user at this table
         const { data, error } = await supabase
           .from("orders")
           .select("id, restaurant_tables!inner(table_code)")
-          .eq("customer_email", user.email || "")
+          .eq("customer_phone", user.phone || "")
           .eq("restaurant_tables.table_code", tableCode)
           .in("status", ["placed", "preparing", "served"]);
 
@@ -126,7 +126,7 @@ export default function TablePage() {
       if (table) {
         const { data: activeSession, error: sessionError } = await supabase
           .from("table_sessions")
-          .select("customer_email")
+          .select("customer_phone")
           .eq("table_id", table.id)
           .eq("status", "active")
           .maybeSingle();
@@ -135,10 +135,10 @@ export default function TablePage() {
           setTableOccupied(true);
 
           // Check if occupied by different user
-          const currentUserEmail = userEmail || (await getCurrentUser())?.email;
-          if (currentUserEmail) {
+          const currentUserPhone = userPhone || (await getCurrentUser())?.phone;
+          if (currentUserPhone) {
             setOccupiedByDifferentUser(
-              activeSession.customer_email !== currentUserEmail
+              activeSession.customer_phone !== currentUserPhone
             );
           } else {
             setOccupiedByDifferentUser(true);
@@ -294,8 +294,8 @@ export default function TablePage() {
   const handleLogout = async () => {
     const result = await signOut();
     if (result.success) {
-      // Clear user email and refresh active orders
-      setUserEmail(null);
+      // Clear user phone and refresh active orders
+      setUserPhone(null);
       setActiveOrders(0);
       // Optionally clear cart
       setCart([]);
@@ -304,7 +304,7 @@ export default function TablePage() {
       window.dispatchEvent(new Event("storage"));
       window.dispatchEvent(new Event("cartUpdated"));
     } else {
-      alert('Failed to sign out: ' + result.error);
+      alert('Failed to sign out: ' + result.message);
     }
   };
 
@@ -362,11 +362,11 @@ export default function TablePage() {
 
           {/* Login/Logout Button */}
           <div className="flex-shrink-0">
-            {userEmail ? (
+            {userPhone ? (
               <div className="flex items-center gap-2">
                 <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
                   <User className="w-4 h-4" />
-                  <span className="max-w-[100px] truncate">{userEmail}</span>
+                  <span className="max-w-[100px] truncate">+91 {userPhone}</span>
                 </div>
                 <Button
                   variant="secondary"

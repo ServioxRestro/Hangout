@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase/client";
+import { useDashboardStats } from "@/hooks/useAdminQueries";
 import type { Tables } from "@/types/database.types";
 import StatsCard from "@/components/admin/StatsCard";
 import Card from "@/components/admin/Card";
@@ -38,6 +37,8 @@ type OrderStats = {
   totalRevenue: number;
   todayRevenue: number;
   activeOrders: number;
+  totalBills: number;
+  todayBills: number;
 };
 
 type TableWithOrders = {
@@ -48,7 +49,9 @@ type TableWithOrders = {
 };
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<OrderStats>({
+  const { data, isLoading, error, refetch, isFetching } = useDashboardStats();
+
+  const stats = data?.stats || {
     total: 0,
     today: 0,
     pending: 0,
@@ -56,161 +59,49 @@ export default function AdminDashboard() {
     totalRevenue: 0,
     todayRevenue: 0,
     activeOrders: 0,
-  });
-  const [activeTableOrders, setActiveTableOrders] = useState<TableWithOrders[]>(
-    []
-  );
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+    totalBills: 0,
+    todayBills: 0,
+  };
 
-  useEffect(() => {
-    fetchDashboardData();
-    // Set up auto-refresh every 30 seconds for real-time updates
-    const interval = setInterval(fetchDashboardData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Group active orders by table
+  const activeTableOrders = (() => {
+    if (!data?.activeOrders) return [];
 
-  const fetchDashboardData = async (showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
+    const tableOrdersMap = new Map<string, TableWithOrders>();
 
-    try {
-      // Fetch active orders (not completed or paid) with optimized query
-      const { data: activeOrders, error: activeError } = await supabase
-        .from("orders")
-        .select(
-          `
-          id,
-          status,
-          total_amount,
-          customer_phone,
-          customer_email,
-          notes,
-          created_at,
-          restaurant_tables!inner (
-            id,
-            table_number,
-            table_code,
-            is_active,
-            qr_code_url,
-            created_at,
-            updated_at
-          ),
-          order_items!inner (
-            id,
-            quantity,
-            unit_price,
-            total_price,
-            menu_items!inner (
-              id,
-              name,
-              price,
-              is_veg,
-              subcategory
-            )
-          )
-        `
-        )
-        .in("status", ["placed", "preparing", "served"])
-        .order("created_at", { ascending: true });
+    data.activeOrders.forEach((order: any) => {
+      if (!order.restaurant_tables) return;
 
-      if (activeError) {
-        console.error("Error fetching active orders:", activeError);
-        return;
-      }
-
-      // Fetch all orders for stats
-      const { data: allOrders, error: statsError } = await supabase
-        .from("orders")
-        .select("id, status, total_amount, created_at");
-
-      if (statsError) {
-        console.error("Error fetching stats:", statsError);
-        return;
-      }
-
-      // Process stats
-      const today = new Date();
-      const todayStart = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate()
-      );
-
-      const todayOrders =
-        allOrders?.filter(
-          (order) => new Date(order.created_at || "") >= todayStart
-        ) || [];
-
-      const pendingOrders =
-        allOrders?.filter((order) =>
-          ["placed", "preparing"].includes(order.status || "")
-        ) || [];
-
-      const completedOrders =
-        allOrders?.filter((order) =>
-          ["completed", "paid"].includes(order.status || "")
-        ) || [];
-
-      const totalRevenue =
-        allOrders?.reduce((sum, order) => sum + (order.total_amount || 0), 0) ||
-        0;
-      const todayRevenue = todayOrders.reduce(
-        (sum, order) => sum + (order.total_amount || 0),
-        0
-      );
-
-      setStats({
-        total: allOrders?.length || 0,
-        today: todayOrders.length,
-        pending: pendingOrders.length,
-        completed: completedOrders.length,
-        totalRevenue,
-        todayRevenue,
-        activeOrders: activeOrders?.length || 0,
-      });
-
-      // Group active orders by table
-      const tableOrdersMap = new Map<string, TableWithOrders>();
-
-      activeOrders?.forEach((order) => {
-        if (!order.restaurant_tables) return;
-
-        const tableId = order.restaurant_tables.id;
-        if (tableOrdersMap.has(tableId)) {
-          const existing = tableOrdersMap.get(tableId)!;
-          existing.orders.push(order as Order);
-          existing.totalAmount += order.total_amount || 0;
-          // Update oldest order time if this one is older
-          if (
-            new Date(order.created_at || "") <
-            new Date(existing.oldestOrderTime)
-          ) {
-            existing.oldestOrderTime = order.created_at || "";
-          }
-        } else {
-          tableOrdersMap.set(tableId, {
-            table: order.restaurant_tables,
-            orders: [order as Order],
-            totalAmount: order.total_amount || 0,
-            oldestOrderTime: order.created_at || "",
-          });
+      const tableId = order.restaurant_tables.id;
+      if (tableOrdersMap.has(tableId)) {
+        const existing = tableOrdersMap.get(tableId)!;
+        existing.orders.push(order as Order);
+        existing.totalAmount += order.total_amount || 0;
+        if (
+          new Date(order.created_at || "") <
+          new Date(existing.oldestOrderTime)
+        ) {
+          existing.oldestOrderTime = order.created_at || "";
         }
-      });
+      } else {
+        tableOrdersMap.set(tableId, {
+          table: order.restaurant_tables,
+          orders: [order as Order],
+          totalAmount: order.total_amount || 0,
+          oldestOrderTime: order.created_at || "",
+        });
+      }
+    });
 
-      // Sort by oldest order first (most urgent)
-      const sortedTableOrders = Array.from(tableOrdersMap.values()).sort(
-        (a, b) =>
-          new Date(a.oldestOrderTime).getTime() -
-          new Date(b.oldestOrderTime).getTime()
-      );
+    return Array.from(tableOrdersMap.values()).sort(
+      (a, b) =>
+        new Date(a.oldestOrderTime).getTime() -
+        new Date(b.oldestOrderTime).getTime()
+    );
+  })();
 
-      setActiveTableOrders(sortedTableOrders);
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
-      if (showRefresh) setRefreshing(false);
-    }
+  const handleRefresh = () => {
+    refetch();
   };
 
 
@@ -279,10 +170,24 @@ export default function AdminDashboard() {
     return `${hoursAgo}h ${minutesAgo % 60}m ago`;
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <p className="text-gray-600">Failed to load dashboard data</p>
+          <Button onClick={handleRefresh} className="mt-4">
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
@@ -304,16 +209,16 @@ export default function AdminDashboard() {
             <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
               <Button
                 variant="secondary"
-                onClick={() => fetchDashboardData(true)}
+                onClick={handleRefresh}
                 leftIcon={
                   <RefreshCw
-                    className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+                    className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
                   />
                 }
-                disabled={refreshing}
+                disabled={isFetching}
                 className="w-full sm:w-auto"
               >
-                Refresh
+                {isFetching ? "Refreshing..." : "Refresh"}
               </Button>
               <Button
                 variant="primary"

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { sendEmailOTP, verifyEmailOTP } from "@/lib/auth/email-auth";
+import { sendPhoneOTP, verifyPhoneOTP, resendPhoneOTP } from "@/lib/auth/msg91-widget";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { X, Mail, CheckCircle, AlertCircle } from "lucide-react";
+import { X, Smartphone, CheckCircle, AlertCircle } from "lucide-react";
 import { guestColors } from "@/lib/guest-colors";
 
 interface GuestLoginModalProps {
@@ -18,27 +18,29 @@ export function GuestLoginModal({
   onClose,
   onLoginSuccess
 }: GuestLoginModalProps) {
-  const [step, setStep] = useState<"email" | "otp">("email");
-  const [email, setEmail] = useState("");
+  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSendOTP = async () => {
-    if (!email || !email.includes('@')) {
-      setError("Please enter a valid email address");
+    // Validate phone number (must be 10 digits)
+    const cleaned = phone.replace(/\D/g, '');
+    if (!cleaned || cleaned.length !== 10) {
+      setError("Please enter a valid 10-digit phone number");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    const result = await sendEmailOTP(email);
+    const result = await sendPhoneOTP(phone);
 
     if (result.success) {
       setStep("otp");
     } else {
-      setError(result.error || "Failed to send OTP");
+      setError(result.message || "Failed to send OTP");
     }
 
     setLoading(false);
@@ -53,26 +55,41 @@ export function GuestLoginModal({
     setLoading(true);
     setError("");
 
-    const result = await verifyEmailOTP(email, otp);
+    const result = await verifyPhoneOTP(phone, otp);
 
     if (result.success) {
       // Reset modal state
-      setStep("email");
-      setEmail("");
+      setStep("phone");
+      setPhone("");
       setOtp("");
       setError("");
       onLoginSuccess();
       onClose();
     } else {
-      setError(result.error || "Invalid OTP");
+      setError(result.message || "Invalid OTP");
+    }
+
+    setLoading(false);
+  };
+
+  const handleResendOTP = async () => {
+    setLoading(true);
+    setError("");
+
+    const result = await resendPhoneOTP(phone);
+
+    if (result.success) {
+      setError(""); // Clear any previous errors
+    } else {
+      setError(result.message || "Failed to resend OTP");
     }
 
     setLoading(false);
   };
 
   const resetModal = () => {
-    setStep("email");
-    setEmail("");
+    setStep("phone");
+    setPhone("");
     setOtp("");
     setError("");
     onClose();
@@ -99,26 +116,32 @@ export function GuestLoginModal({
 
         {/* Content */}
         <div className="p-6">
-          {step === "email" && (
+          {step === "phone" && (
             <div className="space-y-4">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mail className="w-8 h-8 text-orange-600" />
+                  <Smartphone className="w-8 h-8 text-orange-600" />
                 </div>
                 <p className="text-gray-600">
-                  Enter your email address to receive a login code
+                  Enter your mobile number to receive OTP
                 </p>
               </div>
 
               <div className="space-y-4">
-                <Input
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendOTP()}
-                  className="text-center"
-                />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 font-medium">
+                    +91
+                  </span>
+                  <Input
+                    type="tel"
+                    placeholder="Enter 10-digit mobile number"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSendOTP()}
+                    className="text-center pl-14"
+                    maxLength={10}
+                  />
+                </div>
 
                 {error && (
                   <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
@@ -129,11 +152,11 @@ export function GuestLoginModal({
 
                 <Button
                   onClick={handleSendOTP}
-                  disabled={loading || !email}
+                  disabled={loading || phone.length !== 10}
                   className="w-full"
                   variant="primary"
                 >
-                  {loading ? "Sending..." : "Send Login Code"}
+                  {loading ? "Sending OTP..." : "Send OTP"}
                 </Button>
               </div>
             </div>
@@ -146,15 +169,15 @@ export function GuestLoginModal({
                   <CheckCircle className="w-8 h-8 text-emerald-600" />
                 </div>
                 <p className="text-gray-600 mb-2">
-                  We've sent a 6-digit code to
+                  We've sent a 6-digit OTP to
                 </p>
-                <p className="font-medium text-gray-900">{email}</p>
+                <p className="font-medium text-gray-900">+91 {phone}</p>
               </div>
 
               <div className="space-y-4">
                 <Input
                   type="text"
-                  placeholder="Enter 6-digit code"
+                  placeholder="Enter 6-digit OTP"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   onKeyDown={(e) => e.key === 'Enter' && handleVerifyOTP()}
@@ -171,11 +194,11 @@ export function GuestLoginModal({
 
                 <div className="flex gap-3">
                   <Button
-                    onClick={() => setStep("email")}
+                    onClick={() => setStep("phone")}
                     variant="secondary"
                     className="flex-1"
                   >
-                    Change Email
+                    Change Number
                   </Button>
                   <Button
                     onClick={handleVerifyOTP}
@@ -188,11 +211,11 @@ export function GuestLoginModal({
                 </div>
 
                 <button
-                  onClick={handleSendOTP}
+                  onClick={handleResendOTP}
                   disabled={loading}
                   className="w-full text-sm text-orange-600 hover:text-orange-800 transition-colors"
                 >
-                  Didn't receive the code? Resend
+                  Didn't receive the OTP? Resend
                 </button>
               </div>
             </div>

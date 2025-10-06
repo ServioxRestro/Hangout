@@ -288,6 +288,57 @@ export type Database = {
           },
         ]
       }
+      guest_users: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          first_visit_at: string | null
+          id: string
+          is_active: boolean | null
+          last_login_at: string | null
+          last_table_code: string | null
+          name: string | null
+          phone: string
+          preferences: Json | null
+          total_orders: number | null
+          total_spent: number | null
+          updated_at: string | null
+          visit_count: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          first_visit_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_login_at?: string | null
+          last_table_code?: string | null
+          name?: string | null
+          phone: string
+          preferences?: Json | null
+          total_orders?: number | null
+          total_spent?: number | null
+          updated_at?: string | null
+          visit_count?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          first_visit_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_login_at?: string | null
+          last_table_code?: string | null
+          name?: string | null
+          phone?: string
+          preferences?: Json | null
+          total_orders?: number | null
+          total_spent?: number | null
+          updated_at?: string | null
+          visit_count?: number | null
+        }
+        Relationships: []
+      }
       menu_categories: {
         Row: {
           created_at: string | null
@@ -617,6 +668,7 @@ export type Database = {
           customer_identifier: string | null
           customer_name: string | null
           customer_phone: string | null
+          guest_user_id: string | null
           id: string
           notes: string | null
           order_type: string
@@ -639,6 +691,7 @@ export type Database = {
           customer_identifier?: string | null
           customer_name?: string | null
           customer_phone?: string | null
+          guest_user_id?: string | null
           id?: string
           notes?: string | null
           order_type?: string
@@ -661,6 +714,7 @@ export type Database = {
           customer_identifier?: string | null
           customer_name?: string | null
           customer_phone?: string | null
+          guest_user_id?: string | null
           id?: string
           notes?: string | null
           order_type?: string
@@ -690,6 +744,13 @@ export type Database = {
             columns: ["created_by_staff_id"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_guest_user_id_fkey"
+            columns: ["guest_user_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
             referencedColumns: ["id"]
           },
           {
@@ -817,7 +878,9 @@ export type Database = {
           bill_generated_at: string | null
           billed_by: string | null
           created_at: string | null
-          customer_email: string
+          customer_email: string | null
+          customer_phone: string | null
+          guest_user_id: string | null
           id: string
           paid_at: string | null
           payment_method: string | null
@@ -834,7 +897,9 @@ export type Database = {
           bill_generated_at?: string | null
           billed_by?: string | null
           created_at?: string | null
-          customer_email: string
+          customer_email?: string | null
+          customer_phone?: string | null
+          guest_user_id?: string | null
           id?: string
           paid_at?: string | null
           payment_method?: string | null
@@ -851,7 +916,9 @@ export type Database = {
           bill_generated_at?: string | null
           billed_by?: string | null
           created_at?: string | null
-          customer_email?: string
+          customer_email?: string | null
+          customer_phone?: string | null
+          guest_user_id?: string | null
           id?: string
           paid_at?: string | null
           payment_method?: string | null
@@ -870,6 +937,13 @@ export type Database = {
             columns: ["billed_by"]
             isOneToOne: false
             referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "table_sessions_guest_user_id_fkey"
+            columns: ["guest_user_id"]
+            isOneToOne: false
+            referencedRelation: "guest_users"
             referencedColumns: ["id"]
           },
           {

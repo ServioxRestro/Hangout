@@ -33,7 +33,8 @@ interface PaymentHistory {
     restaurant_tables: {
       table_number: number;
     } | null;
-    customer_email: string;
+    customer_email: string | null;
+    customer_phone: string | null;
     session_started_at: string;
     session_ended_at: string;
   } | null;
@@ -62,6 +63,7 @@ export default function PaymentHistoryPage() {
           paid_at,
           table_sessions (
             customer_email,
+            customer_phone,
             session_started_at,
             session_ended_at,
             restaurant_tables (
@@ -105,6 +107,7 @@ export default function PaymentHistoryPage() {
   const filteredPayments = payments.filter(payment =>
     payment.bill_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
     payment.table_sessions?.customer_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    payment.table_sessions?.customer_phone?.includes(searchTerm) ||
     payment.table_sessions?.restaurant_tables?.table_number?.toString().includes(searchTerm)
   );
 
@@ -175,6 +178,7 @@ export default function PaymentHistoryPage() {
           ),
           table_sessions (
             customer_email,
+            customer_phone,
             restaurant_tables (
               table_number,
               table_code
@@ -339,7 +343,7 @@ export default function PaymentHistoryPage() {
               <div>Bill No: ${billData.bill_number}</div>
               <div>Date: ${billData.created_at ? formatDateTime(billData.created_at) : 'N/A'}</div>
               <div>Table: ${billData.table_sessions?.restaurant_tables?.table_number || 'Takeaway'}</div>
-              ${billData.table_sessions?.customer_email ? `<div>Email: ${billData.table_sessions.customer_email}</div>` : ''}
+              ${billData.table_sessions?.customer_phone ? `<div>Phone: ${billData.table_sessions.customer_phone}</div>` : billData.table_sessions?.customer_email ? `<div>Email: ${billData.table_sessions.customer_email}</div>` : ''}
               <div>Payment: ${payment.payment_method?.toUpperCase() || 'N/A'}</div>
             </div>
 
@@ -636,7 +640,7 @@ export default function PaymentHistoryPage() {
                           }
                         </div>
                         <div className="text-sm text-gray-500">
-                          {payment.table_sessions?.customer_email || 'N/A'}
+                          {payment.table_sessions?.customer_phone || payment.table_sessions?.customer_email || 'N/A'}
                         </div>
                       </div>
                     </td>
