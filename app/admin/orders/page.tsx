@@ -21,6 +21,7 @@ import { formatCurrency } from "@/lib/constants";
 
 type Order = Tables<"orders"> & {
   restaurant_tables: Tables<"restaurant_tables"> | null;
+  guest_users?: Tables<"guest_users"> | null;
   order_items: Array<
     Tables<"order_items"> & {
       menu_items: Tables<"menu_items"> | null;
@@ -33,25 +34,33 @@ type TableWithOrders = {
   orders: Order[];
   totalAmount: number;
   oldestOrderTime: string;
-  orderType: 'dine-in' | 'takeaway';
+  orderType: "dine-in" | "takeaway";
 };
 
-
 export default function ActiveOrdersPage() {
-  const { data: activeOrders, isLoading, error, refetch, isFetching } = useActiveOrders();
+  const {
+    data: activeOrders,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+  } = useActiveOrders();
   const updateOrderStatus = useUpdateOrderStatus();
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [cancelReason, setCancelReason] = useState('');
+  const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
 
   // Separate dine-in and takeaway orders
   const { activeTableOrders, takeawayOrders } = (() => {
     if (!activeOrders) return { activeTableOrders: [], takeawayOrders: [] };
 
-    const dineInOrders = activeOrders.filter((order: any) => order.order_type === 'dine-in') || [];
-    const takeawayOrdersList = activeOrders.filter((order: any) => order.order_type === 'takeaway') || [];
+    const dineInOrders =
+      activeOrders.filter((order: any) => order.order_type === "dine-in") || [];
+    const takeawayOrdersList =
+      activeOrders.filter((order: any) => order.order_type === "takeaway") ||
+      [];
 
     // Group dine-in orders by table
     const tableOrdersMap = new Map<string, TableWithOrders>();
@@ -61,7 +70,9 @@ export default function ActiveOrdersPage() {
         const existing = tableOrdersMap.get(tableId)!;
         existing.orders.push(order as Order);
         existing.totalAmount += order.total_amount || 0;
-        if (new Date(order.created_at || "") < new Date(existing.oldestOrderTime)) {
+        if (
+          new Date(order.created_at || "") < new Date(existing.oldestOrderTime)
+        ) {
           existing.oldestOrderTime = order.created_at || "";
         }
       } else {
@@ -70,46 +81,58 @@ export default function ActiveOrdersPage() {
           orders: [order as Order],
           totalAmount: order.total_amount || 0,
           oldestOrderTime: order.created_at || "",
-          orderType: 'dine-in'
+          orderType: "dine-in",
         });
       }
     });
 
     // Priority sorting function
     const getStatusPriority = (status: string) => {
-      const priorities = { 'ready': 1, 'preparing': 2, 'placed': 3, 'served': 4 };
+      const priorities = { ready: 1, preparing: 2, placed: 3, served: 4 };
       return priorities[status as keyof typeof priorities] || 5;
     };
 
     // Sort takeaway orders by priority (individual orders, no grouping)
     const sortedTakeawayOrders = takeawayOrdersList.sort((a: any, b: any) => {
-      const aPriority = getStatusPriority(a.status || 'placed');
-      const bPriority = getStatusPriority(b.status || 'placed');
+      const aPriority = getStatusPriority(a.status || "placed");
+      const bPriority = getStatusPriority(b.status || "placed");
 
       if (aPriority !== bPriority) {
         return aPriority - bPriority;
       }
 
-      return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
+      return (
+        new Date(a.created_at || "").getTime() -
+        new Date(b.created_at || "").getTime()
+      );
     });
 
     // Sort table orders by priority (status first, then time)
-    const sortedTableOrders = Array.from(tableOrdersMap.values()).sort((a, b) => {
-      // Get highest priority status in each table's orders
-      const aHighestPriority = Math.min(...a.orders.map(o => getStatusPriority(o.status || 'placed')));
-      const bHighestPriority = Math.min(...b.orders.map(o => getStatusPriority(o.status || 'placed')));
+    const sortedTableOrders = Array.from(tableOrdersMap.values()).sort(
+      (a, b) => {
+        // Get highest priority status in each table's orders
+        const aHighestPriority = Math.min(
+          ...a.orders.map((o) => getStatusPriority(o.status || "placed"))
+        );
+        const bHighestPriority = Math.min(
+          ...b.orders.map((o) => getStatusPriority(o.status || "placed"))
+        );
 
-      if (aHighestPriority !== bHighestPriority) {
-        return aHighestPriority - bHighestPriority;
+        if (aHighestPriority !== bHighestPriority) {
+          return aHighestPriority - bHighestPriority;
+        }
+
+        // If same priority, sort by oldest order time
+        return (
+          new Date(a.oldestOrderTime).getTime() -
+          new Date(b.oldestOrderTime).getTime()
+        );
       }
-
-      // If same priority, sort by oldest order time
-      return new Date(a.oldestOrderTime).getTime() - new Date(b.oldestOrderTime).getTime();
-    });
+    );
 
     return {
       activeTableOrders: sortedTableOrders,
-      takeawayOrders: sortedTakeawayOrders as Order[]
+      takeawayOrders: sortedTakeawayOrders as Order[],
     };
   })();
 
@@ -134,9 +157,9 @@ export default function ActiveOrdersPage() {
       const { error } = await supabase
         .from("orders")
         .update({
-          status: 'cancelled',
+          status: "cancelled",
           cancelled_reason: cancelReason.trim(),
-          cancelled_at: new Date().toISOString()
+          cancelled_at: new Date().toISOString(),
         })
         .eq("id", selectedOrder.id);
 
@@ -159,8 +182,8 @@ export default function ActiveOrdersPage() {
           await supabase
             .from("table_sessions")
             .update({
-              status: 'completed',
-              session_ended_at: new Date().toISOString()
+              status: "completed",
+              session_ended_at: new Date().toISOString(),
             })
             .eq("id", selectedOrder.table_session_id);
         }
@@ -169,7 +192,7 @@ export default function ActiveOrdersPage() {
       // Close modal and refresh data
       setShowCancelModal(false);
       setSelectedOrder(null);
-      setCancelReason('');
+      setCancelReason("");
       refetch();
     } catch (error) {
       console.error("Error:", error);
@@ -180,7 +203,7 @@ export default function ActiveOrdersPage() {
 
   const getOrderPriority = (createdAt: string, status: string) => {
     // Served orders don't need kitchen priority
-    if (status === 'served') {
+    if (status === "served") {
       return {
         level: "served",
         color: "text-blue-600",
@@ -189,7 +212,7 @@ export default function ActiveOrdersPage() {
     }
 
     // Completed/paid orders don't need priority
-    if (status === 'completed' || status === 'paid') {
+    if (status === "completed" || status === "paid") {
       return {
         level: "completed",
         color: "text-gray-600",
@@ -298,7 +321,12 @@ export default function ActiveOrdersPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Active Orders</h1>
-          <p className="text-gray-600 mt-1">Kitchen workflow: Placed → Preparing → <span className="text-orange-600 font-medium">Ready</span> → Served → <span className="text-blue-600 font-medium">Ready for Billing</span></p>
+          <p className="text-gray-600 mt-1">
+            Kitchen workflow: Placed → Preparing →{" "}
+            <span className="text-orange-600 font-medium">Ready</span> → Served
+            →{" "}
+            <span className="text-blue-600 font-medium">Ready for Billing</span>
+          </p>
         </div>
         <div className="flex items-center space-x-3">
           <Button
@@ -338,19 +366,25 @@ export default function ActiveOrdersPage() {
             <div>
               <h3 className="font-medium text-blue-900">New Order Flow</h3>
               <p className="text-sm text-blue-800 mt-1">
-                Once orders are <strong>Served</strong>, they automatically appear in the <strong>Bills & Payments</strong> page for billing.
-                Completed payments will close the table session and free up the table.
+                Once orders are <strong>Served</strong>, they automatically
+                appear in the <strong>Bills & Payments</strong> page for
+                billing. Completed payments will close the table session and
+                free up the table.
               </p>
               <div className="mt-2 flex items-center gap-2 text-xs text-blue-700">
                 <span className="px-2 py-1 bg-blue-100 rounded">Placed</span>
                 <span>→</span>
-                <span className="px-2 py-1 bg-yellow-100 rounded">Preparing</span>
+                <span className="px-2 py-1 bg-yellow-100 rounded">
+                  Preparing
+                </span>
                 <span>→</span>
                 <span className="px-2 py-1 bg-orange-100 rounded">Ready</span>
                 <span>→</span>
                 <span className="px-2 py-1 bg-green-100 rounded">Served</span>
                 <span>→</span>
-                <span className="px-2 py-1 bg-blue-100 rounded">Ready for Billing</span>
+                <span className="px-2 py-1 bg-blue-100 rounded">
+                  Ready for Billing
+                </span>
               </div>
             </div>
           </div>
@@ -403,7 +437,10 @@ export default function ActiveOrdersPage() {
               {/* Takeaway Orders Section */}
               {/* Individual Takeaway Orders */}
               {takeawayOrders.map((order) => {
-                const priority = getOrderPriority(order.created_at || "", order.status || "placed");
+                const priority = getOrderPriority(
+                  order.created_at || "",
+                  order.status || "placed"
+                );
                 return (
                   <div
                     key={order.id}
@@ -422,11 +459,15 @@ export default function ActiveOrdersPage() {
                             Takeaway Order #{order.id.slice(-6)}
                           </h3>
                           <p className="text-sm text-gray-600">
-                            {order.customer_phone || 'No phone'} •
+                            {order.customer_phone || "No phone"} •
                             {getTimeSince(order.created_at || "")}
                             {order.guest_users && (
                               <span className="ml-2 text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                                {order.guest_users.visit_count}x visitor • {formatCurrency(order.guest_users.total_spent || 0)} total
+                                {order.guest_users.visit_count}x visitor •{" "}
+                                {formatCurrency(
+                                  order.guest_users.total_spent || 0
+                                )}{" "}
+                                total
                               </span>
                             )}
                           </p>
@@ -436,7 +477,9 @@ export default function ActiveOrdersPage() {
                         <div className="text-xl font-bold text-gray-900">
                           {formatCurrency(order.total_amount)}
                         </div>
-                        <div className={`text-sm font-medium ${priority.color}`}>
+                        <div
+                          className={`text-sm font-medium ${priority.color}`}
+                        >
                           {priority.level.toUpperCase()}
                         </div>
                       </div>
@@ -444,117 +487,134 @@ export default function ActiveOrdersPage() {
 
                     {/* Single Order Details */}
                     <div className="bg-white rounded-lg p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center space-x-3">
-                            <span className="text-sm font-medium text-gray-500">
-                              #{order.id.slice(-6)}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <span className="text-sm font-medium text-gray-500">
+                            #{order.id.slice(-6)}
+                          </span>
+                          {getStatusBadge(order.status || "placed")}
+                          <span className="text-sm text-gray-500">
+                            {order.customer_phone}
+                          </span>
+                          {/* Guest user badge */}
+                          {order.guest_users && (
+                            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
+                              {order.guest_users.visit_count}x •{" "}
+                              {order.guest_users.total_orders} orders
                             </span>
-                            {getStatusBadge(order.status || "placed")}
-                            <span className="text-sm text-gray-500">
-                              {order.customer_phone}
-                            </span>
-                            {/* Guest user badge */}
-                            {order.guest_users && (
-                              <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                                {order.guest_users.visit_count}x • {order.guest_users.total_orders} orders
-                              </span>
-                            )}
-                            {/* Creator indicator */}
-                            <span className={`text-xs px-2 py-1 rounded ${
-                              order.created_by_type === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
-                            }`}>
-                              {order.created_by_type === 'admin' ? '👑 Admin' : '👤 Staff'}
-                            </span>
-                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                              Takeaway
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {order.status !== 'cancelled' && (
-                              <>
-                                <select
-                                  value={order.status || "placed"}
-                                  onChange={(e) =>
-                                    handleUpdateOrderStatus(order.id, e.target.value)
-                                  }
-                                  className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                  <option value="placed">Placed</option>
-                                  <option value="preparing">Preparing</option>
-                                  <option value="ready">Ready</option>
-                                  <option value="served">Served</option>
-                                </select>
-
-                                {(order.status === 'placed' || order.status === 'preparing') && (
-                                  <button
-                                    onClick={() => handleCancelOrder(order)}
-                                    className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-100 transition-colors flex items-center"
-                                    title="Cancel this order"
-                                  >
-                                    <X className="w-3 h-3 mr-1" />
-                                    Cancel
-                                  </button>
-                                )}
-
-                                {order.status === 'served' && (
-                                  <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded">
-                                    Ready for Billing
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
+                          )}
+                          {/* Creator indicator */}
+                          <span
+                            className={`text-xs px-2 py-1 rounded ${
+                              order.created_by_type === "admin"
+                                ? "bg-purple-100 text-purple-700"
+                                : "bg-green-100 text-green-700"
+                            }`}
+                          >
+                            {order.created_by_type === "admin"
+                              ? "👑 Admin"
+                              : "👤 Staff"}
+                          </span>
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                            Takeaway
+                          </span>
                         </div>
+                        <div className="flex items-center space-x-2">
+                          {order.status !== "cancelled" && (
+                            <>
+                              <select
+                                value={order.status || "placed"}
+                                onChange={(e) =>
+                                  handleUpdateOrderStatus(
+                                    order.id,
+                                    e.target.value
+                                  )
+                                }
+                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                <option value="placed">Placed</option>
+                                <option value="preparing">Preparing</option>
+                                <option value="ready">Ready</option>
+                                <option value="served">Served</option>
+                              </select>
 
-                        {/* Order Items */}
-                        <div className="space-y-2">
-                          {order.order_items.map((item) => (
-                            <div
-                              key={item.id}
-                              className={`flex items-center justify-between text-sm ${
-                                order.status === 'cancelled' ? 'opacity-60' : ''
+                              {(order.status === "placed" ||
+                                order.status === "preparing") && (
+                                <button
+                                  onClick={() => handleCancelOrder(order)}
+                                  className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-100 transition-colors flex items-center"
+                                  title="Cancel this order"
+                                >
+                                  <X className="w-3 h-3 mr-1" />
+                                  Cancel
+                                </button>
+                              )}
+
+                              {order.status === "served" && (
+                                <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded">
+                                  Ready for Billing
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Order Items */}
+                      <div className="space-y-2">
+                        {order.order_items.map((item) => (
+                          <div
+                            key={item.id}
+                            className={`flex items-center justify-between text-sm ${
+                              order.status === "cancelled" ? "opacity-60" : ""
+                            }`}
+                          >
+                            <div className="flex items-center">
+                              <span
+                                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mr-2 ${
+                                  order.status === "cancelled"
+                                    ? "bg-red-100 text-red-800"
+                                    : "bg-blue-100 text-blue-800"
+                                }`}
+                              >
+                                {item.quantity}
+                              </span>
+                              <span
+                                className={`font-medium ${
+                                  order.status === "cancelled"
+                                    ? "line-through"
+                                    : ""
+                                }`}
+                              >
+                                {item.menu_items?.name || "Unknown Item"}
+                              </span>
+                              {item.menu_items?.is_veg && (
+                                <span className="ml-2 text-green-500">🟢</span>
+                              )}
+                              {item.menu_items?.is_veg === false && (
+                                <span className="ml-2 text-red-500">🔴</span>
+                              )}
+                            </div>
+                            <span
+                              className={`font-medium ${
+                                order.status === "cancelled"
+                                  ? "line-through"
+                                  : ""
                               }`}
                             >
-                              <div className="flex items-center">
-                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mr-2 ${
-                                  order.status === 'cancelled'
-                                    ? 'bg-red-100 text-red-800'
-                                    : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {item.quantity}
-                                </span>
-                                <span className={`font-medium ${
-                                  order.status === 'cancelled' ? 'line-through' : ''
-                                }`}>
-                                  {item.menu_items?.name || "Unknown Item"}
-                                </span>
-                                {item.menu_items?.is_veg && (
-                                  <span className="ml-2 text-green-500">
-                                    🟢
-                                  </span>
-                                )}
-                                {item.menu_items?.is_veg === false && (
-                                  <span className="ml-2 text-red-500">
-                                    🔴
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`font-medium ${
-                                order.status === 'cancelled' ? 'line-through' : ''
-                              }`}>
-                                {formatCurrency(item.total_price)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {order.notes && (
-                          <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                            <p className="text-xs text-yellow-800">
-                              <strong>Note:</strong> {order.notes}
-                            </p>
+                              {formatCurrency(item.total_price)}
+                            </span>
                           </div>
-                        )}
+                        ))}
+                      </div>
+
+                      {order.notes && (
+                        <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                          <p className="text-xs text-yellow-800">
+                            <strong>Note:</strong> {order.notes}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -563,17 +623,28 @@ export default function ActiveOrdersPage() {
               {/* Dine-in Table Orders */}
               {activeTableOrders.map((tableOrder) => {
                 // Determine priority based on most urgent status in table
-                const hasPlaced = tableOrder.orders.some(o => o.status === 'placed');
-                const hasPreparing = tableOrder.orders.some(o => o.status === 'preparing');
-                const hasReady = tableOrder.orders.some(o => o.status === 'ready');
-                const allServed = tableOrder.orders.every(o => o.status === 'served');
+                const hasPlaced = tableOrder.orders.some(
+                  (o) => o.status === "placed"
+                );
+                const hasPreparing = tableOrder.orders.some(
+                  (o) => o.status === "preparing"
+                );
+                const hasReady = tableOrder.orders.some(
+                  (o) => o.status === "ready"
+                );
+                const allServed = tableOrder.orders.every(
+                  (o) => o.status === "served"
+                );
 
-                let priorityStatus = 'served';
-                if (hasPlaced) priorityStatus = 'placed';
-                else if (hasPreparing) priorityStatus = 'preparing';
-                else if (hasReady) priorityStatus = 'ready';
+                let priorityStatus = "served";
+                if (hasPlaced) priorityStatus = "placed";
+                else if (hasPreparing) priorityStatus = "preparing";
+                else if (hasReady) priorityStatus = "ready";
 
-                const priority = getOrderPriority(tableOrder.oldestOrderTime, priorityStatus);
+                const priority = getOrderPriority(
+                  tableOrder.oldestOrderTime,
+                  priorityStatus
+                );
                 return (
                   <div
                     key={tableOrder.table?.id}
@@ -602,7 +673,9 @@ export default function ActiveOrdersPage() {
                         <div className="text-xl font-bold text-gray-900">
                           {formatCurrency(tableOrder.totalAmount)}
                         </div>
-                        <div className={`text-sm font-medium ${priority.color}`}>
+                        <div
+                          className={`text-sm font-medium ${priority.color}`}
+                        >
                           {priority.level.toUpperCase()}
                         </div>
                       </div>
@@ -627,23 +700,33 @@ export default function ActiveOrdersPage() {
                               {/* Guest user badge */}
                               {order.guest_users && (
                                 <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                                  {order.guest_users.visit_count}x • {order.guest_users.total_orders} orders
+                                  {order.guest_users.visit_count}x •{" "}
+                                  {order.guest_users.total_orders} orders
                                 </span>
                               )}
                               {/* Creator indicator */}
-                              <span className={`text-xs px-2 py-1 rounded ${
-                                order.created_by_type === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'
-                              }`}>
-                                {order.created_by_type === 'admin' ? '👑 Admin' : '👤 Staff'}
+                              <span
+                                className={`text-xs px-2 py-1 rounded ${
+                                  order.created_by_type === "admin"
+                                    ? "bg-purple-100 text-purple-700"
+                                    : "bg-green-100 text-green-700"
+                                }`}
+                              >
+                                {order.created_by_type === "admin"
+                                  ? "👑 Admin"
+                                  : "👤 Staff"}
                               </span>
                             </div>
                             <div className="flex items-center space-x-2">
-                              {order.status !== 'cancelled' && (
+                              {order.status !== "cancelled" && (
                                 <>
                                   <select
                                     value={order.status || "placed"}
                                     onChange={(e) =>
-                                      handleUpdateOrderStatus(order.id, e.target.value)
+                                      handleUpdateOrderStatus(
+                                        order.id,
+                                        e.target.value
+                                      )
                                     }
                                     className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
                                   >
@@ -653,7 +736,8 @@ export default function ActiveOrdersPage() {
                                     <option value="served">Served</option>
                                   </select>
 
-                                  {(order.status === 'placed' || order.status === 'preparing') && (
+                                  {(order.status === "placed" ||
+                                    order.status === "preparing") && (
                                     <button
                                       onClick={() => handleCancelOrder(order)}
                                       className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-100 transition-colors flex items-center"
@@ -664,7 +748,7 @@ export default function ActiveOrdersPage() {
                                     </button>
                                   )}
 
-                                  {order.status === 'served' && (
+                                  {order.status === "served" && (
                                     <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded">
                                       Ready for Billing
                                     </span>
@@ -672,7 +756,7 @@ export default function ActiveOrdersPage() {
                                 </>
                               )}
 
-                              {order.status === 'cancelled' && (
+                              {order.status === "cancelled" && (
                                 <span className="text-xs text-red-600 font-medium">
                                   Cancelled
                                 </span>
@@ -686,20 +770,28 @@ export default function ActiveOrdersPage() {
                               <div
                                 key={item.id}
                                 className={`flex items-center justify-between text-sm ${
-                                  order.status === 'cancelled' ? 'opacity-60' : ''
+                                  order.status === "cancelled"
+                                    ? "opacity-60"
+                                    : ""
                                 }`}
                               >
                                 <div className="flex items-center">
-                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mr-2 ${
-                                    order.status === 'cancelled'
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-blue-100 text-blue-800'
-                                  }`}>
+                                  <span
+                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mr-2 ${
+                                      order.status === "cancelled"
+                                        ? "bg-red-100 text-red-800"
+                                        : "bg-blue-100 text-blue-800"
+                                    }`}
+                                  >
                                     {item.quantity}
                                   </span>
-                                  <span className={`font-medium ${
-                                    order.status === 'cancelled' ? 'line-through' : ''
-                                  }`}>
+                                  <span
+                                    className={`font-medium ${
+                                      order.status === "cancelled"
+                                        ? "line-through"
+                                        : ""
+                                    }`}
+                                  >
                                     {item.menu_items?.name || "Unknown Item"}
                                   </span>
                                   {item.menu_items?.is_veg && (
@@ -713,9 +805,13 @@ export default function ActiveOrdersPage() {
                                     </span>
                                   )}
                                 </div>
-                                <span className={`font-medium ${
-                                  order.status === 'cancelled' ? 'line-through' : ''
-                                }`}>
+                                <span
+                                  className={`font-medium ${
+                                    order.status === "cancelled"
+                                      ? "line-through"
+                                      : ""
+                                  }`}
+                                >
                                   {formatCurrency(item.total_price)}
                                 </span>
                               </div>
@@ -749,19 +845,23 @@ export default function ActiveOrdersPage() {
                 <AlertTriangle className="w-6 h-6 text-red-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Cancel Order</h3>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Cancel Order
+                </h3>
                 <p className="text-sm text-gray-600">
                   Order #{selectedOrder.id.slice(-6)}
-                  {selectedOrder.restaurant_tables ?
-                    ` - Table ${selectedOrder.restaurant_tables.table_number}` :
-                    ' - Takeaway'
-                  }
+                  {selectedOrder.restaurant_tables
+                    ? ` - Table ${selectedOrder.restaurant_tables.table_number}`
+                    : " - Takeaway"}
                 </p>
               </div>
             </div>
 
             <div className="mb-4">
-              <label htmlFor="cancelReason" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="cancelReason"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Reason for cancellation *
               </label>
               <textarea
@@ -780,7 +880,7 @@ export default function ActiveOrdersPage() {
                 onClick={() => {
                   setShowCancelModal(false);
                   setSelectedOrder(null);
-                  setCancelReason('');
+                  setCancelReason("");
                 }}
                 className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 disabled={cancelling}
@@ -805,7 +905,9 @@ export default function ActiveOrdersPage() {
 
             <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-xs text-yellow-800">
-                <strong>Warning:</strong> This action cannot be undone. The order will be marked as cancelled and removed from kitchen workflow.
+                <strong>Warning:</strong> This action cannot be undone. The
+                order will be marked as cancelled and removed from kitchen
+                workflow.
               </p>
             </div>
           </div>

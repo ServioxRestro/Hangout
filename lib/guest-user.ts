@@ -46,7 +46,7 @@ export async function createOrUpdateGuestUser(phone: string): Promise<GuestUser 
         .from('guest_users')
         .update({
           last_login_at: new Date().toISOString(),
-          visit_count: existingUser.visit_count + 1,
+          visit_count: (existingUser.visit_count || 0) + 1,
           is_active: true
         })
         .eq('phone', phone)

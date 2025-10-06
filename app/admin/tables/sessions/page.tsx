@@ -13,11 +13,12 @@ import {
   ShoppingCart,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
 } from "lucide-react";
 
 type TableSession = Tables<"table_sessions"> & {
   restaurant_tables: Tables<"restaurant_tables"> | null;
+  guest_users?: Tables<"guest_users"> | null;
 };
 
 export default function TableSessionsPage() {
@@ -37,7 +38,8 @@ export default function TableSessionsPage() {
     try {
       const { data, error } = await supabase
         .from("table_sessions")
-        .select(`
+        .select(
+          `
           *,
           restaurant_tables (*),
           guest_users (
@@ -48,7 +50,8 @@ export default function TableSessionsPage() {
             total_orders,
             total_spent
           )
-        `)
+        `
+        )
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -111,7 +114,7 @@ export default function TableSessionsPage() {
         .from("table_sessions")
         .update({
           status: "completed",
-          session_ended_at: new Date().toISOString()
+          session_ended_at: new Date().toISOString(),
         })
         .eq("id", sessionId);
 
@@ -137,8 +140,8 @@ export default function TableSessionsPage() {
     );
   }
 
-  const activeSessions = sessions.filter(s => s.status === "active");
-  const completedSessions = sessions.filter(s => s.status === "completed");
+  const activeSessions = sessions.filter((s) => s.status === "active");
+  const completedSessions = sessions.filter((s) => s.status === "completed");
 
   return (
     <div>
@@ -147,7 +150,8 @@ export default function TableSessionsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Table Sessions</h1>
           <p className="text-gray-600 mt-1">
-            Monitor active dining sessions and table occupancy. Sessions automatically complete when all orders are finished.
+            Monitor active dining sessions and table occupancy. Sessions
+            automatically complete when all orders are finished.
           </p>
         </div>
         <Button variant="secondary" onClick={fetchSessions}>
@@ -173,7 +177,9 @@ export default function TableSessionsPage() {
                 <Users className="w-6 h-6 text-green-600" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-900">{activeSessions.length}</div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {activeSessions.length}
+                </div>
                 <div className="text-sm text-gray-600">Active Sessions</div>
               </div>
             </div>
@@ -188,7 +194,10 @@ export default function TableSessionsPage() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {activeSessions.reduce((sum, s) => sum + (s.total_orders || 0), 0)}
+                  {activeSessions.reduce(
+                    (sum, s) => sum + (s.total_orders || 0),
+                    0
+                  )}
                 </div>
                 <div className="text-sm text-gray-600">Active Orders</div>
               </div>
@@ -204,7 +213,12 @@ export default function TableSessionsPage() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(activeSessions.reduce((sum, s) => sum + (s.total_amount || 0), 0))}
+                  {formatCurrency(
+                    activeSessions.reduce(
+                      (sum, s) => sum + (s.total_amount || 0),
+                      0
+                    )
+                  )}
                 </div>
                 <div className="text-sm text-gray-600">Active Revenue</div>
               </div>
@@ -215,13 +229,19 @@ export default function TableSessionsPage() {
 
       {/* Active Sessions */}
       <div className="mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Active Sessions</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Active Sessions
+        </h2>
         {activeSessions.length === 0 ? (
           <Card>
             <div className="p-8 text-center">
               <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Sessions</h3>
-              <p className="text-gray-600">All tables are currently available</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No Active Sessions
+              </h3>
+              <p className="text-gray-600">
+                All tables are currently available
+              </p>
             </div>
           </Card>
         ) : (
@@ -234,7 +254,11 @@ export default function TableSessionsPage() {
                       <div className="font-semibold text-lg">
                         Table {session.restaurant_tables?.table_number}
                       </div>
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(session.status)}`}>
+                      <div
+                        className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                          session.status
+                        )}`}
+                      >
                         {session.status}
                       </div>
                     </div>
@@ -245,10 +269,15 @@ export default function TableSessionsPage() {
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Users className="w-4 h-4" />
                       <div className="flex flex-col">
-                        <span>{session.customer_phone || session.customer_email || 'N/A'}</span>
+                        <span>
+                          {session.customer_phone ||
+                            session.customer_email ||
+                            "N/A"}
+                        </span>
                         {session.guest_users && (
                           <span className="text-xs text-blue-600">
-                            {session.guest_users.visit_count}x visitor • {session.guest_users.total_orders} total orders
+                            {session.guest_users.visit_count}x visitor •{" "}
+                            {session.guest_users.total_orders} total orders
                           </span>
                         )}
                       </div>
@@ -256,7 +285,11 @@ export default function TableSessionsPage() {
 
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Clock className="w-4 h-4" />
-                      <span>{formatDuration(session.session_started_at || session.created_at || "")}</span>
+                      <span>
+                        {formatDuration(
+                          session.session_started_at || session.created_at || ""
+                        )}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -269,7 +302,9 @@ export default function TableSessionsPage() {
                       <span>{formatCurrency(session.total_amount || 0)}</span>
                       {session.guest_users && (
                         <span className="text-xs text-gray-500">
-                          ({formatCurrency(session.guest_users.total_spent || 0)} lifetime)
+                          (
+                          {formatCurrency(session.guest_users.total_spent || 0)}{" "}
+                          lifetime)
                         </span>
                       )}
                     </div>
@@ -292,13 +327,19 @@ export default function TableSessionsPage() {
 
       {/* Recent Completed Sessions */}
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Recent Completed Sessions</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Recent Completed Sessions
+        </h2>
         {completedSessions.length === 0 ? (
           <Card>
             <div className="p-8 text-center">
               <CheckCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Completed Sessions</h3>
-              <p className="text-gray-600">Completed sessions will appear here</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No Completed Sessions
+              </h3>
+              <p className="text-gray-600">
+                Completed sessions will appear here
+              </p>
             </div>
           </Card>
         ) : (
@@ -334,11 +375,15 @@ export default function TableSessionsPage() {
                         Table {session.restaurant_tables?.table_number}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {session.customer_phone || session.customer_email || 'N/A'}
+                        {session.customer_phone ||
+                          session.customer_email ||
+                          "N/A"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDuration(
-                          session.session_started_at || session.created_at || "",
+                          session.session_started_at ||
+                            session.created_at ||
+                            "",
                           session.session_ended_at
                         )}
                       </td>
@@ -349,7 +394,11 @@ export default function TableSessionsPage() {
                         {formatCurrency(session.total_amount || 0)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
+                        <div
+                          className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            session.status
+                          )}`}
+                        >
                           {session.status}
                         </div>
                       </td>
