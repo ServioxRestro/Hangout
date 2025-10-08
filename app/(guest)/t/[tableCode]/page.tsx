@@ -12,6 +12,7 @@ import { MenuItemCard } from "@/components/guest/MenuItemCard";
 import { CartSummary } from "@/components/guest/CartSummary";
 import { FeaturedOffersCarousel } from "@/components/guest/FeaturedOffersCarousel";
 import { GuestLoginModal } from "@/components/guest/GuestLoginModal";
+import { AddToCartToast } from "@/components/guest/AddToCartToast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import { Search, User, LogOut } from "lucide-react";
@@ -51,6 +52,8 @@ export default function TablePage() {
     useState<boolean>(false);
   const [featuredOffers, setFeaturedOffers] = useState<any[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastData, setToastData] = useState({ itemName: "", quantity: 0 });
 
   useEffect(() => {
     if (tableCode) {
@@ -252,12 +255,19 @@ export default function TablePage() {
     setCart((prev) => {
       const existingItem = prev.find((cartItem) => cartItem.id === item.id);
       if (existingItem) {
+        const newQuantity = existingItem.quantity + 1;
+        // Show toast with updated quantity
+        setToastData({ itemName: item.name, quantity: newQuantity });
+        setShowToast(true);
         return prev.map((cartItem) =>
           cartItem.id === item.id
-            ? { ...cartItem, quantity: cartItem.quantity + 1 }
+            ? { ...cartItem, quantity: newQuantity }
             : cartItem
         );
       } else {
+        // Show toast for new item
+        setToastData({ itemName: item.name, quantity: 1 });
+        setShowToast(true);
         return [
           ...prev,
           {
@@ -501,6 +511,15 @@ export default function TablePage() {
         isOpen={showLoginModal}
         onClose={() => setShowLoginModal(false)}
         onLoginSuccess={handleLoginSuccess}
+      />
+
+      {/* Add to Cart Toast */}
+      <AddToCartToast
+        show={showToast}
+        itemName={toastData.itemName}
+        quantity={toastData.quantity}
+        tableCode={tableCode}
+        onClose={() => setShowToast(false)}
       />
     </GuestLayout>
   );

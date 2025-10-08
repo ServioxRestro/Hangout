@@ -8,6 +8,11 @@ import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import { formatCurrency } from "@/lib/constants";
 import {
+  generateHTMLReceipt,
+  printHTMLReceipt,
+  type BillItem,
+} from "@/lib/utils/billing";
+import {
   Receipt,
   CreditCard,
   Clock,
@@ -519,110 +524,56 @@ export default function BillingPage() {
         return acc;
       }, {}) || {};
 
-      const printContent = `
-        <html>
-          <head>
-            <title>Receipt - ${bill.bill_number}</title>
-            <meta charset="UTF-8">
-            <style>
-              body {
-                font-family: 'Courier New', monospace;
-                max-width: 300px;
-                margin: 0 auto;
-                padding: 15px;
-                line-height: 1.4;
-                font-size: 12px;
-                color: #000;
-                background: #fff;
-              }
-              .center { text-align: center; margin-bottom: 10px; }
-              .line { border-bottom: 1px dashed #000; margin: 8px 0; }
-              .row { display: flex; justify-content: space-between; margin: 2px 0; }
-              .bold { font-weight: bold; }
-              .item-row {
-                display: flex;
-                justify-content: space-between;
-                margin: 3px 0;
-                padding: 2px 0;
-              }
-              .item-name { flex: 1; margin-right: 10px; }
-              .final-total {
-                font-size: 16px;
-                font-weight: bold;
-                border-top: 2px solid #000;
-                padding-top: 8px;
-                margin-top: 8px;
-              }
-              @media print {
-                body { margin: 0; padding: 10px; font-size: 11px; }
-                @page { margin: 5mm; size: 80mm auto; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="center">
-              <div class="bold" style="font-size: 16px;">${settingsMap.restaurant_name || 'HANGOUT RESTAURANT'}</div>
-              ${settingsMap.restaurant_address ? `<div>${settingsMap.restaurant_address}</div>` : ''}
-              ${settingsMap.restaurant_phone ? `<div>Phone: ${settingsMap.restaurant_phone}</div>` : ''}
-              ${settingsMap.gst_number ? `<div>GST: ${settingsMap.gst_number}</div>` : ''}
-            </div>
-            <div class="line"></div>
+      // Prepare bill items for receipt
+      const billItems: BillItem[] = bill.bill_items?.map((item: any) => ({
+        name: item.item_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        is_manual: item.is_manual || false,
+      })) || [];
 
-            <div class="center">
-              <div class="bold">Bill No: ${bill.bill_number}</div>
-              <div>Date: ${new Date(bill.created_at).toLocaleString('en-IN')}</div>
-              <div>Payment: ${bill.payment_method.toUpperCase()}</div>
-            </div>
-            <div class="line"></div>
-
-            <div>
-              <div class="bold center">ITEMS ORDERED</div>
-              <div class="line" style="margin: 5px 0;"></div>
-              ${bill.bill_items?.map((item: any) => `
-                <div class="item-row">
-                  <div class="item-name">${item.item_name}</div>
-                  <div style="width: 30px; text-align: center;">${item.quantity}</div>
-                  <div style="width: 70px; text-align: right;">${formatCurrency(item.total_price)}</div>
-                </div>
-              `).join('') || '<div>No items</div>'}
-            </div>
-            <div class="line"></div>
-
-            <div class="row"><span>Subtotal:</span><span>${formatCurrency(bill.subtotal)}</span></div>
-            ${bill.discount_amount > 0 ? `
-              <div class="row"><span>Discount (${bill.discount_percentage}%):</span><span>-${formatCurrency(bill.discount_amount)}</span></div>
-            ` : ''}
-            ${bill.cgst_amount > 0 ? `<div class="row"><span>CGST @ ${bill.cgst_rate}%:</span><span>${formatCurrency(bill.cgst_amount)}</span></div>` : ''}
-            ${bill.sgst_amount > 0 ? `<div class="row"><span>SGST @ ${bill.sgst_rate}%:</span><span>${formatCurrency(bill.sgst_amount)}</span></div>` : ''}
-            ${bill.service_charge_amount > 0 ? `<div class="row"><span>Service Charge @ ${bill.service_charge_rate}%:</span><span>${formatCurrency(bill.service_charge_amount)}</span></div>` : ''}
-
-            <div class="row final-total">
-              <span>TOTAL:</span>
-              <span>${formatCurrency(bill.final_amount)}</span>
-            </div>
-
-            <div class="line"></div>
-            <div class="center">
-              <div class="bold">Thank you for dining with us!</div>
-              <div>Please visit us again!</div>
-              <div style="margin-top: 10px;">Paid on: ${new Date(bill.paid_at).toLocaleString('en-IN')}</div>
-            </div>
-          </body>
-        </html>
-      `;
-
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-          setTimeout(() => printWindow.close(), 1000);
-        }, 500);
-      } else {
-        alert('Unable to open print window. Please check if pop-ups are blocked.');
+      // Prepare tax settings
+      const taxes = [];
+      if (bill.cgst_amount > 0) {
+        taxes.push({ name: 'CGST', rate: bill.cgst_rate, amount: bill.cgst_amount });
       }
+      if (bill.sgst_amount > 0) {
+        taxes.push({ name: 'SGST', rate: bill.sgst_rate, amount: bill.sgst_amount });
+      }
+      if (bill.service_charge_amount > 0) {
+        taxes.push({ name: 'Service Charge', rate: bill.service_charge_rate, amount: bill.service_charge_amount });
+      }
+
+      const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
+
+      // Generate HTML receipt using shared utility
+      const htmlReceipt = generateHTMLReceipt({
+        settings: {
+          restaurant_name: settingsMap.restaurant_name,
+          restaurant_address: settingsMap.restaurant_address,
+          restaurant_phone: settingsMap.restaurant_phone,
+          gst_number: settingsMap.gst_number,
+        },
+        billNumber: bill.bill_number,
+        tableNumber: null,
+        orderType: 'takeaway',
+        items: billItems,
+        calculation: {
+          subtotal: bill.subtotal,
+          discount_amount: bill.discount_amount,
+          taxable_amount: bill.subtotal - bill.discount_amount,
+          taxes,
+          tax_amount: taxAmount,
+          final_amount: bill.final_amount,
+        },
+        paymentMethod: bill.payment_method,
+        discountPercentage: bill.discount_percentage,
+        date: new Date(bill.created_at),
+      });
+
+      // Print using shared utility
+      printHTMLReceipt(htmlReceipt);
     } catch (error) {
       console.error('Error printing receipt:', error);
       alert('Error printing receipt. Please try again.');

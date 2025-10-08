@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Receipt,
   Settings,
+  ChefHat,
 } from "lucide-react";
 import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
 
@@ -56,6 +57,23 @@ export default function DynamicNavbar({
       icon: LayoutDashboard,
     },
     {
+      name: "Tables",
+      href: "/admin/tables/sessions",
+      icon: Table2,
+      subItems: [
+        {
+          name: "Table Sessions",
+          href: "/admin/tables/sessions",
+          icon: Users,
+        },
+        {
+          name: "Table Management",
+          href: "/admin/tables",
+          icon: Table2,
+        },
+      ],
+    },
+    {
       name: "Orders",
       href: "/admin/orders",
       icon: ClipboardList,
@@ -83,23 +101,10 @@ export default function DynamicNavbar({
       icon: Receipt,
     },
     {
-      name: "Tables",
-      href: "/admin/tables",
-      icon: Table2,
-      subItems: [
-        {
-          name: "Table Management",
-          href: "/admin/tables",
-          icon: Table2,
-        },
-        {
-          name: "Table Sessions",
-          href: "/admin/tables/sessions",
-          icon: Users,
-        },
-      ],
+      name: "Kitchen",
+      href: "/admin/kitchen",
+      icon: ChefHat,
     },
-
     {
       name: "Menu",
       href: "/admin/menu",

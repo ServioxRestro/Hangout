@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentUser } from "@/lib/auth/msg91-widget";
 import { formatCurrency } from "@/lib/utils";
@@ -12,13 +13,16 @@ import {
   Utensils,
   Receipt,
   AlertCircle,
-  User
+  User,
+  FileText,
+  Loader2
 } from "lucide-react";
 import type { Tables } from "@/types/database.types";
 import { GuestLayout } from "@/components/guest/GuestLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import { formatDate } from "@/lib/utils";
+import { calculateBill, type BillItem } from "@/lib/utils/billing";
 
 type Order = Tables<"orders"> & {
   order_items: Array<
@@ -26,55 +30,6 @@ type Order = Tables<"orders"> & {
       menu_items: Tables<"menu_items"> | null;
     }
   >;
-};
-
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case "placed":
-      return <Clock className="w-5 h-5 text-blue-600" />;
-    case "preparing":
-      return <ChefHat className="w-5 h-5 text-orange-600" />;
-    case "served":
-      return <Utensils className="w-5 h-5 text-green-600" />;
-    case "completed":
-    case "paid":
-      return <CheckCircle className="w-5 h-5 text-green-600" />;
-    default:
-      return <Receipt className="w-5 h-5 text-gray-600" />;
-  }
-};
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "placed":
-      return "bg-blue-50 text-blue-800 border-blue-200";
-    case "preparing":
-      return "bg-orange-50 text-orange-800 border-orange-200";
-    case "served":
-      return "bg-green-50 text-green-800 border-green-200";
-    case "completed":
-    case "paid":
-      return "bg-gray-50 text-gray-800 border-gray-200";
-    default:
-      return "bg-gray-50 text-gray-800 border-gray-200";
-  }
-};
-
-const getStatusText = (status: string) => {
-  switch (status) {
-    case "placed":
-      return "Order Placed";
-    case "preparing":
-      return "Being Prepared";
-    case "served":
-      return "Served";
-    case "completed":
-      return "Completed";
-    case "paid":
-      return "Paid";
-    default:
-      return status;
-  }
 };
 
 export default function OrdersPage() {
@@ -85,38 +40,13 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [showBill, setShowBill] = useState(false);
+  const [billSummary, setBillSummary] = useState<any>(null);
+  const [processingBill, setProcessingBill] = useState(false);
+  const [taxSettings, setTaxSettings] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (tableCode) {
-      checkUserAndFetchOrders();
-    }
-  }, [tableCode]);
-
-  const checkUserAndFetchOrders = async () => {
-    try {
-      const user = await getCurrentUser();
-      if (!user) {
-        setError("Please sign in to view your orders");
-        setLoading(false);
-        return;
-      }
-
-      setCurrentUser(user);
-      if (user.phone) {
-        await fetchOrders(user.phone);
-      }
-    } catch (error) {
-      console.error("Error checking user:", error);
-      setError("Failed to load user session");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchOrders = async (userPhone: string, showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-
+  // Define fetchOrders first with useCallback
+  const fetchOrders = useCallback(async (userPhone: string) => {
     try {
       // Get table info first
       const { data: tableData, error: tableError } = await supabase
@@ -199,16 +129,152 @@ export default function OrdersPage() {
     } catch (error: any) {
       console.error("Error fetching orders:", error);
       setError(error.message || "Failed to load orders");
-    } finally {
-      if (showRefresh) setRefreshing(false);
+    }
+  }, [tableCode]);
+
+  const fetchTaxSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("tax_settings")
+        .select("*")
+        .eq("is_active", true)
+        .order("name");
+
+      if (error) throw error;
+      setTaxSettings(data || []);
+    } catch (error) {
+      console.error("Error fetching tax settings:", error);
     }
   };
 
-  const handleRefresh = () => {
-    if (currentUser) {
-      fetchOrders(currentUser.phone, true);
+  const checkUserAndFetchOrders = async () => {
+    try {
+      const user = await getCurrentUser();
+      if (!user) {
+        setError("Please sign in to view your orders");
+        setLoading(false);
+        return;
+      }
+
+      setCurrentUser(user);
+      if (user.phone) {
+        await fetchOrders(user.phone);
+      }
+    } catch (error) {
+      console.error("Error checking user:", error);
+      setError("Failed to load user session");
+    } finally {
+      setLoading(false);
     }
   };
+
+  // Initial data fetch
+  useEffect(() => {
+    if (tableCode) {
+      checkUserAndFetchOrders();
+      fetchTaxSettings();
+    }
+  }, [tableCode, fetchOrders]);
+
+  // Separate effect for auto-refresh
+  useEffect(() => {
+    if (!currentUser?.phone || showBill) return;
+
+    const interval = setInterval(() => {
+      fetchOrders(currentUser.phone);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [currentUser?.phone, showBill, fetchOrders]);
+
+  const handleGetBill = async () => {
+    // If bill already generated, just show it
+    if (billSummary) {
+      setShowBill(true);
+      return;
+    }
+
+    setProcessingBill(true);
+    try {
+      // Get all active orders
+      const activeOrders = orders.filter(o =>
+        o.status !== 'completed' && o.status !== 'paid'
+      );
+
+      if (activeOrders.length === 0) {
+        alert("No active orders to bill");
+        return;
+      }
+
+      // Collect all items from active orders
+      const allItems = activeOrders.flatMap(order => order.order_items);
+
+      // Check if all items are ready
+      const allReady = allItems.every(item =>
+        item.status === 'ready' || item.status === 'served'
+      );
+
+      if (!allReady) {
+        alert("Please wait until all items are ready before requesting the bill");
+        setProcessingBill(false);
+        return;
+      }
+
+      // Prepare bill items
+      const billItems: BillItem[] = allItems.map(item => ({
+        name: item.menu_items?.name || "Unknown Item",
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        is_manual: false,
+      }));
+
+      // Calculate bill
+      const calculation = calculateBill(
+        billItems,
+        0, // No discount for guest orders
+        taxSettings
+      );
+
+      setBillSummary({
+        items: billItems,
+        calculation,
+        orderIds: activeOrders.map(o => o.id),
+      });
+
+      // Mark all items as served
+      const itemIds = allItems.map(item => item.id);
+      const { error: updateError } = await supabase
+        .from("order_items")
+        .update({ status: "served" })
+        .in("id", itemIds);
+
+      if (updateError) throw updateError;
+
+      // Show bill
+      setShowBill(true);
+
+      // Refresh orders to show updated status
+      if (currentUser?.phone) {
+        await fetchOrders(currentUser.phone);
+      }
+    } catch (error) {
+      console.error("Error generating bill:", error);
+      alert("Failed to generate bill. Please try again.");
+    } finally {
+      setProcessingBill(false);
+    }
+  };
+
+  // Check if all items are ready
+  const activeOrders = orders.filter(o =>
+    o.status !== 'completed' && o.status !== 'paid'
+  );
+  const allItems = activeOrders.flatMap(order => order.order_items);
+  const allItemsReady = allItems.length > 0 && allItems.every(item =>
+    item.status === 'ready' || item.status === 'served'
+  );
+  const hasActiveOrders = activeOrders.length > 0;
 
   if (loading) {
     return (
@@ -246,25 +312,15 @@ export default function OrdersPage() {
     <GuestLayout>
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-40">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">Your Orders</h1>
-            <p className="text-sm text-gray-600">
-              Orders for Table {tableCode}
-            </p>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </Button>
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">Your Order</h1>
+          <p className="text-sm text-gray-600">
+            Table {tableCode} • Updates automatically
+          </p>
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="p-4 pb-32">
         {currentUser && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
             <div className="flex items-center gap-2 text-blue-800 text-sm">
@@ -274,14 +330,14 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {orders.length === 0 ? (
+        {activeOrders.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Receipt className="w-10 h-10 text-gray-400" />
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">No orders yet</h3>
             <p className="text-gray-500 mb-6">
-              Your order history will appear here once you place an order
+              Start browsing the menu and add items to your order
             </p>
             <Button
               variant="primary"
@@ -292,101 +348,186 @@ export default function OrdersPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {orders.map((order) => (
-              <div key={order.id} className="bg-white rounded-lg border border-gray-200 p-4">
-                {/* Order Header */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(order.status || "placed")}
-                    <div>
-                      <div className="font-semibold text-gray-900">
-                        Order #{order.id.slice(-8).toUpperCase()}
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {formatDate(order.created_at || "")}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
-                      order.status || "placed"
-                    )}`}
-                  >
-                    {getStatusText(order.status || "placed")}
-                  </span>
+            {/* Current Order Summary */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-bold text-lg text-gray-900">Your Current Order</h2>
+                  <p className="text-sm text-gray-600">
+                    {allItems.length} item{allItems.length !== 1 ? 's' : ''}
+                  </p>
                 </div>
+                {allItemsReady ? (
+                  <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
+                    <CheckCircle className="w-5 h-5" />
+                    <span>Ready</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-orange-600 text-sm font-medium">
+                    <ChefHat className="w-5 h-5" />
+                    <span>Preparing</span>
+                  </div>
+                )}
+              </div>
 
-                {/* Order Items */}
-                <div className="space-y-2 mb-3">
-                  {order.order_items.map((item) => (
-                    <div key={item.id} className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">
-                          {item.quantity}x {item.menu_items?.name || "Unknown Item"}
-                        </span>
-                        {item.menu_items?.is_veg && (
-                          <span className="text-green-600 text-xs">🟢</span>
-                        )}
+              {/* All Items */}
+              <div className="space-y-3">
+                {allItems
+                  .sort((a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime())
+                  .map((item) => (
+                    <div key={item.id} className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0">
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-bold text-sm flex-shrink-0">
+                          {item.quantity}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">
+                              {item.menu_items?.name || "Unknown Item"}
+                            </span>
+                            {item.menu_items?.is_veg && (
+                              <span className="text-xs">🟢</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {item.status === 'ready' ? (
+                              <span className="text-green-600 font-medium">✓ Ready</span>
+                            ) : item.status === 'preparing' ? (
+                              <span className="text-orange-600">Being prepared...</span>
+                            ) : (
+                              <span className="text-blue-600">Order placed</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-gray-600">
+                      <span className="text-gray-900 font-medium ml-3">
                         {formatCurrency(item.total_price)}
                       </span>
                     </div>
                   ))}
-                </div>
+              </div>
 
-                {/* Order Total */}
-                <div className="border-t pt-3 flex justify-between items-center">
-                  <span className="font-semibold text-gray-900">Total</span>
-                  <span className="font-bold text-lg text-gray-900">
-                    {formatCurrency(order.total_amount)}
-                  </span>
-                </div>
+              {/* Total */}
+              <div className="border-t pt-3 mt-3 flex justify-between items-center">
+                <span className="font-semibold text-gray-900">Total</span>
+                <span className="font-bold text-xl text-gray-900">
+                  {formatCurrency(activeOrders.reduce((sum, order) => sum + order.total_amount, 0))}
+                </span>
+              </div>
+            </div>
 
-                {/* Order Notes */}
-                {order.notes && (
-                  <div className="mt-3 pt-3 border-t">
-                    <div className="text-xs text-gray-500 mb-1">Notes:</div>
-                    <div className="text-sm text-gray-700">{order.notes}</div>
-                  </div>
-                )}
-
-                {/* Status Timeline */}
-                <div className="mt-4 pt-3 border-t">
-                  <div className="text-xs text-gray-500 mb-2">Order Status:</div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${
-                      ["placed", "preparing", "served", "completed", "paid"].includes(order.status || "")
-                        ? "bg-blue-600" : "bg-gray-300"
-                    }`} />
-                    <span className="text-xs text-gray-600">Placed</span>
-
-                    <div className={`w-4 h-0.5 ${
-                      ["preparing", "served", "completed", "paid"].includes(order.status || "")
-                        ? "bg-orange-600" : "bg-gray-300"
-                    }`} />
-                    <div className={`w-2 h-2 rounded-full ${
-                      ["preparing", "served", "completed", "paid"].includes(order.status || "")
-                        ? "bg-orange-600" : "bg-gray-300"
-                    }`} />
-                    <span className="text-xs text-gray-600">Preparing</span>
-
-                    <div className={`w-4 h-0.5 ${
-                      ["served", "completed", "paid"].includes(order.status || "")
-                        ? "bg-green-600" : "bg-gray-300"
-                    }`} />
-                    <div className={`w-2 h-2 rounded-full ${
-                      ["served", "completed", "paid"].includes(order.status || "")
-                        ? "bg-green-600" : "bg-gray-300"
-                    }`} />
-                    <span className="text-xs text-gray-600">Served</span>
+            {/* Info Card */}
+            {!allItemsReady && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <Clock className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="font-medium text-blue-900 mb-1">Your food is being prepared</h3>
+                    <p className="text-sm text-blue-700">
+                      You can request the bill once all items are ready
+                    </p>
                   </div>
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
+
+      {/* Get Bill Button - Fixed at bottom, above navigation */}
+      {hasActiveOrders && (
+        <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-40">
+          <Button
+            variant="primary"
+            className="w-full"
+            onClick={handleGetBill}
+            disabled={(!allItemsReady && !billSummary) || processingBill}
+            leftIcon={processingBill ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+          >
+            {processingBill
+              ? "Processing..."
+              : billSummary
+                ? "View Bill"
+                : allItemsReady
+                  ? "Get Bill"
+                  : "Waiting for food to be ready..."}
+          </Button>
+        </div>
+      )}
+
+      {/* Bill Modal */}
+      {showBill && billSummary && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Your Bill</h2>
+                <button
+                  onClick={() => setShowBill(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <span className="text-2xl">×</span>
+                </button>
+              </div>
+
+              {/* Bill Items */}
+              <div className="space-y-2 mb-4">
+                {billSummary.items.map((item: BillItem, idx: number) => (
+                  <div key={idx} className="flex justify-between text-sm">
+                    <span className="text-gray-700">
+                      {item.quantity}x {item.name}
+                    </span>
+                    <span className="text-gray-900 font-medium">
+                      {formatCurrency(item.total_price)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t pt-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="text-gray-900">{formatCurrency(billSummary.calculation.subtotal)}</span>
+                </div>
+
+                {billSummary.calculation.taxes.map((tax: any, idx: number) => (
+                  <div key={idx} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{tax.name} ({tax.rate}%)</span>
+                    <span className="text-gray-900">{formatCurrency(tax.amount)}</span>
+                  </div>
+                ))}
+
+                <div className="flex justify-between items-center pt-3 border-t">
+                  <span className="font-bold text-lg text-gray-900">Total</span>
+                  <span className="font-bold text-2xl text-gray-900">
+                    {formatCurrency(billSummary.calculation.final_amount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="font-medium text-green-900 mb-1">Ready for payment</h3>
+                    <p className="text-sm text-green-700">
+                      Please call a waiter or proceed to the counter to settle your bill
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                variant="secondary"
+                className="w-full mt-4"
+                onClick={() => setShowBill(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </GuestLayout>
   );
 }

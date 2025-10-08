@@ -51,6 +51,7 @@ export default function CartPage() {
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [orderPlacing, setOrderPlacing] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [isAddingToExisting, setIsAddingToExisting] = useState(false);
 
   // Table occupation state
   const [occupiedByDifferentUser, setOccupiedByDifferentUser] = useState(false);
@@ -280,48 +281,132 @@ export default function CartPage() {
         sessionId = newSession.id;
       }
 
-      // Create the order with session reference and guest_user_id
-      const { data: orderData, error: orderError } = await supabase
+      // Check if there's already an active order in this session
+      const { data: existingOrder, error: orderCheckError } = await supabase
         .from("orders")
-        .insert({
-          table_id: table.id,
-          table_session_id: sessionId,
-          customer_phone: phone,
-          guest_user_id: guestUserId,
-          total_amount: getTotalAmount(),
-          status: "placed",
-          notes: `Order placed via QR code for table ${table.table_number}`
-        })
-        .select()
-        .single();
+        .select("id, total_amount")
+        .eq("table_session_id", sessionId)
+        .not("status", "in", "(completed,paid,cancelled)")
+        .maybeSingle();
 
-      if (orderError || !orderData) {
-        throw new Error(orderError?.message || "Failed to create order");
+      if (orderCheckError) {
+        throw new Error("Failed to check existing order");
       }
 
-      // Create order items
-      const orderItems = cart.map(item => ({
-        order_id: orderData.id,
-        menu_item_id: item.id,
-        quantity: item.quantity,
-        unit_price: item.price,
-        total_price: item.price * item.quantity
-      }));
+      let orderId: string;
+      const cartTotal = getTotalAmount();
 
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(orderItems);
+      if (existingOrder) {
+        // ADD items to existing order
+        orderId = existingOrder.id;
+        setIsAddingToExisting(true);
 
-      if (itemsError) {
-        throw new Error(itemsError.message || "Failed to add order items");
+        // Get next KOT number for this batch
+        const { data: kotData, error: kotError } = await supabase
+          .rpc('get_next_kot_number');
+
+        if (kotError) {
+          throw new Error("Failed to generate KOT number");
+        }
+
+        const kotNumber = kotData as number;
+        const kotBatchId = crypto.randomUUID();
+
+        // Create order items for the new cart items with KOT info
+        const orderItems = cart.map(item => ({
+          order_id: orderId,
+          menu_item_id: item.id,
+          quantity: item.quantity,
+          unit_price: item.price,
+          total_price: item.price * item.quantity,
+          kot_number: kotNumber,
+          kot_batch_id: kotBatchId
+        }));
+
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .insert(orderItems);
+
+        if (itemsError) {
+          throw new Error(itemsError.message || "Failed to add items to order");
+        }
+
+        // Update order total amount and timestamp
+        const { error: orderUpdateError } = await supabase
+          .from("orders")
+          .update({
+            total_amount: existingOrder.total_amount + cartTotal,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", orderId);
+
+        if (orderUpdateError) {
+          throw new Error(orderUpdateError.message || "Failed to update order total");
+        }
+
+      } else {
+        // CREATE new order (first order in session)
+        setIsAddingToExisting(false);
+        const { data: orderData, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            table_id: table.id,
+            table_session_id: sessionId,
+            customer_phone: phone,
+            guest_user_id: guestUserId,
+            total_amount: cartTotal,
+            status: "placed",
+            order_type: "dine-in",
+            notes: `Order placed via QR code for table ${table.table_number}`
+          })
+          .select()
+          .single();
+
+        if (orderError || !orderData) {
+          throw new Error(orderError?.message || "Failed to create order");
+        }
+
+        orderId = orderData.id;
+
+        // Get next KOT number for this batch
+        const { data: kotData, error: kotError } = await supabase
+          .rpc('get_next_kot_number');
+
+        if (kotError) {
+          throw new Error("Failed to generate KOT number");
+        }
+
+        const kotNumber = kotData as number;
+        const kotBatchId = crypto.randomUUID();
+
+        // Create order items with KOT info
+        const orderItems = cart.map(item => ({
+          order_id: orderId,
+          menu_item_id: item.id,
+          quantity: item.quantity,
+          unit_price: item.price,
+          total_price: item.price * item.quantity,
+          kot_number: kotNumber,
+          kot_batch_id: kotBatchId
+        }));
+
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .insert(orderItems);
+
+        if (itemsError) {
+          throw new Error(itemsError.message || "Failed to add order items");
+        }
       }
 
       // Update session totals
       const { error: updateSessionError } = await supabase
         .from("table_sessions")
         .update({
-          total_orders: (existingSession?.total_orders || 0) + 1,
-          total_amount: (existingSession?.total_amount || 0) + getTotalAmount()
+          // Only increment total_orders if we CREATED a new order (not when adding to existing)
+          total_orders: existingOrder ? (existingSession?.total_orders || 1) : (existingSession?.total_orders || 0) + 1,
+          total_amount: (existingSession?.total_amount || 0) + cartTotal,
+          updated_at: new Date().toISOString()
         })
         .eq("id", sessionId);
 
@@ -332,7 +417,7 @@ export default function CartPage() {
 
       // Clear cart
       updateCart([]);
-      setOrderId(orderData.id);
+      setOrderId(orderId);
       setStep("success");
 
     } catch (error: any) {
@@ -649,10 +734,13 @@ export default function CartPage() {
 
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Order Placed Successfully!
+                {isAddingToExisting ? "Items Added Successfully!" : "Order Placed Successfully!"}
               </h2>
               <p className="text-gray-600">
-                Your order has been sent to the kitchen
+                {isAddingToExisting
+                  ? "New items have been added to your order and sent to the kitchen"
+                  : "Your order has been sent to the kitchen"
+                }
               </p>
             </div>
 
