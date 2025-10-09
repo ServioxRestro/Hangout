@@ -58,20 +58,30 @@ export default function DynamicNavbar({
     },
     {
       name: "Tables",
-      href: "/admin/tables/sessions",
+      href: "/admin/tables",
       icon: Table2,
       subItems: [
         {
-          name: "Table Sessions",
-          href: "/admin/tables/sessions",
+          name: "Table Overview",
+          href: "/admin/tables",
           icon: Users,
         },
         {
           name: "Table Management",
-          href: "/admin/tables",
+          href: "/admin/tables/management",
           icon: Table2,
         },
       ],
+    },
+    {
+      name: "Kitchen",
+      href: "/admin/kitchen",
+      icon: ChefHat,
+    },
+    {
+      name: "Bills & Payments",
+      href: "/admin/billing",
+      icon: Receipt,
     },
     {
       name: "Orders",
@@ -95,16 +105,7 @@ export default function DynamicNavbar({
         },
       ],
     },
-    {
-      name: "Bills & Payments",
-      href: "/admin/billing",
-      icon: Receipt,
-    },
-    {
-      name: "Kitchen",
-      href: "/admin/kitchen",
-      icon: ChefHat,
-    },
+
     {
       name: "Menu",
       href: "/admin/menu",

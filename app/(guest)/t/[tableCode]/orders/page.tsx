@@ -211,7 +211,7 @@ export default function OrdersPage() {
 
       // Check if all items are ready
       const allReady = allItems.every(item =>
-        item.status === 'ready' || item.status === 'served'
+        (item as any).status === 'ready' || (item as any).status === 'served'
       );
 
       if (!allReady) {
@@ -246,7 +246,7 @@ export default function OrdersPage() {
       const itemIds = allItems.map(item => item.id);
       const { error: updateError } = await supabase
         .from("order_items")
-        .update({ status: "served" })
+        .update({ status: "served" } as any)
         .in("id", itemIds);
 
       if (updateError) throw updateError;
@@ -272,7 +272,7 @@ export default function OrdersPage() {
   );
   const allItems = activeOrders.flatMap(order => order.order_items);
   const allItemsReady = allItems.length > 0 && allItems.every(item =>
-    item.status === 'ready' || item.status === 'served'
+    (item as any).status === 'ready' || (item as any).status === 'served'
   );
   const hasActiveOrders = activeOrders.length > 0;
 
@@ -390,9 +390,9 @@ export default function OrdersPage() {
                             )}
                           </div>
                           <div className="text-xs text-gray-500 mt-1">
-                            {item.status === 'ready' ? (
+                            {(item as any).status === 'ready' ? (
                               <span className="text-green-600 font-medium">✓ Ready</span>
-                            ) : item.status === 'preparing' ? (
+                            ) : (item as any).status === 'preparing' ? (
                               <span className="text-orange-600">Being prepared...</span>
                             ) : (
                               <span className="text-blue-600">Order placed</span>

@@ -2,454 +2,309 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
-import QRCode from "qrcode";
-import type { Tables } from "@/types/database.types";
-import PageHeader from "@/components/admin/PageHeader";
-import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
-import Modal from "@/components/admin/Modal";
-import FormField from "@/components/admin/FormField";
-import Input from "@/components/admin/Input";
-import Table from "@/components/admin/Table";
+import { formatCurrency } from "@/lib/constants";
 import {
-  Plus,
-  QrCode,
-  Download,
-  Eye,
-  EyeOff,
-  Trash2,
-  Copy,
-  CheckCircle,
-  Users,
+  Clock,
+  DollarSign,
+  ShoppingCart,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
+import { useTableSessions, type TableWithSession } from "@/hooks/useTableSessions";
+import { TableDetailPanel } from "@/components/admin/tables/TableDetailPanel";
 
-type RestaurantTable = Tables<"restaurant_tables">;
+export default function TableSessionsPage() {
+  // Use custom hook for data management
+  const {
+    tablesData,
+    loading,
+    error,
+    fetchTablesWithSessions,
+    markItemsAsServed,
+  } = useTableSessions();
 
-export default function TableManagement() {
-  const [tables, setTables] = useState<RestaurantTable[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(false);
-  const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(
-    null
-  );
-  const [newTableNumber, setNewTableNumber] = useState("");
-  const [addLoading, setAddLoading] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<TableWithSession | null>(null);
+  const [showPanel, setShowPanel] = useState(false);
+  const [changingOrderStatus, setChangingOrderStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTables();
-  }, []);
+    fetchTablesWithSessions();
 
-  const fetchTables = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("restaurant_tables")
-        .select("*")
-        .order("table_number", { ascending: true });
+    // Auto-refresh every 10 seconds for real-time updates
+    const interval = setInterval(fetchTablesWithSessions, 10000);
+    return () => clearInterval(interval);
+  }, [fetchTablesWithSessions]);
 
-      if (error) {
-        console.error("Error fetching tables:", error);
-        return;
-      }
-
-      setTables(data || []);
-    } catch (error) {
-      console.error("Error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateQRCode = async (tableCode: string) => {
-    try {
-      const baseUrl = (
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-      ).trim();
-      const qrUrl = `${baseUrl}/t/${tableCode}`.trim();
-      return await QRCode.toDataURL(qrUrl, {
-        width: 256,
-        margin: 2,
-        color: {
-          dark: "#000000",
-          light: "#FFFFFF",
-        },
-      });
-    } catch (error) {
-      console.error("Error generating QR code:", error);
-      return null;
-    }
-  };
-
-  const addTable = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddLoading(true);
-
-    const tableNumber = parseInt(newTableNumber);
-    if (isNaN(tableNumber) || tableNumber <= 0) {
-      alert("Please enter a valid table number");
-      setAddLoading(false);
-      return;
-    }
-
-    // Check if table number already exists
-    const existing = tables.find((t) => t.table_number === tableNumber);
-    if (existing) {
-      alert("Table number already exists");
-      setAddLoading(false);
-      return;
-    }
-
-    try {
-      const tableCode = `table_${tableNumber}_${Date.now().toString(36)}`;
-      const qrCodeDataUrl = await generateQRCode(tableCode);
-
-      const { data, error } = await supabase
-        .from("restaurant_tables")
-        .insert({
-          table_number: tableNumber,
-          table_code: tableCode,
-          qr_code_url: qrCodeDataUrl,
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Error adding table:", error);
-        alert("Error adding table");
-        setAddLoading(false);
-        return;
-      }
-
-      setTables((prev) => [...prev, data]);
-      setNewTableNumber("");
-      setShowAddModal(false);
-    } catch (error) {
-      console.error("Error:", error);
-      alert("Error adding table");
-    } finally {
-      setAddLoading(false);
-    }
-  };
-
-  const toggleTableStatus = async (tableId: string, isActive: boolean) => {
-    try {
-      const { error } = await supabase
-        .from("restaurant_tables")
-        .update({ is_active: !isActive })
-        .eq("id", tableId);
-
-      if (error) {
-        console.error("Error updating table:", error);
-        return;
-      }
-
-      setTables((prev) =>
-        prev.map((table) =>
-          table.id === tableId ? { ...table, is_active: !isActive } : table
-        )
+  // Sync selectedTable with fresh data after tablesData updates
+  useEffect(() => {
+    if (selectedTable && showPanel) {
+      const updatedTable = tablesData.find(
+        (t) => t.table.id === selectedTable.table.id
       );
-    } catch (error) {
-      console.error("Error:", error);
+      if (updatedTable) {
+        setSelectedTable(updatedTable);
+      }
+    }
+  }, [tablesData, showPanel]);
+
+  const getTableStatus = (
+    tableData: TableWithSession
+  ): "available" | "active" | "ready-to-bill" => {
+    if (!tableData.session) return "available";
+
+    // Check if any order is in 'served' status (ready to bill)
+    const hasServedOrder = tableData.session.orders?.some(
+      (o) => o.status === "served"
+    );
+    if (hasServedOrder) return "ready-to-bill";
+
+    return "active";
+  };
+
+  const getTableColor = (status: "available" | "active" | "ready-to-bill") => {
+    switch (status) {
+      case "available":
+        return {
+          bg: "bg-blue-500 hover:bg-blue-600",
+          text: "text-white",
+          border: "border-blue-600",
+          icon: "text-blue-100",
+        };
+      case "active":
+        return {
+          bg: "bg-green-500 hover:bg-green-600",
+          text: "text-white",
+          border: "border-green-600",
+          icon: "text-green-100",
+        };
+      case "ready-to-bill":
+        return {
+          bg: "bg-gray-900 hover:bg-black",
+          text: "text-white",
+          border: "border-gray-950",
+          icon: "text-gray-300",
+        };
     }
   };
 
-  const deleteTable = async (tableId: string, tableNumber: number) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete Table ${tableNumber}? This action cannot be undone.`
-    );
+  const handleMarkItemsAsServed = async (table: TableWithSession) => {
+    if (!table?.session?.orders) return;
 
-    if (!confirmed) return;
+    setChangingOrderStatus("marking_served");
+    try {
+      await markItemsAsServed(table.session.orders);
+      await fetchTablesWithSessions();
+    } catch (error: any) {
+      console.error("Error marking items as served:", error);
+      alert("Failed to mark items as served: " + error.message);
+    } finally {
+      setChangingOrderStatus(null);
+    }
+  };
 
+  const handlePaymentComplete = async () => {
+    setShowPanel(false);
+    setSelectedTable(null);
+    await fetchTablesWithSessions();
+  };
+
+  const handleEndSession = async (sessionId: string) => {
     try {
       const { error } = await supabase
-        .from("restaurant_tables")
-        .delete()
-        .eq("id", tableId);
+        .from("table_sessions")
+        .update({
+          status: "completed",
+          session_ended_at: new Date().toISOString(),
+        })
+        .eq("id", sessionId);
 
-      if (error) {
-        console.error("Error deleting table:", error);
-        alert("Error deleting table");
-        return;
-      }
+      if (error) throw error;
 
-      setTables((prev) => prev.filter((table) => table.id !== tableId));
-      alert(`Table ${tableNumber} deleted successfully`);
-    } catch (error) {
-      console.error("Error:", error);
-      alert("Error deleting table");
+      setShowPanel(false);
+      setSelectedTable(null);
+      await fetchTablesWithSessions();
+    } catch (error: any) {
+      console.error("Error ending session:", error);
+      alert("Failed to end session: " + error.message);
     }
   };
 
-  const downloadQRCode = (qrCodeUrl: string, tableNumber: number) => {
-    const link = document.createElement("a");
-    link.href = qrCodeUrl;
-    link.download = `table_${tableNumber}_qr.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const formatDuration = (startTime: string) => {
+    const start = new Date(startTime);
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+
+    if (diffMins < 60) return `${diffMins}m`;
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return `${hours}h ${mins}m`;
   };
 
-  const copyTableCode = async (tableCode: string) => {
-    try {
-      await navigator.clipboard.writeText(tableCode);
-      alert("Table code copied to clipboard!");
-    } catch (error) {
-      console.error("Failed to copy:", error);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="min-h-96 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+          <div className="text-gray-600">Loading tables...</div>
+        </div>
+      </div>
+    );
+  }
 
-  const viewQRCode = (table: RestaurantTable) => {
-    setSelectedTable(table);
-    setShowQRModal(true);
-  };
-
-  const tableColumns = [
-    {
-      key: "table_number",
-      title: "Table Number",
-      render: (tableNumber: number) => (
-        <div className="flex items-center">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-            <span className="font-bold text-blue-600">{tableNumber}</span>
-          </div>
-          <span className="font-medium">Table {tableNumber}</span>
-        </div>
-      ),
-    },
-    {
-      key: "table_code",
-      title: "Table Code",
-      render: (code: string) => (
-        <div className="flex items-center space-x-2">
-          <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">
-            {code.length > 20 ? `${code.substring(0, 20)}...` : code}
-          </code>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => copyTableCode(code)}
-            leftIcon={<Copy className="w-3 h-3" />}
-          >
-            Copy
-          </Button>
-        </div>
-      ),
-    },
-    {
-      key: "is_active",
-      title: "Status",
-      render: (isActive: boolean) => (
-        <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
-            isActive
-              ? "bg-green-50 text-green-700 border-green-200"
-              : "bg-red-50 text-red-700 border-red-200"
-          }`}
-        >
-          <CheckCircle
-            className={`w-3 h-3 mr-1 ${
-              isActive ? "text-green-500" : "text-red-500"
-            }`}
-          />
-          {isActive ? "Active" : "Inactive"}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      title: "Actions",
-      render: (_: any, record: RestaurantTable) => (
-        <div className="flex items-center space-x-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => viewQRCode(record)}
-            leftIcon={<QrCode className="w-3 h-3" />}
-          >
-            QR Code
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() =>
-              downloadQRCode(record.qr_code_url!, record.table_number)
-            }
-            leftIcon={<Download className="w-3 h-3" />}
-          >
-            Download
-          </Button>
-          <Button
-            size="sm"
-            variant={record.is_active ? "warning" : "success"}
-            onClick={() =>
-              toggleTableStatus(record.id, record.is_active || false)
-            }
-            leftIcon={
-              record.is_active ? (
-                <EyeOff className="w-3 h-3" />
-              ) : (
-                <Eye className="w-3 h-3" />
-              )
-            }
-          >
-            {record.is_active ? "Deactivate" : "Activate"}
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => deleteTable(record.id, record.table_number)}
-            leftIcon={<Trash2 className="w-3 h-3" />}
-          >
-            Delete
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  const availableTables = tablesData.filter(
+    (t) => getTableStatus(t) === "available"
+  );
+  const activeTables = tablesData.filter((t) => getTableStatus(t) === "active");
+  const readyToBillTables = tablesData.filter(
+    (t) => getTableStatus(t) === "ready-to-bill"
+  );
 
   return (
-    <div>
-      {/* Page Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Table Management</h1>
-          <p className="text-gray-600 mt-1">Manage restaurant tables and their QR codes</p>
-        </div>
-        <Button
-          variant="primary"
-          onClick={() => setShowAddModal(true)}
-          leftIcon={<Plus className="w-4 h-4" />}
-        >
-          Add New Table
-        </Button>
-      </div>
-
-      <div>
-        <Card>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                All Tables
-              </h2>
-              <p className="text-sm text-gray-500">
-                Manage your restaurant tables and generate QR codes
-              </p>
-            </div>
-            <div className="text-sm text-gray-500">
-              Total: {tables.length} table{tables.length !== 1 ? "s" : ""}
-            </div>
+    <div className="flex gap-6">
+      {/* Left Section - Tables Grid */}
+      <div className={`flex-1 transition-all duration-300 ${showPanel ? 'lg:mr-0' : ''}`}>
+        {/* Page Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Table Overview</h1>
+            <p className="text-gray-600 mt-1">
+              Real-time table status and session management
+            </p>
           </div>
-
-          <Table
-            data={tables}
-            columns={tableColumns}
-            loading={loading}
-            emptyText="No tables created yet. Add your first table to get started."
-          />
-        </Card>
-      </div>
-
-      {/* Add Table Modal */}
-      <Modal
-        isOpen={showAddModal}
-        onClose={() => {
-          setShowAddModal(false);
-          setNewTableNumber("");
-        }}
-        title="Add New Table"
-        size="sm"
-      >
-        <form onSubmit={addTable} className="space-y-4">
-          <FormField
-            label="Table Number"
-            required
-            description="Enter a unique number for this table"
+          <Button
+            variant="secondary"
+            onClick={fetchTablesWithSessions}
+            leftIcon={<RefreshCw className="w-4 h-4" />}
           >
-            <Input
-              type="number"
-              value={newTableNumber}
-              onChange={(e) => setNewTableNumber(e.target.value)}
-              placeholder="e.g., 1, 2, 3..."
-              required
-              min="1"
-            />
-          </FormField>
+            Refresh
+          </Button>
+        </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setShowAddModal(false);
-                setNewTableNumber("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="success"
-              loading={addLoading}
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              Add Table
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* QR Code Modal */}
-      <Modal
-        isOpen={showQRModal}
-        onClose={() => {
-          setShowQRModal(false);
-          setSelectedTable(null);
-        }}
-        title={`Table ${selectedTable?.table_number} QR Code`}
-        size="sm"
-      >
-        {selectedTable && (
-          <div className="text-center space-y-4">
-            <div className="bg-gray-50 p-6 rounded-lg">
-              <img
-                src={selectedTable.qr_code_url!}
-                alt={`QR Code for Table ${selectedTable.table_number}`}
-                className="w-64 h-64 mx-auto border-2 border-gray-200 rounded-lg"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-gray-600">Table Code:</p>
-              <code className="block text-xs bg-gray-100 p-2 rounded font-mono break-all">
-                {selectedTable.table_code}
-              </code>
-            </div>
-
-            <div className="flex justify-center space-x-3 pt-4">
-              <Button
-                variant="secondary"
-                onClick={() => copyTableCode(selectedTable.table_code)}
-                leftIcon={<Copy className="w-4 h-4" />}
-              >
-                Copy Code
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() =>
-                  downloadQRCode(
-                    selectedTable.qr_code_url!,
-                    selectedTable.table_number
-                  )
-                }
-                leftIcon={<Download className="w-4 h-4" />}
-              >
-                Download QR
-              </Button>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2 text-red-800">
+              <AlertCircle className="w-5 h-5" />
+              <span>{error}</span>
             </div>
           </div>
         )}
-      </Modal>
+
+        {/* Legend */}
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-500 rounded"></div>
+              <span className="text-sm text-gray-700">Available</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-green-500 rounded"></div>
+              <span className="text-sm text-gray-700">Active (Dining)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-gray-900 rounded"></div>
+              <span className="text-sm text-gray-700">Ready to Bill</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Tables Grid */}
+        <div className={`grid gap-4 ${
+          showPanel
+            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4'
+            : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+        }`}>
+          {tablesData.map((tableData) => {
+            const status = getTableStatus(tableData);
+            const colors = getTableColor(status);
+
+            return (
+              <button
+                key={tableData.table.id}
+                onClick={() => {
+                  if (tableData.session) {
+                    setSelectedTable(tableData);
+                    setShowPanel(true);
+                  }
+                }}
+                className={`${colors.bg} ${colors.text} ${colors.border} border-2 rounded-xl p-6 transition-all transform hover:scale-105 cursor-pointer shadow-lg relative`}
+              >
+                {/* Table Number */}
+                <div className="text-center mb-3">
+                  <div className="text-4xl font-bold mb-1">
+                    {tableData.table.table_number}
+                  </div>
+                  <div className={`text-xs font-medium ${colors.icon}`}>
+                    {status === "available" && "Available"}
+                    {status === "active" && "Occupied"}
+                    {status === "ready-to-bill" && "Ready to Bill"}
+                  </div>
+                </div>
+
+                {/* Session Info (if active) */}
+                {tableData.session && (
+                  <div className={`text-xs space-y-1 ${colors.icon}`}>
+                    <div className="flex items-center justify-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      <span>
+                        {formatDuration(
+                          tableData.session.session_started_at ||
+                            tableData.session.created_at ||
+                            ""
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <DollarSign className="w-3 h-3" />
+                      <span>
+                        {formatCurrency(tableData.session.total_amount || 0)}
+                      </span>
+                    </div>
+                    {tableData.session.orders &&
+                      tableData.session.orders.length > 0 && (
+                        <div className="flex items-center justify-center gap-1">
+                          <ShoppingCart className="w-3 h-3" />
+                          <span>
+                            {tableData.session.orders.length} order
+                            {tableData.session.orders.length > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      )}
+                  </div>
+                )}
+
+                {/* Pulse animation for ready to bill */}
+                {status === "ready-to-bill" && (
+                  <div className="absolute -top-1 -right-1">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                    </span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Right Section - Table Detail Panel (Inline) */}
+      {showPanel && selectedTable && selectedTable.session && (
+        <div className="hidden lg:block w-96 flex-shrink-0">
+          <TableDetailPanel
+            table={selectedTable}
+            onClose={() => {
+              setShowPanel(false);
+              setSelectedTable(null);
+            }}
+            onMarkItemsAsServed={handleMarkItemsAsServed}
+            onEndSession={handleEndSession}
+            onPaymentComplete={handlePaymentComplete}
+            changingOrderStatus={changingOrderStatus}
+          />
+        </div>
+      )}
     </div>
   );
 }

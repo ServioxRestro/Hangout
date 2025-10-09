@@ -84,7 +84,7 @@ export async function fetchKOTsByOrderId(orderId: string): Promise<KOT[]> {
 export async function updateKOTStatus(kotBatchId: string, newStatus: KOTStatus): Promise<void> {
   const { error } = await supabase
     .from("order_items")
-    .update({ status: newStatus })
+    .update({ status: newStatus } as any)
     .eq("kot_batch_id", kotBatchId);
 
   if (error) throw error;

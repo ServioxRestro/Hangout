@@ -21,8 +21,8 @@ export default function KitchenDisplayPage() {
 
   const fetchKOTs = async () => {
     try {
-      // Fetch all order_items with active KOT statuses (Kitchen handles: placed → preparing only)
-      // Once marked "ready", KOT disappears from kitchen and waiter handles it
+      // Fetch all order_items with active KOT statuses (Kitchen handles: placed → preparing → ready)
+      // Once marked "served" by waiters, KOT disappears from kitchen
       const { data: orderItems, error } = await supabase
         .from("order_items")
         .select(`
@@ -48,7 +48,7 @@ export default function KitchenDisplayPage() {
           )
         `)
         .not("kot_number", "is", null)
-        .in("status", ["placed", "preparing"])
+        .in("status", ["placed", "preparing", "ready"])
         .order("kot_number", { ascending: true });
 
       if (error) throw error;
@@ -110,7 +110,7 @@ export default function KitchenDisplayPage() {
       // Update ALL items in this KOT batch
       const { error } = await supabase
         .from("order_items")
-        .update({ status: newStatus })
+        .update({ status: newStatus } as any)
         .eq("kot_batch_id", kotBatchId);
 
       if (error) throw error;
@@ -187,6 +187,14 @@ export default function KitchenDisplayPage() {
                 >
                   Ready
                 </Button>
+              )}
+
+              {kot.kot_status === "ready" && (
+                <div className="flex-1 px-3 py-2 bg-green-100 border border-green-300 rounded-lg text-center">
+                  <span className="text-green-800 font-medium text-sm">
+                    ✓ Ready - Awaiting Waiter
+                  </span>
+                </div>
               )}
 
               {/* Ready KOTs stay visible until waiter marks as served from table sessions */}

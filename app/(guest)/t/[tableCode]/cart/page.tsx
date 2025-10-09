@@ -303,13 +303,13 @@ export default function CartPage() {
 
         // Get next KOT number for this batch
         const { data: kotData, error: kotError } = await supabase
-          .rpc('get_next_kot_number');
+          .rpc('get_next_kot_number' as any);
 
         if (kotError) {
           throw new Error("Failed to generate KOT number");
         }
 
-        const kotNumber = kotData as number;
+        const kotNumber = (kotData as unknown) as number;
         const kotBatchId = crypto.randomUUID();
 
         // Create order items for the new cart items with KOT info
@@ -370,13 +370,13 @@ export default function CartPage() {
 
         // Get next KOT number for this batch
         const { data: kotData, error: kotError } = await supabase
-          .rpc('get_next_kot_number');
+          .rpc('get_next_kot_number' as any);
 
         if (kotError) {
           throw new Error("Failed to generate KOT number");
         }
 
-        const kotNumber = kotData as number;
+        const kotNumber = (kotData as unknown) as number;
         const kotBatchId = crypto.randomUUID();
 
         // Create order items with KOT info
