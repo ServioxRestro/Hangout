@@ -5,13 +5,15 @@ interface CardProps {
   className?: string
   padding?: 'none' | 'sm' | 'md' | 'lg'
   hover?: boolean
+  onClick?: () => void
 }
 
-export default function Card({ 
-  children, 
-  className = '', 
+export default function Card({
+  children,
+  className = '',
   padding = 'md',
-  hover = false 
+  hover = false,
+  onClick
 }: CardProps) {
   const paddingClasses = {
     none: '',
@@ -21,12 +23,16 @@ export default function Card({
   }
 
   return (
-    <div className={`
-      bg-white border border-gray-200 rounded-xl shadow-sm
-      ${hover ? 'hover:shadow-md transition-shadow duration-200' : ''}
-      ${paddingClasses[padding]}
-      ${className}
-    `}>
+    <div
+      className={`
+        bg-white border border-gray-200 rounded-xl shadow-sm
+        ${hover ? 'hover:shadow-md transition-shadow duration-200' : ''}
+        ${paddingClasses[padding]}
+        ${className}
+        ${onClick ? 'cursor-pointer' : ''}
+      `}
+      onClick={onClick}
+    >
       {children}
     </div>
   )

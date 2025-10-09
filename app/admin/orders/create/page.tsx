@@ -268,13 +268,26 @@ export default function CreateOrderPage() {
 
       if (orderError) throw orderError;
 
-      // Create order items
+      // Get next KOT number for this order
+      const { data: kotData, error: kotError } = await supabase
+        .rpc('get_next_kot_number' as any);
+
+      if (kotError) {
+        throw new Error("Failed to generate KOT number: " + kotError.message);
+      }
+
+      const kotNumber = (kotData as unknown) as number;
+      const kotBatchId = crypto.randomUUID();
+
+      // Create order items with KOT info
       const orderItems = cart.map((item) => ({
         order_id: orderData.id,
         menu_item_id: item.id,
         quantity: item.quantity,
         unit_price: item.price,
         total_price: item.price * item.quantity,
+        kot_number: kotNumber,
+        kot_batch_id: kotBatchId,
       }));
 
       const { error: itemsError } = await supabase

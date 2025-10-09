@@ -1,116 +1,74 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useUnpaidBills, useMenuItems, useMenuCategories } from "@/hooks/useAdminQueries";
-import { supabase } from "@/lib/supabase/client";
-import type { Tables } from "@/types/database.types";
 import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import { formatCurrency } from "@/lib/constants";
 import {
-  Receipt,
-  CreditCard,
-  Clock,
   CheckCircle,
-  DollarSign,
-  Printer,
-  Eye,
-  AlertCircle,
   RefreshCw,
-  Search,
-  Calendar,
-  Users,
   ShoppingBag,
   Plus,
   Trash2,
+  Receipt,
+  AlertCircle,
+  Search,
+  Printer,
 } from "lucide-react";
-
-interface OrderWithDetails {
-  id: string;
-  total_amount: number;
-  status: string;
-  created_at: string;
-  customer_phone: string | null;
-  customer_email: string | null;
-  notes: string | null;
-  table_session_id: string | null;
-  table_sessions: {
-    id: string;
-    status: string;
-    session_started_at: string;
-    customer_phone: string | null;
-    restaurant_tables: {
-      table_number: number;
-    } | null;
-  } | null;
-  order_items: Array<{
-    id: string;
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-    menu_items: {
-      id: string;
-      name: string;
-      is_veg: boolean;
-    } | null;
-  }>;
-}
-
-interface SessionGroup {
-  sessionId: string;
-  tableNumber: number;
-  customerPhone: string | null;
-  sessionStartedAt: string;
-  orders: OrderWithDetails[];
-  totalAmount: number;
-  orderCount: number;
-}
+import {
+  useBilling,
+  type OrderWithDetails,
+  type SessionGroup,
+} from "@/hooks/useBilling";
+import { AddManualItemModal } from "@/components/admin/tables/AddManualItemModal";
+import { PaymentModal } from "@/components/admin/billing/PaymentModal";
+import { supabase } from "@/lib/supabase/client";
+import {
+  generateHTMLReceipt,
+  printHTMLReceipt,
+  type BillItem,
+} from "@/lib/utils/billing";
 
 interface ManualItem {
   id: string;
   name: string;
+  menu_item_id: string;
   quantity: number;
   unit_price: number;
   total_price: number;
 }
 
-interface BillSummary {
-  subtotal: number;
-  discountPercentage: number;
-  discountAmount: number;
-  taxAmount: number;
-  finalAmount: number;
-  taxes: Array<{
-    name: string;
-    rate: number;
-    amount: number;
-  }>;
-}
-
 export default function BillingPage() {
-  const [orders, setOrders] = useState<OrderWithDetails[]>([]);
-  const [sessionGroups, setSessionGroups] = useState<SessionGroup[]>([]);
-  const [takeawayOrders, setTakeawayOrders] = useState<OrderWithDetails[]>([]);
+  // Use custom hook for data management
+  const {
+    orders,
+    sessionGroups,
+    takeawayOrders,
+    loading,
+    error,
+    taxSettings,
+    fetchOrders,
+    fetchTaxSettings,
+  } = useBilling();
+
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
   const [manualItems, setManualItems] = useState<ManualItem[]>([]);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
-  const [menuItems, setMenuItems] = useState<any[]>([]);
-  const [menuCategories, setMenuCategories] = useState<any[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedMenuItem, setSelectedMenuItem] = useState<string>("");
-  const [newItemQuantity, setNewItemQuantity] = useState(1);
-  const [itemSearchTerm, setItemSearchTerm] = useState("");
-  const [billSummary, setBillSummary] = useState<BillSummary | null>(null);
-  const [discountPercentage, setDiscountPercentage] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('cash');
-  const [processing, setProcessing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<'all' | 'served'>('served');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [lastBill, setLastBill] = useState<any>(null);
-  const [taxSettings, setTaxSettings] = useState<any[]>([]);
+  const [billSummary, setBillSummary] = useState<any>(null);
+  const [discountPercentage, setDiscountPercentage] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("cash");
+  const [processing, setProcessing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [selectedMenuItem, setSelectedMenuItem] = useState("");
+  const [newItemQuantity, setNewItemQuantity] = useState(1);
+  const [itemSearchTerm, setItemSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [menuCategories, setMenuCategories] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -119,150 +77,59 @@ export default function BillingPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedOrders.length > 0 || manualItems.length > 0) {
-      calculateBill();
-    } else {
-      setBillSummary(null);
-    }
-  }, [selectedOrders, manualItems, discountPercentage]);
+    fetchMenuData();
+  }, []);
+
+  useEffect(() => {
+    calculateBillSummary();
+  }, [selectedOrders, manualItems, discountPercentage, taxSettings]);
 
   const fetchData = async () => {
-    await Promise.all([fetchOrders(), fetchTaxSettings(), fetchMenuItems()]);
-    setLoading(false);
+    await Promise.all([fetchOrders(), fetchTaxSettings()]);
   };
 
-  const fetchOrders = async () => {
+  const fetchMenuData = async () => {
     try {
-      const { data, error } = await supabase
-        .from("orders")
-        .select(`
-          *,
-          table_sessions (
-            id,
-            status,
-            session_started_at,
-            customer_phone,
-            restaurant_tables (
-              table_number
-            )
-          ),
-          order_items (
-            id,
-            quantity,
-            unit_price,
-            total_price,
-            menu_items (
-              id,
-              name,
-              is_veg
-            )
-          )
-        `)
-        .in('status', ['served'])
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      const ordersData = (data as OrderWithDetails[]) || [];
-      setOrders(ordersData);
-
-      // Group orders by session
-      const sessionMap = new Map<string, SessionGroup>();
-      const takeaway: OrderWithDetails[] = [];
-
-      ordersData.forEach(order => {
-        if (order.table_sessions && order.table_session_id) {
-          const sessionId = order.table_session_id;
-
-          if (sessionMap.has(sessionId)) {
-            const group = sessionMap.get(sessionId)!;
-            group.orders.push(order);
-            group.totalAmount += order.total_amount;
-            group.orderCount++;
-          } else {
-            sessionMap.set(sessionId, {
-              sessionId,
-              tableNumber: order.table_sessions.restaurant_tables?.table_number || 0,
-              customerPhone: order.table_sessions.customer_phone,
-              sessionStartedAt: order.table_sessions.session_started_at,
-              orders: [order],
-              totalAmount: order.total_amount,
-              orderCount: 1
-            });
-          }
-        } else {
-          // Takeaway orders (no session)
-          takeaway.push(order);
-        }
-      });
-
-      // Sort sessions by table number
-      const sessions = Array.from(sessionMap.values()).sort((a, b) => a.tableNumber - b.tableNumber);
-
-      setSessionGroups(sessions);
-      setTakeawayOrders(takeaway);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-    }
-  };
-
-  const fetchTaxSettings = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("tax_settings")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
-
-      if (error) throw error;
-      setTaxSettings(data || []);
-    } catch (error) {
-      console.error("Error fetching tax settings:", error);
-    }
-  };
-
-  const fetchMenuItems = async () => {
-    try {
-      // Fetch categories
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from("menu_categories")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
-
-      if (categoriesError) throw categoriesError;
-      setMenuCategories(categoriesData || []);
-      if (categoriesData && categoriesData.length > 0) {
-        setSelectedCategory(categoriesData[0].id);
+      const [{ data: items }, { data: categories }] = await Promise.all([
+        supabase.from("menu_items").select("*").eq("is_available", true),
+        supabase.from("menu_categories").select("*").eq("is_active", true).order("display_order"),
+      ]);
+      setMenuItems(items || []);
+      setMenuCategories(categories || []);
+      if (categories && categories.length > 0) {
+        setSelectedCategory(categories[0].id);
       }
-
-      // Fetch menu items
-      const { data: itemsData, error: itemsError } = await supabase
-        .from("menu_items")
-        .select("*")
-        .eq("is_available", true)
-        .order("display_order");
-
-      if (itemsError) throw itemsError;
-      setMenuItems(itemsData || []);
     } catch (error) {
-      console.error("Error fetching menu items:", error);
+      console.error("Error fetching menu:", error);
     }
   };
 
-  const calculateBill = () => {
-    const selectedOrdersData = orders.filter(order => selectedOrders.includes(order.id));
-    const ordersSubtotal = selectedOrdersData.reduce((sum, order) => sum + order.total_amount, 0);
-    const manualSubtotal = manualItems.reduce((sum, item) => sum + item.total_price, 0);
+  const calculateBillSummary = () => {
+    if (selectedOrders.length === 0 && manualItems.length === 0) {
+      setBillSummary(null);
+      return;
+    }
+
+    const selectedOrdersData = orders.filter((o) =>
+      selectedOrders.includes(o.id)
+    );
+    const ordersSubtotal = selectedOrdersData.reduce(
+      (sum, order) => sum + order.total_amount,
+      0
+    );
+    const manualSubtotal = manualItems.reduce(
+      (sum, item) => sum + item.total_price,
+      0
+    );
     const subtotal = ordersSubtotal + manualSubtotal;
 
     const discountAmount = (subtotal * discountPercentage) / 100;
     const taxableAmount = subtotal - discountAmount;
 
-    const taxes = taxSettings.map(tax => ({
+    const taxes = taxSettings.map((tax) => ({
       name: tax.name,
       rate: tax.rate,
-      amount: (taxableAmount * tax.rate) / 100
+      amount: (taxableAmount * tax.rate) / 100,
     }));
 
     const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
@@ -274,78 +141,80 @@ export default function BillingPage() {
       discountAmount,
       taxAmount,
       finalAmount,
-      taxes
+      taxes,
+    });
+  };
+
+  const getFilteredMenuItems = () => {
+    return menuItems.filter((item) => {
+      const matchesSearch =
+        !itemSearchTerm ||
+        item.name.toLowerCase().includes(itemSearchTerm.toLowerCase());
+      const matchesCategory =
+        !selectedCategory || item.category_id === selectedCategory;
+      return matchesSearch && matchesCategory;
     });
   };
 
   const addManualItem = () => {
-    if (!selectedMenuItem || newItemQuantity <= 0) {
-      alert("Please select a menu item and quantity");
-      return;
-    }
-
-    const menuItem = menuItems.find(item => item.id === selectedMenuItem);
-    if (!menuItem) {
-      alert("Selected item not found");
-      return;
-    }
+    const item = menuItems.find((i) => i.id === selectedMenuItem);
+    if (!item) return;
 
     const manualItem: ManualItem = {
-      id: `manual_${Date.now()}`,
-      name: menuItem.name,
+      id: crypto.randomUUID(),
+      name: item.name,
+      menu_item_id: item.id,
       quantity: newItemQuantity,
-      unit_price: menuItem.price,
-      total_price: newItemQuantity * menuItem.price
+      unit_price: item.price,
+      total_price: item.price * newItemQuantity,
     };
 
-    setManualItems(prev => [...prev, manualItem]);
+    setManualItems((prev) => [...prev, manualItem]);
+    setShowAddItemModal(false);
     setSelectedMenuItem("");
     setNewItemQuantity(1);
     setItemSearchTerm("");
-    setShowAddItemModal(false);
+  };
+
+  const handleAddManualItem = (item: {
+    id: string;
+    menu_item_id: string;
+    name: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+  }) => {
+    setManualItems((prev) => [...prev, item]);
   };
 
   const removeManualItem = (id: string) => {
-    setManualItems(prev => prev.filter(item => item.id !== id));
+    setManualItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const getFilteredMenuItems = () => {
-    let filtered = menuItems;
-
-    // Filter by category
-    if (selectedCategory) {
-      filtered = filtered.filter(item => item.category_id === selectedCategory);
-    }
-
-    // Filter by search term
-    if (itemSearchTerm.trim()) {
-      filtered = filtered.filter(item =>
-        item.name.toLowerCase().includes(itemSearchTerm.toLowerCase())
-      );
-    }
-
-    return filtered;
-  };
-
-  const toggleSessionSelection = (sessionId: string, orders: OrderWithDetails[]) => {
-    const sessionOrderIds = orders.map(o => o.id);
-    const allSelected = sessionOrderIds.every(id => selectedOrders.includes(id));
+  const toggleSessionSelection = (
+    sessionId: string,
+    orders: OrderWithDetails[]
+  ) => {
+    const sessionOrderIds = orders.map((o) => o.id);
+    const allSelected = sessionOrderIds.every((id) =>
+      selectedOrders.includes(id)
+    );
 
     if (allSelected) {
       // Deselect all orders in this session
-      setSelectedOrders(prev => prev.filter(id => !sessionOrderIds.includes(id)));
-      setSelectedSessions(prev => prev.filter(id => id !== sessionId));
+      setSelectedOrders((prev) =>
+        prev.filter((id) => !sessionOrderIds.includes(id))
+      );
     } else {
       // Select all orders in this session
-      setSelectedOrders(prev => [...new Set([...prev, ...sessionOrderIds])]);
-      setSelectedSessions(prev => [...new Set([...prev, sessionId])]);
+      setSelectedOrders((prev) => [...new Set([...prev, ...sessionOrderIds])]);
     }
   };
 
   const toggleOrderSelection = (orderId: string) => {
-    setSelectedOrders(prev =>
+    setSelectedOrders((prev) =>
       prev.includes(orderId)
-        ? prev.filter(id => id !== orderId)
+        ? prev.filter((id) => id !== orderId)
         : [...prev, orderId]
     );
   };
@@ -377,16 +246,24 @@ export default function BillingPage() {
       const { user } = await response.json();
 
       // Get session IDs from selected orders
-      const selectedOrdersData = orders.filter(order => selectedOrders.includes(order.id));
-      const sessionIds = [...new Set(selectedOrdersData
-        .map(order => order.table_session_id)
-        .filter((id): id is string => Boolean(id)))];
+      const selectedOrdersData = orders.filter((order) =>
+        selectedOrders.includes(order.id)
+      );
+      const sessionIds = [
+        ...new Set(
+          selectedOrdersData
+            .map((order) => order.table_session_id)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
 
       // If all orders are from same session, link bill to that session
       const billSessionId = sessionIds.length === 1 ? sessionIds[0] : null;
 
       // Create bill
-      const billNumber = `BILL-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+      const billNumber = `BILL-${new Date().getFullYear()}-${String(
+        Date.now()
+      ).slice(-6)}`;
 
       const { data: billData, error: billError } = await supabase
         .from("bills")
@@ -396,18 +273,26 @@ export default function BillingPage() {
           subtotal: billSummary.subtotal,
           discount_percentage: discountPercentage,
           discount_amount: billSummary.discountAmount,
-          cgst_rate: billSummary.taxes.find(t => t.name.includes('CGST'))?.rate || 0,
-          cgst_amount: billSummary.taxes.find(t => t.name.includes('CGST'))?.amount || 0,
-          sgst_rate: billSummary.taxes.find(t => t.name.includes('SGST'))?.rate || 0,
-          sgst_amount: billSummary.taxes.find(t => t.name.includes('SGST'))?.amount || 0,
-          service_charge_rate: billSummary.taxes.find(t => t.name.includes('Service'))?.rate || 0,
-          service_charge_amount: billSummary.taxes.find(t => t.name.includes('Service'))?.amount || 0,
+          cgst_rate:
+            billSummary.taxes.find((t: any) => t.name.includes("CGST"))?.rate || 0,
+          cgst_amount:
+            billSummary.taxes.find((t: any) => t.name.includes("CGST"))?.amount || 0,
+          sgst_rate:
+            billSummary.taxes.find((t: any) => t.name.includes("SGST"))?.rate || 0,
+          sgst_amount:
+            billSummary.taxes.find((t: any) => t.name.includes("SGST"))?.amount || 0,
+          service_charge_rate:
+            billSummary.taxes.find((t: any) => t.name.includes("Service"))?.rate ||
+            0,
+          service_charge_amount:
+            billSummary.taxes.find((t: any) => t.name.includes("Service"))?.amount ||
+            0,
           total_tax_amount: billSummary.taxAmount,
           final_amount: billSummary.finalAmount,
-          payment_status: 'paid',
+          payment_status: "paid",
           payment_method: paymentMethod,
           paid_at: new Date().toISOString(),
-          payment_received_by: user.id
+          payment_received_by: user.id,
         })
         .select()
         .single();
@@ -415,25 +300,25 @@ export default function BillingPage() {
       if (billError) throw billError;
 
       // Create bill items from orders
-      const orderBillItems = selectedOrdersData.flatMap(order =>
-        order.order_items.map(item => ({
+      const orderBillItems = selectedOrdersData.flatMap((order) =>
+        order.order_items.map((item) => ({
           bill_id: billData.id,
           order_item_id: item.id,
-          item_name: item.menu_items?.name || 'Unknown Item',
+          item_name: item.menu_items?.name || "Unknown Item",
           quantity: item.quantity,
           unit_price: item.unit_price,
-          total_price: item.total_price
+          total_price: item.total_price,
         }))
       );
 
       // Create bill items from manual items (no order_item_id)
-      const manualBillItems = manualItems.map(item => ({
+      const manualBillItems = manualItems.map((item) => ({
         bill_id: billData.id,
         order_item_id: null, // Manual items don't have order_item_id
         item_name: item.name,
         quantity: item.quantity,
         unit_price: item.unit_price,
-        total_price: item.total_price
+        total_price: item.total_price,
       }));
 
       // Combine all bill items
@@ -449,10 +334,10 @@ export default function BillingPage() {
       const { error: ordersError } = await supabase
         .from("orders")
         .update({
-          status: 'paid',
-          updated_at: new Date().toISOString()
+          status: "paid",
+          updated_at: new Date().toISOString(),
         })
-        .in('id', selectedOrders);
+        .in("id", selectedOrders);
 
       if (ordersError) throw ordersError;
 
@@ -467,8 +352,8 @@ export default function BillingPage() {
             .eq("table_session_id", sessionId);
 
           // Check if all orders are in final states
-          const allOrdersComplete = sessionOrders?.every(o =>
-            ['completed', 'paid', 'cancelled'].includes(o.status || '')
+          const allOrdersComplete = sessionOrders?.every((o) =>
+            ["completed", "paid", "cancelled"].includes(o.status || "")
           );
 
           if (allOrdersComplete) {
@@ -476,12 +361,12 @@ export default function BillingPage() {
             await supabase
               .from("table_sessions")
               .update({
-                status: 'completed',
+                status: "completed",
                 payment_method: paymentMethod,
                 paid_at: new Date().toISOString(),
-                session_ended_at: new Date().toISOString()
+                session_ended_at: new Date().toISOString(),
               })
-              .eq('id', sessionId);
+              .eq("id", sessionId);
           }
         }
       }
@@ -490,7 +375,7 @@ export default function BillingPage() {
       setLastBill({
         ...billData,
         bill_items: allBillItems,
-        orders: selectedOrdersData
+        orders: selectedOrdersData,
       });
       setShowPaymentSuccess(true);
       setSelectedOrders([]);
@@ -498,7 +383,6 @@ export default function BillingPage() {
       setBillSummary(null);
       setDiscountPercentage(0);
       await fetchOrders();
-
     } catch (error) {
       console.error("Error processing payment:", error);
       alert("Error processing payment. Please try again.");
@@ -514,130 +398,93 @@ export default function BillingPage() {
         .from("restaurant_settings")
         .select("*");
 
-      const settingsMap = settings?.reduce((acc: any, setting: any) => {
-        acc[setting.setting_key] = setting.setting_value;
-        return acc;
-      }, {}) || {};
+      const settingsMap =
+        settings?.reduce((acc: any, setting: any) => {
+          acc[setting.setting_key] = setting.setting_value;
+          return acc;
+        }, {}) || {};
 
-      const printContent = `
-        <html>
-          <head>
-            <title>Receipt - ${bill.bill_number}</title>
-            <meta charset="UTF-8">
-            <style>
-              body {
-                font-family: 'Courier New', monospace;
-                max-width: 300px;
-                margin: 0 auto;
-                padding: 15px;
-                line-height: 1.4;
-                font-size: 12px;
-                color: #000;
-                background: #fff;
-              }
-              .center { text-align: center; margin-bottom: 10px; }
-              .line { border-bottom: 1px dashed #000; margin: 8px 0; }
-              .row { display: flex; justify-content: space-between; margin: 2px 0; }
-              .bold { font-weight: bold; }
-              .item-row {
-                display: flex;
-                justify-content: space-between;
-                margin: 3px 0;
-                padding: 2px 0;
-              }
-              .item-name { flex: 1; margin-right: 10px; }
-              .final-total {
-                font-size: 16px;
-                font-weight: bold;
-                border-top: 2px solid #000;
-                padding-top: 8px;
-                margin-top: 8px;
-              }
-              @media print {
-                body { margin: 0; padding: 10px; font-size: 11px; }
-                @page { margin: 5mm; size: 80mm auto; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="center">
-              <div class="bold" style="font-size: 16px;">${settingsMap.restaurant_name || 'HANGOUT RESTAURANT'}</div>
-              ${settingsMap.restaurant_address ? `<div>${settingsMap.restaurant_address}</div>` : ''}
-              ${settingsMap.restaurant_phone ? `<div>Phone: ${settingsMap.restaurant_phone}</div>` : ''}
-              ${settingsMap.gst_number ? `<div>GST: ${settingsMap.gst_number}</div>` : ''}
-            </div>
-            <div class="line"></div>
+      // Prepare bill items for receipt
+      const billItems: BillItem[] =
+        bill.bill_items?.map((item: any) => ({
+          name: item.item_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
+          is_manual: item.is_manual || false,
+        })) || [];
 
-            <div class="center">
-              <div class="bold">Bill No: ${bill.bill_number}</div>
-              <div>Date: ${new Date(bill.created_at).toLocaleString('en-IN')}</div>
-              <div>Payment: ${bill.payment_method.toUpperCase()}</div>
-            </div>
-            <div class="line"></div>
-
-            <div>
-              <div class="bold center">ITEMS ORDERED</div>
-              <div class="line" style="margin: 5px 0;"></div>
-              ${bill.bill_items?.map((item: any) => `
-                <div class="item-row">
-                  <div class="item-name">${item.item_name}</div>
-                  <div style="width: 30px; text-align: center;">${item.quantity}</div>
-                  <div style="width: 70px; text-align: right;">${formatCurrency(item.total_price)}</div>
-                </div>
-              `).join('') || '<div>No items</div>'}
-            </div>
-            <div class="line"></div>
-
-            <div class="row"><span>Subtotal:</span><span>${formatCurrency(bill.subtotal)}</span></div>
-            ${bill.discount_amount > 0 ? `
-              <div class="row"><span>Discount (${bill.discount_percentage}%):</span><span>-${formatCurrency(bill.discount_amount)}</span></div>
-            ` : ''}
-            ${bill.cgst_amount > 0 ? `<div class="row"><span>CGST @ ${bill.cgst_rate}%:</span><span>${formatCurrency(bill.cgst_amount)}</span></div>` : ''}
-            ${bill.sgst_amount > 0 ? `<div class="row"><span>SGST @ ${bill.sgst_rate}%:</span><span>${formatCurrency(bill.sgst_amount)}</span></div>` : ''}
-            ${bill.service_charge_amount > 0 ? `<div class="row"><span>Service Charge @ ${bill.service_charge_rate}%:</span><span>${formatCurrency(bill.service_charge_amount)}</span></div>` : ''}
-
-            <div class="row final-total">
-              <span>TOTAL:</span>
-              <span>${formatCurrency(bill.final_amount)}</span>
-            </div>
-
-            <div class="line"></div>
-            <div class="center">
-              <div class="bold">Thank you for dining with us!</div>
-              <div>Please visit us again!</div>
-              <div style="margin-top: 10px;">Paid on: ${new Date(bill.paid_at).toLocaleString('en-IN')}</div>
-            </div>
-          </body>
-        </html>
-      `;
-
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-          setTimeout(() => printWindow.close(), 1000);
-        }, 500);
-      } else {
-        alert('Unable to open print window. Please check if pop-ups are blocked.');
+      // Prepare tax settings
+      const taxes = [];
+      if (bill.cgst_amount > 0) {
+        taxes.push({
+          name: "CGST",
+          rate: bill.cgst_rate,
+          amount: bill.cgst_amount,
+        });
       }
+      if (bill.sgst_amount > 0) {
+        taxes.push({
+          name: "SGST",
+          rate: bill.sgst_rate,
+          amount: bill.sgst_amount,
+        });
+      }
+      if (bill.service_charge_amount > 0) {
+        taxes.push({
+          name: "Service Charge",
+          rate: bill.service_charge_rate,
+          amount: bill.service_charge_amount,
+        });
+      }
+
+      const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
+
+      // Generate HTML receipt using shared utility
+      const htmlReceipt = generateHTMLReceipt({
+        settings: {
+          restaurant_name: settingsMap.restaurant_name,
+          restaurant_address: settingsMap.restaurant_address,
+          restaurant_phone: settingsMap.restaurant_phone,
+          gst_number: settingsMap.gst_number,
+        },
+        billNumber: bill.bill_number,
+        tableNumber: null,
+        orderType: "takeaway",
+        items: billItems,
+        calculation: {
+          subtotal: bill.subtotal,
+          discount_amount: bill.discount_amount,
+          taxable_amount: bill.subtotal - bill.discount_amount,
+          taxes,
+          tax_amount: taxAmount,
+          final_amount: bill.final_amount,
+        },
+        paymentMethod: bill.payment_method,
+        discountPercentage: bill.discount_percentage,
+        date: new Date(bill.created_at),
+      });
+
+      // Print using shared utility
+      printHTMLReceipt(htmlReceipt);
     } catch (error) {
-      console.error('Error printing receipt:', error);
-      alert('Error printing receipt. Please try again.');
+      console.error("Error printing receipt:", error);
+      alert("Error printing receipt. Please try again.");
     }
   };
 
-  const filteredOrders = orders.filter(order => {
+  const filteredOrders = orders.filter((order) => {
     const matchesSearch =
       !searchTerm ||
       order.customer_phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.customer_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.table_sessions?.restaurant_tables?.table_number?.toString().includes(searchTerm) ||
+      order.table_sessions?.restaurant_tables?.table_number
+        ?.toString()
+        .includes(searchTerm) ||
       order.id.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
+    const matchesStatus =
+      filterStatus === "all" || order.status === filterStatus;
 
     return matchesSearch && matchesStatus;
   });
@@ -660,8 +507,12 @@ export default function BillingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Counter Billing</h1>
-              <p className="text-gray-600">Process payments and print receipts</p>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Counter Billing
+              </h1>
+              <p className="text-gray-600">
+                Process payments and print receipts
+              </p>
             </div>
             <Button
               variant="secondary"
@@ -676,13 +527,14 @@ export default function BillingPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
           {/* Left: Order Selection */}
           <div className="lg:col-span-2">
             <Card>
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Select Tables/Orders to Bill</h2>
+                  <h2 className="text-lg font-semibold">
+                    Select Tables/Orders to Bill
+                  </h2>
                   <div className="text-sm text-gray-600">
                     Click on a table to select all orders at once
                   </div>
@@ -692,8 +544,12 @@ export default function BillingPage() {
                   {sessionGroups.length === 0 && takeawayOrders.length === 0 ? (
                     <div className="text-center py-8">
                       <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No Orders Found</h3>
-                      <p className="text-gray-600">No served orders available for billing.</p>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        No Orders Found
+                      </h3>
+                      <p className="text-gray-600">
+                        No served orders available for billing.
+                      </p>
                     </div>
                   ) : (
                     <>
@@ -703,46 +559,99 @@ export default function BillingPage() {
                           <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
                             Dine-In Tables ({sessionGroups.length})
                           </h3>
-                          {sessionGroups.map(session => {
-                            const isSessionSelected = session.orders.every(o => selectedOrders.includes(o.id));
+                          {sessionGroups.map((session) => {
+                            const isSessionSelected = session.orders.every(
+                              (o) => selectedOrders.includes(o.id)
+                            );
                             return (
-                              <div key={session.sessionId} className="border-2 rounded-lg overflow-hidden transition-all">
+                              <div
+                                key={session.sessionId}
+                                className="border-2 rounded-lg overflow-hidden transition-all"
+                              >
                                 {/* Session Header - Clickable */}
                                 <div
-                                  onClick={() => toggleSessionSelection(session.sessionId, session.orders)}
+                                  onClick={() =>
+                                    toggleSessionSelection(
+                                      session.sessionId,
+                                      session.orders
+                                    )
+                                  }
                                   className={`p-4 cursor-pointer transition-all ${
                                     isSessionSelected
-                                      ? 'bg-blue-600 text-white border-blue-600'
-                                      : 'bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-150 border-gray-200'
+                                      ? "bg-blue-600 text-white border-blue-600"
+                                      : "bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-150 border-gray-200"
                                   }`}
                                 >
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg ${
-                                        isSessionSelected ? 'bg-blue-500 text-white' : 'bg-white text-blue-600 border-2 border-blue-600'
-                                      }`}>
+                                      <div
+                                        className={`w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg ${
+                                          isSessionSelected
+                                            ? "bg-blue-500 text-white"
+                                            : "bg-white text-blue-600 border-2 border-blue-600"
+                                        }`}
+                                      >
                                         {session.tableNumber}
                                       </div>
                                       <div>
-                                        <div className={`font-semibold ${isSessionSelected ? 'text-white' : 'text-gray-900'}`}>
+                                        <div
+                                          className={`font-semibold ${
+                                            isSessionSelected
+                                              ? "text-white"
+                                              : "text-gray-900"
+                                          }`}
+                                        >
                                           Table {session.tableNumber}
                                         </div>
-                                        <div className={`text-sm ${isSessionSelected ? 'text-blue-100' : 'text-gray-600'}`}>
-                                          {session.orderCount} order{session.orderCount !== 1 ? 's' : ''} • {getSessionDuration(session.sessionStartedAt)}
+                                        <div
+                                          className={`text-sm ${
+                                            isSessionSelected
+                                              ? "text-blue-100"
+                                              : "text-gray-600"
+                                          }`}
+                                        >
+                                          {session.orderCount} order
+                                          {session.orderCount !== 1 ? "s" : ""}{" "}
+                                          •{" "}
+                                          {getSessionDuration(
+                                            session.sessionStartedAt
+                                          )}
                                         </div>
                                         {session.customerPhone && (
-                                          <div className={`text-xs ${isSessionSelected ? 'text-blue-100' : 'text-gray-500'}`}>
+                                          <div
+                                            className={`text-xs ${
+                                              isSessionSelected
+                                                ? "text-blue-100"
+                                                : "text-gray-500"
+                                            }`}
+                                          >
                                             📱 {session.customerPhone}
                                           </div>
                                         )}
                                       </div>
                                     </div>
                                     <div className="text-right">
-                                      <div className={`text-2xl font-bold ${isSessionSelected ? 'text-white' : 'text-gray-900'}`}>
+                                      <div
+                                        className={`text-2xl font-bold ${
+                                          isSessionSelected
+                                            ? "text-white"
+                                            : "text-gray-900"
+                                        }`}
+                                      >
                                         {formatCurrency(session.totalAmount)}
                                       </div>
-                                      <div className={`text-xs ${isSessionSelected ? 'text-blue-100' : 'text-gray-600'}`}>
-                                        Click to {isSessionSelected ? 'deselect' : 'select'} all
+                                      <div
+                                        className={`text-xs ${
+                                          isSessionSelected
+                                            ? "text-blue-100"
+                                            : "text-gray-600"
+                                        }`}
+                                      >
+                                        Click to{" "}
+                                        {isSessionSelected
+                                          ? "deselect"
+                                          : "select"}{" "}
+                                        all
                                       </div>
                                     </div>
                                   </div>
@@ -753,29 +662,54 @@ export default function BillingPage() {
                                   {session.orders.map((order, idx) => (
                                     <div
                                       key={order.id}
-                                      className={`p-3 ${idx !== session.orders.length - 1 ? 'border-b' : ''} ${
-                                        selectedOrders.includes(order.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                      className={`p-3 ${
+                                        idx !== session.orders.length - 1
+                                          ? "border-b"
+                                          : ""
+                                      } ${
+                                        selectedOrders.includes(order.id)
+                                          ? "bg-blue-50"
+                                          : "hover:bg-gray-50"
                                       }`}
                                     >
                                       <div className="flex items-start justify-between">
                                         <div className="flex-1">
                                           <div className="flex items-center gap-2 mb-1">
-                                            <span className="text-xs text-gray-500">Order #{order.id.slice(-6)}</span>
+                                            <span className="text-xs text-gray-500">
+                                              Order #{order.id.slice(-6)}
+                                            </span>
                                             <span className="text-xs text-gray-400">
-                                              {new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                              {new Date(
+                                                order.created_at
+                                              ).toLocaleTimeString("en-IN", {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                              })}
                                             </span>
                                           </div>
                                           <div className="text-sm text-gray-700">
-                                            {order.order_items.map(item => (
-                                              <div key={item.id} className="flex justify-between">
-                                                <span>{item.quantity}x {item.menu_items?.name}</span>
-                                                <span className="text-gray-600">{formatCurrency(item.total_price)}</span>
+                                            {order.order_items.map((item) => (
+                                              <div
+                                                key={item.id}
+                                                className="flex justify-between"
+                                              >
+                                                <span>
+                                                  {item.quantity}x{" "}
+                                                  {item.menu_items?.name}
+                                                </span>
+                                                <span className="text-gray-600">
+                                                  {formatCurrency(
+                                                    item.total_price
+                                                  )}
+                                                </span>
                                               </div>
                                             ))}
                                           </div>
                                         </div>
                                         <div className="ml-3 text-right">
-                                          <div className="font-medium text-gray-900">{formatCurrency(order.total_amount)}</div>
+                                          <div className="font-medium text-gray-900">
+                                            {formatCurrency(order.total_amount)}
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -793,14 +727,14 @@ export default function BillingPage() {
                           <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mt-6">
                             Takeaway Orders ({takeawayOrders.length})
                           </h3>
-                          {takeawayOrders.map(order => (
+                          {takeawayOrders.map((order) => (
                             <div
                               key={order.id}
                               onClick={() => toggleOrderSelection(order.id)}
                               className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                                 selectedOrders.includes(order.id)
-                                  ? 'border-green-500 bg-green-50'
-                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                  ? "border-green-500 bg-green-50"
+                                  : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                               }`}
                             >
                               <div className="flex items-start justify-between">
@@ -815,17 +749,25 @@ export default function BillingPage() {
                                   </div>
 
                                   <div className="text-sm text-gray-600 mb-2">
-                                    {order.order_items.length} items • {formatCurrency(order.total_amount)}
+                                    {order.order_items.length} items •{" "}
+                                    {formatCurrency(order.total_amount)}
                                   </div>
 
                                   <div className="text-xs text-gray-500">
-                                    {new Date(order.created_at).toLocaleString()}
-                                    {order.customer_phone && ` • ${order.customer_phone}`}
+                                    {new Date(
+                                      order.created_at
+                                    ).toLocaleString()}
+                                    {order.customer_phone &&
+                                      ` • ${order.customer_phone}`}
                                   </div>
 
                                   <div className="mt-2 text-xs text-gray-600">
-                                    {order.order_items.slice(0, 2).map(item => item.menu_items?.name).join(', ')}
-                                    {order.order_items.length > 2 && ` +${order.order_items.length - 2} more`}
+                                    {order.order_items
+                                      .slice(0, 2)
+                                      .map((item) => item.menu_items?.name)
+                                      .join(", ")}
+                                    {order.order_items.length > 2 &&
+                                      ` +${order.order_items.length - 2} more`}
                                   </div>
                                 </div>
 
@@ -854,21 +796,30 @@ export default function BillingPage() {
                   {selectedOrders.length === 0 && manualItems.length === 0 ? (
                     <div className="text-center py-8">
                       <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-600">Select orders or add manual items</p>
+                      <p className="text-gray-600">
+                        Select orders or add manual items
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-4">
                       {selectedOrders.length > 0 && (
                         <div className="bg-gray-50 rounded-lg p-3">
-                          <div className="text-sm text-gray-600 mb-1">Selected Orders</div>
-                          <div className="font-medium">{selectedOrders.length} order{selectedOrders.length !== 1 ? 's' : ''}</div>
+                          <div className="text-sm text-gray-600 mb-1">
+                            Selected Orders
+                          </div>
+                          <div className="font-medium">
+                            {selectedOrders.length} order
+                            {selectedOrders.length !== 1 ? "s" : ""}
+                          </div>
                         </div>
                       )}
 
                       {/* Additional Items Section */}
                       <div className="border-t pt-4">
                         <div className="flex items-center justify-between mb-3">
-                          <h3 className="font-medium text-sm">Additional Items</h3>
+                          <h3 className="font-medium text-sm">
+                            Additional Items
+                          </h3>
                           <Button
                             variant="secondary"
                             size="sm"
@@ -881,16 +832,24 @@ export default function BillingPage() {
 
                         {manualItems.length > 0 ? (
                           <div className="space-y-2">
-                            {manualItems.map(item => (
-                              <div key={item.id} className="flex items-center justify-between text-sm bg-amber-50 p-2 rounded border border-amber-200">
+                            {manualItems.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between text-sm bg-amber-50 p-2 rounded border border-amber-200"
+                              >
                                 <div className="flex-1">
-                                  <div className="font-medium text-gray-900">{item.name}</div>
+                                  <div className="font-medium text-gray-900">
+                                    {item.name}
+                                  </div>
                                   <div className="text-xs text-gray-600">
-                                    {item.quantity} × {formatCurrency(item.unit_price)}
+                                    {item.quantity} ×{" "}
+                                    {formatCurrency(item.unit_price)}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="font-medium">{formatCurrency(item.total_price)}</span>
+                                  <span className="font-medium">
+                                    {formatCurrency(item.total_price)}
+                                  </span>
                                   <button
                                     onClick={() => removeManualItem(item.id)}
                                     className="text-red-600 hover:text-red-800"
@@ -902,7 +861,9 @@ export default function BillingPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-xs text-gray-500 italic">No additional items</p>
+                          <p className="text-xs text-gray-500 italic">
+                            No additional items
+                          </p>
                         )}
                       </div>
 
@@ -911,7 +872,9 @@ export default function BillingPage() {
                           <div className="space-y-2">
                             <div className="flex justify-between">
                               <span>Subtotal:</span>
-                              <span>{formatCurrency(billSummary.subtotal)}</span>
+                              <span>
+                                {formatCurrency(billSummary.subtotal)}
+                              </span>
                             </div>
 
                             <div className="flex items-center justify-between">
@@ -922,16 +885,25 @@ export default function BillingPage() {
                                   min="0"
                                   max="100"
                                   value={discountPercentage}
-                                  onChange={(e) => setDiscountPercentage(parseFloat(e.target.value) || 0)}
+                                  onChange={(e) =>
+                                    setDiscountPercentage(
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
                                   className="w-16 px-2 py-1 border rounded text-center text-sm"
                                 />
                                 <span className="text-sm">%</span>
-                                <span className="text-sm">-{formatCurrency(billSummary.discountAmount)}</span>
+                                <span className="text-sm">
+                                  -{formatCurrency(billSummary.discountAmount)}
+                                </span>
                               </div>
                             </div>
 
-                            {billSummary.taxes.map(tax => (
-                              <div key={tax.name} className="flex justify-between text-sm text-gray-600">
+                            {billSummary.taxes.map((tax: any) => (
+                              <div
+                                key={tax.name}
+                                className="flex justify-between text-sm text-gray-600"
+                              >
                                 <span>{tax.name}:</span>
                                 <span>{formatCurrency(tax.amount)}</span>
                               </div>
@@ -940,7 +912,9 @@ export default function BillingPage() {
                             <div className="border-t pt-2">
                               <div className="flex justify-between font-bold text-lg">
                                 <span>Total:</span>
-                                <span className="text-green-600">{formatCurrency(billSummary.finalAmount)}</span>
+                                <span className="text-green-600">
+                                  {formatCurrency(billSummary.finalAmount)}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -948,22 +922,30 @@ export default function BillingPage() {
                           <div className="border-t pt-4">
                             <h3 className="font-medium mb-3">Payment Method</h3>
                             <div className="grid grid-cols-3 gap-2">
-                              {(['cash', 'upi', 'card'] as const).map(method => (
-                                <button
-                                  key={method}
-                                  onClick={() => setPaymentMethod(method)}
-                                  className={`p-3 text-center border-2 rounded-lg transition-all ${
-                                    paymentMethod === method
-                                      ? 'border-green-500 bg-green-50 text-green-700'
-                                      : 'border-gray-200 hover:border-gray-300'
-                                  }`}
-                                >
-                                  <div className="text-2xl mb-1">
-                                    {method === 'cash' ? '💵' : method === 'upi' ? '📱' : '💳'}
-                                  </div>
-                                  <div className="text-xs font-medium capitalize">{method}</div>
-                                </button>
-                              ))}
+                              {(["cash", "upi", "card"] as const).map(
+                                (method) => (
+                                  <button
+                                    key={method}
+                                    onClick={() => setPaymentMethod(method)}
+                                    className={`p-3 text-center border-2 rounded-lg transition-all ${
+                                      paymentMethod === method
+                                        ? "border-green-500 bg-green-50 text-green-700"
+                                        : "border-gray-200 hover:border-gray-300"
+                                    }`}
+                                  >
+                                    <div className="text-2xl mb-1">
+                                      {method === "cash"
+                                        ? "💵"
+                                        : method === "upi"
+                                        ? "📱"
+                                        : "💳"}
+                                    </div>
+                                    <div className="text-xs font-medium capitalize">
+                                      {method}
+                                    </div>
+                                  </button>
+                                )
+                              )}
                             </div>
                           </div>
 
@@ -973,7 +955,11 @@ export default function BillingPage() {
                             onClick={processPayment}
                             disabled={processing}
                             className="w-full"
-                            leftIcon={processing ? undefined : <CheckCircle className="w-5 h-5" />}
+                            leftIcon={
+                              processing ? undefined : (
+                                <CheckCircle className="w-5 h-5" />
+                              )
+                            }
                           >
                             {processing ? (
                               <div className="flex items-center gap-2">
@@ -981,7 +967,7 @@ export default function BillingPage() {
                                 Processing...
                               </div>
                             ) : (
-                              'Process Payment'
+                              "Process Payment"
                             )}
                           </Button>
                         </>
@@ -1000,7 +986,9 @@ export default function BillingPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">Add Item from Menu</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                Add Item from Menu
+              </h3>
               <button
                 onClick={() => {
                   setShowAddItemModal(false);
@@ -1030,14 +1018,14 @@ export default function BillingPage() {
 
               {/* Category Tabs */}
               <div className="flex gap-2 overflow-x-auto pb-2">
-                {menuCategories.map(category => (
+                {menuCategories.map((category) => (
                   <button
                     key={category.id}
                     onClick={() => setSelectedCategory(category.id)}
                     className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                       selectedCategory === category.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
                     {category.name}
@@ -1052,14 +1040,14 @@ export default function BillingPage() {
                     No items found
                   </div>
                 ) : (
-                  getFilteredMenuItems().map(item => (
+                  getFilteredMenuItems().map((item) => (
                     <button
                       key={item.id}
                       onClick={() => setSelectedMenuItem(item.id)}
                       className={`p-3 border-2 rounded-lg text-left transition-all ${
                         selectedMenuItem === item.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -1086,10 +1074,14 @@ export default function BillingPage() {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex-1">
                       <div className="font-medium text-gray-900">
-                        {menuItems.find(i => i.id === selectedMenuItem)?.name}
+                        {menuItems.find((i) => i.id === selectedMenuItem)?.name}
                       </div>
                       <div className="text-sm text-gray-600">
-                        {formatCurrency(menuItems.find(i => i.id === selectedMenuItem)?.price || 0)} each
+                        {formatCurrency(
+                          menuItems.find((i) => i.id === selectedMenuItem)
+                            ?.price || 0
+                        )}{" "}
+                        each
                       </div>
                     </div>
                   </div>
@@ -1102,13 +1094,18 @@ export default function BillingPage() {
                       type="number"
                       min="1"
                       value={newItemQuantity}
-                      onChange={(e) => setNewItemQuantity(parseInt(e.target.value) || 1)}
+                      onChange={(e) =>
+                        setNewItemQuantity(parseInt(e.target.value) || 1)
+                      }
                       className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     <div className="flex-1 text-right">
                       <div className="text-sm text-gray-600">Total:</div>
                       <div className="text-lg font-bold text-gray-900">
-                        {formatCurrency((menuItems.find(i => i.id === selectedMenuItem)?.price || 0) * newItemQuantity)}
+                        {formatCurrency(
+                          (menuItems.find((i) => i.id === selectedMenuItem)
+                            ?.price || 0) * newItemQuantity
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1152,7 +1149,9 @@ export default function BillingPage() {
                 <CheckCircle className="w-10 h-10 text-green-600" />
               </div>
 
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Payment Successful!</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                Payment Successful!
+              </h3>
               <p className="text-gray-600 mb-1">Bill: {lastBill.bill_number}</p>
               <p className="text-2xl font-bold text-green-600 mb-6">
                 {formatCurrency(lastBill.final_amount)}

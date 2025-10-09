@@ -1,315 +1,154 @@
 "use client";
 
-import { useState } from "react";
-import { useActiveOrders, useUpdateOrderStatus } from "@/hooks/useAdminQueries";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
-import type { Tables } from "@/types/database.types";
 import Card from "@/components/admin/Card";
-import Button from "@/components/admin/Button";
-import {
-  RefreshCw,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Bell,
-  Archive,
-  X,
-  AlertTriangle,
-  Receipt,
-} from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
+import { Clock, Users, ShoppingBag, TrendingUp } from "lucide-react";
 
-type Order = Tables<"orders"> & {
-  restaurant_tables: Tables<"restaurant_tables"> | null;
-  guest_users?: Tables<"guest_users"> | null;
-  order_items: Array<
-    Tables<"order_items"> & {
-      menu_items: Tables<"menu_items"> | null;
-    }
-  >;
+type OrderStats = {
+  totalActive: number;
+  totalDineIn: number;
+  totalTakeaway: number;
+  totalRevenue: number;
+  averageOrderValue: number;
 };
 
-type TableWithOrders = {
-  table: Tables<"restaurant_tables"> | null;
-  orders: Order[];
-  totalAmount: number;
-  oldestOrderTime: string;
-  orderType: "dine-in" | "takeaway";
+type KOTSummary = {
+  kotNumber: number;
+  tableNumber: string | null;
+  orderType: string;
+  itemCount: number;
+  status: string;
+  createdAt: string;
+  age: number;
 };
 
-export default function ActiveOrdersPage() {
-  const {
-    data: activeOrders,
-    isLoading,
-    error,
-    refetch,
-    isFetching,
-  } = useActiveOrders();
-  const updateOrderStatus = useUpdateOrderStatus();
+export default function OrdersOverviewPage() {
+  const [stats, setStats] = useState<OrderStats>({
+    totalActive: 0,
+    totalDineIn: 0,
+    totalTakeaway: 0,
+    totalRevenue: 0,
+    averageOrderValue: 0,
+  });
+  const [kots, setKots] = useState<KOTSummary[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [cancelReason, setCancelReason] = useState("");
-  const [cancelling, setCancelling] = useState(false);
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 10000); // Refresh every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
 
-  // Separate dine-in and takeaway orders
-  const { activeTableOrders, takeawayOrders } = (() => {
-    if (!activeOrders) return { activeTableOrders: [], takeawayOrders: [] };
-
-    const dineInOrders =
-      activeOrders.filter((order: any) => order.order_type === "dine-in") || [];
-    const takeawayOrdersList =
-      activeOrders.filter((order: any) => order.order_type === "takeaway") ||
-      [];
-
-    // Group dine-in orders by table
-    const tableOrdersMap = new Map<string, TableWithOrders>();
-    dineInOrders.forEach((order: any) => {
-      const tableId = order.restaurant_tables!.id;
-      if (tableOrdersMap.has(tableId)) {
-        const existing = tableOrdersMap.get(tableId)!;
-        existing.orders.push(order as Order);
-        existing.totalAmount += order.total_amount || 0;
-        if (
-          new Date(order.created_at || "") < new Date(existing.oldestOrderTime)
-        ) {
-          existing.oldestOrderTime = order.created_at || "";
-        }
-      } else {
-        tableOrdersMap.set(tableId, {
-          table: order.restaurant_tables,
-          orders: [order as Order],
-          totalAmount: order.total_amount || 0,
-          oldestOrderTime: order.created_at || "",
-          orderType: "dine-in",
-        });
-      }
-    });
-
-    // Priority sorting function
-    const getStatusPriority = (status: string) => {
-      const priorities = { ready: 1, preparing: 2, placed: 3, served: 4 };
-      return priorities[status as keyof typeof priorities] || 5;
-    };
-
-    // Sort takeaway orders by priority (individual orders, no grouping)
-    const sortedTakeawayOrders = takeawayOrdersList.sort((a: any, b: any) => {
-      const aPriority = getStatusPriority(a.status || "placed");
-      const bPriority = getStatusPriority(b.status || "placed");
-
-      if (aPriority !== bPriority) {
-        return aPriority - bPriority;
-      }
-
-      return (
-        new Date(a.created_at || "").getTime() -
-        new Date(b.created_at || "").getTime()
-      );
-    });
-
-    // Sort table orders by priority (status first, then time)
-    const sortedTableOrders = Array.from(tableOrdersMap.values()).sort(
-      (a, b) => {
-        // Get highest priority status in each table's orders
-        const aHighestPriority = Math.min(
-          ...a.orders.map((o) => getStatusPriority(o.status || "placed"))
-        );
-        const bHighestPriority = Math.min(
-          ...b.orders.map((o) => getStatusPriority(o.status || "placed"))
-        );
-
-        if (aHighestPriority !== bHighestPriority) {
-          return aHighestPriority - bHighestPriority;
-        }
-
-        // If same priority, sort by oldest order time
-        return (
-          new Date(a.oldestOrderTime).getTime() -
-          new Date(b.oldestOrderTime).getTime()
-        );
-      }
-    );
-
-    return {
-      activeTableOrders: sortedTableOrders,
-      takeawayOrders: sortedTakeawayOrders as Order[],
-    };
-  })();
-
-  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+  const fetchData = async () => {
     try {
-      await updateOrderStatus.mutateAsync({ orderId, status });
-    } catch (error) {
-      console.error("Error updating order:", error);
-    }
-  };
-
-  const handleCancelOrder = (order: Order) => {
-    setSelectedOrder(order);
-    setShowCancelModal(true);
-  };
-
-  const confirmCancelOrder = async () => {
-    if (!selectedOrder || !cancelReason.trim()) return;
-
-    setCancelling(true);
-    try {
-      const { error } = await supabase
+      // Fetch active orders
+      const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .update({
-          status: "cancelled",
-          cancelled_reason: cancelReason.trim(),
-          cancelled_at: new Date().toISOString(),
-        })
-        .eq("id", selectedOrder.id);
+        .select("id, order_type, total_amount, status")
+        .in("status", ["placed", "preparing", "ready", "served"]);
 
-      if (error) {
-        console.error("Error cancelling order:", error);
-        return;
-      }
+      if (ordersError) throw ordersError;
 
-      // Check if this was the last active order in the session
-      if (selectedOrder.table_session_id) {
-        const { data: remainingOrders } = await supabase
-          .from("orders")
-          .select("id, status")
-          .eq("table_session_id", selectedOrder.table_session_id)
-          .neq("id", selectedOrder.id)
-          .not("status", "in", "(cancelled)");
+      // Calculate stats
+      const dineIn = orders?.filter((o) => o.order_type === "dine-in") || [];
+      const takeaway = orders?.filter((o) => o.order_type === "takeaway") || [];
+      const totalRevenue =
+        orders?.reduce((sum, o) => sum + (o.total_amount || 0), 0) || 0;
 
-        // If no active orders remain in the session, close it
-        if (!remainingOrders || remainingOrders.length === 0) {
-          await supabase
-            .from("table_sessions")
-            .update({
-              status: "completed",
-              session_ended_at: new Date().toISOString(),
-            })
-            .eq("id", selectedOrder.table_session_id);
+      setStats({
+        totalActive: orders?.length || 0,
+        totalDineIn: dineIn.length,
+        totalTakeaway: takeaway.length,
+        totalRevenue,
+        averageOrderValue: orders?.length ? totalRevenue / orders.length : 0,
+      });
+
+      // Fetch KOT summary
+      const { data: kotItems, error: kotError } = await supabase
+        .from("order_items")
+        .select(
+          `
+          kot_number,
+          kot_batch_id,
+          status,
+          created_at,
+          orders (
+            order_type,
+            restaurant_tables (
+              table_number
+            )
+          )
+        `
+        )
+        .not("kot_number", "is", null)
+        .in("status", ["placed", "preparing", "ready"])
+        .order("kot_number", { ascending: true });
+
+      if (kotError) throw kotError;
+
+      // Group by KOT batch
+      const kotMap = new Map<string, KOTSummary>();
+      kotItems?.forEach((item: any) => {
+        const batchId = item.kot_batch_id;
+        if (!batchId) return;
+
+        if (!kotMap.has(batchId)) {
+          kotMap.set(batchId, {
+            kotNumber: item.kot_number,
+            tableNumber: item.orders?.restaurant_tables?.table_number || null,
+            orderType: item.orders?.order_type || "dine-in",
+            itemCount: 0,
+            status: item.status,
+            createdAt: item.created_at,
+            age: Math.floor(
+              (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60)
+            ),
+          });
         }
-      }
 
-      // Close modal and refresh data
-      setShowCancelModal(false);
-      setSelectedOrder(null);
-      setCancelReason("");
-      refetch();
+        const kot = kotMap.get(batchId)!;
+        kot.itemCount++;
+
+        // Update status (use highest priority status)
+        const statusPriority = { placed: 3, preparing: 2, ready: 1 };
+        const currentPriority =
+          statusPriority[kot.status as keyof typeof statusPriority] || 3;
+        const newPriority =
+          statusPriority[item.status as keyof typeof statusPriority] || 3;
+        if (newPriority < currentPriority) {
+          kot.status = item.status;
+        }
+      });
+
+      setKots(Array.from(kotMap.values()));
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error fetching data:", error);
     } finally {
-      setCancelling(false);
+      setLoading(false);
     }
-  };
-
-  const getOrderPriority = (createdAt: string, status: string) => {
-    // Served orders don't need kitchen priority
-    if (status === "served") {
-      return {
-        level: "served",
-        color: "text-blue-600",
-        bg: "bg-blue-50 border-blue-200",
-      };
-    }
-
-    // Completed/paid orders don't need priority
-    if (status === "completed" || status === "paid") {
-      return {
-        level: "completed",
-        color: "text-gray-600",
-        bg: "bg-gray-50 border-gray-200",
-      };
-    }
-
-    // Only calculate time-based priority for kitchen orders: placed, preparing, ready
-    const now = new Date().getTime();
-    const orderTime = new Date(createdAt).getTime();
-    const minutesAgo = (now - orderTime) / (1000 * 60);
-
-    if (minutesAgo > 30)
-      return {
-        level: "urgent",
-        color: "text-red-600",
-        bg: "bg-red-50 border-red-200",
-      };
-    if (minutesAgo > 15)
-      return {
-        level: "high",
-        color: "text-orange-600",
-        bg: "bg-orange-50 border-orange-200",
-      };
-    return {
-      level: "normal",
-      color: "text-green-600",
-      bg: "bg-green-50 border-green-200",
-    };
-  };
-
-  const getTimeSince = (createdAt: string) => {
-    const now = new Date().getTime();
-    const orderTime = new Date(createdAt).getTime();
-    const minutesAgo = Math.floor((now - orderTime) / (1000 * 60));
-
-    if (minutesAgo < 1) return "Just now";
-    if (minutesAgo < 60) return `${minutesAgo}m ago`;
-    const hoursAgo = Math.floor(minutesAgo / 60);
-    return `${hoursAgo}h ${minutesAgo % 60}m ago`;
   };
 
   const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      placed: {
-        color: "bg-blue-50 text-blue-700 border-blue-200",
-        icon: Clock,
-      },
-      preparing: {
-        color: "bg-yellow-50 text-yellow-700 border-yellow-200",
-        icon: AlertCircle,
-      },
-      ready: {
-        color: "bg-orange-50 text-orange-700 border-orange-200",
-        icon: Bell,
-      },
-      served: {
-        color: "bg-green-50 text-green-700 border-green-200",
-        icon: CheckCircle,
-      },
-      cancelled: {
-        color: "bg-red-50 text-red-700 border-red-200",
-        icon: X,
-      },
-    };
-
-    const config =
-      statusConfig[status as keyof typeof statusConfig] || statusConfig.placed;
-    const Icon = config.icon;
-
-    return (
-      <span
-        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${config.color}`}
-      >
-        <Icon className="w-3 h-3 mr-1" />
-        {status}
-      </span>
-    );
+    switch (status) {
+      case "placed":
+        return "bg-yellow-100 text-yellow-800";
+      case "preparing":
+        return "bg-blue-100 text-blue-800";
+      case "ready":
+        return "bg-green-100 text-green-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-96 flex items-center justify-center">
         <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-gray-600">Failed to load orders</p>
-          <Button onClick={() => refetch()} className="mt-4">
-            Retry
-          </Button>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+          <div className="text-gray-600">Loading orders overview...</div>
         </div>
       </div>
     );
@@ -317,602 +156,115 @@ export default function ActiveOrdersPage() {
 
   return (
     <div>
-      {/* Page Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Active Orders</h1>
-          <p className="text-gray-600 mt-1">
-            Kitchen workflow: Placed → Preparing →{" "}
-            <span className="text-orange-600 font-medium">Ready</span> → Served
-            →{" "}
-            <span className="text-blue-600 font-medium">Ready for Billing</span>
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <Button
-            variant="secondary"
-            onClick={() => refetch()}
-            leftIcon={
-              <RefreshCw
-                className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
-              />
-            }
-            disabled={isFetching}
-          >
-            {isFetching ? "Refreshing..." : "Refresh"}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => (window.location.href = "/admin/billing")}
-            leftIcon={<Receipt className="w-4 h-4" />}
-          >
-            Go to Billing
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => (window.location.href = "/admin/orders/history")}
-            leftIcon={<Archive className="w-4 h-4" />}
-          >
-            View History
-          </Button>
-        </div>
-      </div>
-
-      {/* Flow Information */}
       <div className="mb-6">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <Bell className="w-5 h-5 text-blue-600 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-blue-900">New Order Flow</h3>
-              <p className="text-sm text-blue-800 mt-1">
-                Once orders are <strong>Served</strong>, they automatically
-                appear in the <strong>Bills & Payments</strong> page for
-                billing. Completed payments will close the table session and
-                free up the table.
-              </p>
-              <div className="mt-2 flex items-center gap-2 text-xs text-blue-700">
-                <span className="px-2 py-1 bg-blue-100 rounded">Placed</span>
-                <span>→</span>
-                <span className="px-2 py-1 bg-yellow-100 rounded">
-                  Preparing
-                </span>
-                <span>→</span>
-                <span className="px-2 py-1 bg-orange-100 rounded">Ready</span>
-                <span>→</span>
-                <span className="px-2 py-1 bg-green-100 rounded">Served</span>
-                <span>→</span>
-                <span className="px-2 py-1 bg-blue-100 rounded">
-                  Ready for Billing
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Orders Overview</h1>
+        <p className="text-gray-600 mt-1">
+          Real-time summary of active orders across the restaurant
+        </p>
       </div>
 
-      <div>
-        {/* Active Orders by Table */}
-        <Card>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-              <Bell className="w-5 h-5 text-orange-500 mr-2" />
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Active Orders - Serve Now
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Orders grouped by table, sorted by urgency
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center text-xs text-gray-500">
-                <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
-                Urgent (30+ min)
-              </div>
-              <div className="flex items-center text-xs text-gray-500">
-                <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
-                High (15+ min)
-              </div>
-              <div className="flex items-center text-xs text-gray-500">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                Normal
-              </div>
-            </div>
-          </div>
+      {/* Active KOTs */}
+      <Card>
+        <div className="p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Active KOTs in Kitchen
+          </h2>
 
-          {activeTableOrders.length === 0 && takeawayOrders.length === 0 ? (
-            <div className="text-center py-12">
-              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                All Caught Up!
-              </h3>
-              <p className="text-gray-500">
-                No active orders to serve right now.
-              </p>
+          {kots.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              No active KOTs in kitchen
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Takeaway Orders Section */}
-              {/* Individual Takeaway Orders */}
-              {takeawayOrders.map((order) => {
-                const priority = getOrderPriority(
-                  order.created_at || "",
-                  order.status || "placed"
-                );
-                return (
-                  <div
-                    key={order.id}
-                    className={`border rounded-lg p-6 ${priority.bg} border-2`}
-                  >
-                    {/* Takeaway Order Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center">
-                        <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center mr-4 shadow-sm">
-                          <span className="font-bold text-lg text-purple-700">
-                            📦
-                          </span>
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            Takeaway Order #{order.id.slice(-6)}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            {order.customer_phone || "No phone"} •
-                            {getTimeSince(order.created_at || "")}
-                            {order.guest_users && (
-                              <span className="ml-2 text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                                {order.guest_users.visit_count}x visitor •{" "}
-                                {formatCurrency(
-                                  order.guest_users.total_spent || 0
-                                )}{" "}
-                                total
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xl font-bold text-gray-900">
-                          {formatCurrency(order.total_amount)}
-                        </div>
-                        <div
-                          className={`text-sm font-medium ${priority.color}`}
-                        >
-                          {priority.level.toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Single Order Details */}
-                    <div className="bg-white rounded-lg p-4 shadow-sm">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-sm font-medium text-gray-500">
-                            #{order.id.slice(-6)}
-                          </span>
-                          {getStatusBadge(order.status || "placed")}
-                          <span className="text-sm text-gray-500">
-                            {order.customer_phone}
-                          </span>
-                          {/* Guest user badge */}
-                          {order.guest_users && (
-                            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                              {order.guest_users.visit_count}x •{" "}
-                              {order.guest_users.total_orders} orders
-                            </span>
-                          )}
-                          {/* Creator indicator */}
-                          <span
-                            className={`text-xs px-2 py-1 rounded ${
-                              order.created_by_type === "admin"
-                                ? "bg-purple-100 text-purple-700"
-                                : "bg-green-100 text-green-700"
-                            }`}
-                          >
-                            {order.created_by_type === "admin"
-                              ? "👑 Admin"
-                              : "👤 Staff"}
-                          </span>
-                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      KOT #
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Table
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Items
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Age
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {kots.map((kot) => (
+                    <tr
+                      key={kot.kotNumber}
+                      className={kot.age > 15 ? "bg-red-50" : ""}
+                    >
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="font-bold text-blue-600">
+                          #{kot.kotNumber}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {kot.orderType === "dine-in" ? (
+                          <span className="text-sm text-gray-700">Dine-In</span>
+                        ) : (
+                          <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
                             Takeaway
                           </span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {order.status !== "cancelled" && (
-                            <>
-                              <select
-                                value={order.status || "placed"}
-                                onChange={(e) =>
-                                  handleUpdateOrderStatus(
-                                    order.id,
-                                    e.target.value
-                                  )
-                                }
-                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                <option value="placed">Placed</option>
-                                <option value="preparing">Preparing</option>
-                                <option value="ready">Ready</option>
-                                <option value="served">Served</option>
-                              </select>
-
-                              {(order.status === "placed" ||
-                                order.status === "preparing") && (
-                                <button
-                                  onClick={() => handleCancelOrder(order)}
-                                  className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-100 transition-colors flex items-center"
-                                  title="Cancel this order"
-                                >
-                                  <X className="w-3 h-3 mr-1" />
-                                  Cancel
-                                </button>
-                              )}
-
-                              {order.status === "served" && (
-                                <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded">
-                                  Ready for Billing
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Order Items */}
-                      <div className="space-y-2">
-                        {order.order_items.map((item) => (
-                          <div
-                            key={item.id}
-                            className={`flex items-center justify-between text-sm ${
-                              order.status === "cancelled" ? "opacity-60" : ""
-                            }`}
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                        {kot.tableNumber || "-"}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                        {kot.itemCount} {kot.itemCount === 1 ? "item" : "items"}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(
+                            kot.status
+                          )}`}
+                        >
+                          {kot.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          <span
+                            className={
+                              kot.age > 15
+                                ? "text-red-600 font-medium"
+                                : "text-gray-600"
+                            }
                           >
-                            <div className="flex items-center">
-                              <span
-                                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mr-2 ${
-                                  order.status === "cancelled"
-                                    ? "bg-red-100 text-red-800"
-                                    : "bg-blue-100 text-blue-800"
-                                }`}
-                              >
-                                {item.quantity}
-                              </span>
-                              <span
-                                className={`font-medium ${
-                                  order.status === "cancelled"
-                                    ? "line-through"
-                                    : ""
-                                }`}
-                              >
-                                {item.menu_items?.name || "Unknown Item"}
-                              </span>
-                              {item.menu_items?.is_veg && (
-                                <span className="ml-2 text-green-500">🟢</span>
-                              )}
-                              {item.menu_items?.is_veg === false && (
-                                <span className="ml-2 text-red-500">🔴</span>
-                              )}
-                            </div>
-                            <span
-                              className={`font-medium ${
-                                order.status === "cancelled"
-                                  ? "line-through"
-                                  : ""
-                              }`}
-                            >
-                              {formatCurrency(item.total_price)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {order.notes && (
-                        <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                          <p className="text-xs text-yellow-800">
-                            <strong>Note:</strong> {order.notes}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Dine-in Table Orders */}
-              {activeTableOrders.map((tableOrder) => {
-                // Determine priority based on most urgent status in table
-                const hasPlaced = tableOrder.orders.some(
-                  (o) => o.status === "placed"
-                );
-                const hasPreparing = tableOrder.orders.some(
-                  (o) => o.status === "preparing"
-                );
-                const hasReady = tableOrder.orders.some(
-                  (o) => o.status === "ready"
-                );
-                const allServed = tableOrder.orders.every(
-                  (o) => o.status === "served"
-                );
-
-                let priorityStatus = "served";
-                if (hasPlaced) priorityStatus = "placed";
-                else if (hasPreparing) priorityStatus = "preparing";
-                else if (hasReady) priorityStatus = "ready";
-
-                const priority = getOrderPriority(
-                  tableOrder.oldestOrderTime,
-                  priorityStatus
-                );
-                return (
-                  <div
-                    key={tableOrder.table?.id}
-                    className={`border rounded-lg p-6 ${priority.bg} border-2`}
-                  >
-                    {/* Table Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center">
-                        <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center mr-4 shadow-sm">
-                          <span className="font-bold text-lg text-gray-700">
-                            {tableOrder.table?.table_number}
+                            {kot.age} min
                           </span>
                         </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            Table {tableOrder.table?.table_number}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            {tableOrder.orders.length} order
-                            {tableOrder.orders.length !== 1 ? "s" : ""} •
-                            Oldest: {getTimeSince(tableOrder.oldestOrderTime)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xl font-bold text-gray-900">
-                          {formatCurrency(tableOrder.totalAmount)}
-                        </div>
-                        <div
-                          className={`text-sm font-medium ${priority.color}`}
-                        >
-                          {priority.level.toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Orders for this table */}
-                    <div className="space-y-4">
-                      {tableOrder.orders.map((order) => (
-                        <div
-                          key={order.id}
-                          className="bg-white rounded-lg p-4 shadow-sm"
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-sm font-medium text-gray-500">
-                                #{order.id.slice(-6)}
-                              </span>
-                              {getStatusBadge(order.status || "placed")}
-                              <span className="text-sm text-gray-500">
-                                {order.customer_phone}
-                              </span>
-                              {/* Guest user badge */}
-                              {order.guest_users && (
-                                <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                                  {order.guest_users.visit_count}x •{" "}
-                                  {order.guest_users.total_orders} orders
-                                </span>
-                              )}
-                              {/* Creator indicator */}
-                              <span
-                                className={`text-xs px-2 py-1 rounded ${
-                                  order.created_by_type === "admin"
-                                    ? "bg-purple-100 text-purple-700"
-                                    : "bg-green-100 text-green-700"
-                                }`}
-                              >
-                                {order.created_by_type === "admin"
-                                  ? "👑 Admin"
-                                  : "👤 Staff"}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              {order.status !== "cancelled" && (
-                                <>
-                                  <select
-                                    value={order.status || "placed"}
-                                    onChange={(e) =>
-                                      handleUpdateOrderStatus(
-                                        order.id,
-                                        e.target.value
-                                      )
-                                    }
-                                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                                  >
-                                    <option value="placed">Placed</option>
-                                    <option value="preparing">Preparing</option>
-                                    <option value="ready">Ready</option>
-                                    <option value="served">Served</option>
-                                  </select>
-
-                                  {(order.status === "placed" ||
-                                    order.status === "preparing") && (
-                                    <button
-                                      onClick={() => handleCancelOrder(order)}
-                                      className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-100 transition-colors flex items-center"
-                                      title="Cancel this order"
-                                    >
-                                      <X className="w-3 h-3 mr-1" />
-                                      Cancel
-                                    </button>
-                                  )}
-
-                                  {order.status === "served" && (
-                                    <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded">
-                                      Ready for Billing
-                                    </span>
-                                  )}
-                                </>
-                              )}
-
-                              {order.status === "cancelled" && (
-                                <span className="text-xs text-red-600 font-medium">
-                                  Cancelled
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Order Items */}
-                          <div className="space-y-2">
-                            {order.order_items.map((item) => (
-                              <div
-                                key={item.id}
-                                className={`flex items-center justify-between text-sm ${
-                                  order.status === "cancelled"
-                                    ? "opacity-60"
-                                    : ""
-                                }`}
-                              >
-                                <div className="flex items-center">
-                                  <span
-                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mr-2 ${
-                                      order.status === "cancelled"
-                                        ? "bg-red-100 text-red-800"
-                                        : "bg-blue-100 text-blue-800"
-                                    }`}
-                                  >
-                                    {item.quantity}
-                                  </span>
-                                  <span
-                                    className={`font-medium ${
-                                      order.status === "cancelled"
-                                        ? "line-through"
-                                        : ""
-                                    }`}
-                                  >
-                                    {item.menu_items?.name || "Unknown Item"}
-                                  </span>
-                                  {item.menu_items?.is_veg && (
-                                    <span className="ml-2 text-green-500">
-                                      🟢
-                                    </span>
-                                  )}
-                                  {item.menu_items?.is_veg === false && (
-                                    <span className="ml-2 text-red-500">
-                                      🔴
-                                    </span>
-                                  )}
-                                </div>
-                                <span
-                                  className={`font-medium ${
-                                    order.status === "cancelled"
-                                      ? "line-through"
-                                      : ""
-                                  }`}
-                                >
-                                  {formatCurrency(item.total_price)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-
-                          {order.notes && (
-                            <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                              <p className="text-xs text-yellow-800">
-                                <strong>Note:</strong> {order.notes}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </Card>
-      </div>
-
-      {/* Cancel Order Modal */}
-      {showCancelModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Cancel Order
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Order #{selectedOrder.id.slice(-6)}
-                  {selectedOrder.restaurant_tables
-                    ? ` - Table ${selectedOrder.restaurant_tables.table_number}`
-                    : " - Takeaway"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label
-                htmlFor="cancelReason"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
-                Reason for cancellation *
-              </label>
-              <textarea
-                id="cancelReason"
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="Please provide a reason for cancelling this order..."
-                required
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowCancelModal(false);
-                  setSelectedOrder(null);
-                  setCancelReason("");
-                }}
-                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                disabled={cancelling}
-              >
-                Keep Order
-              </button>
-              <button
-                onClick={confirmCancelOrder}
-                disabled={!cancelReason.trim() || cancelling}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {cancelling ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                ) : (
-                  <>
-                    <X className="w-4 h-4 mr-2" />
-                    Cancel Order
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-xs text-yellow-800">
-                <strong>Warning:</strong> This action cannot be undone. The
-                order will be marked as cancelled and removed from kitchen
-                workflow.
-              </p>
-            </div>
-          </div>
         </div>
-      )}
+      </Card>
+
+      <div className="mt-4 text-sm text-gray-500">
+        <p>
+          <strong>Note:</strong> Use <strong>/admin/kitchen</strong> for kitchen
+          operations (KOT management). Use{" "}
+          <strong>/admin/tables/sessions</strong> for table management and
+          marking items as served.
+        </p>
+      </div>
     </div>
   );
 }
