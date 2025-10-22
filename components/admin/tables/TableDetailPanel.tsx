@@ -92,6 +92,8 @@ export function TableDetailPanel({
 
   const tableStatus = getTableStatus();
 
+  if (!table.session) return null;
+
   return (
     <>
       {/* Compact Inline Panel */}
