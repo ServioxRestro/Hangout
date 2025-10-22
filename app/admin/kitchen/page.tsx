@@ -107,10 +107,20 @@ export default function KitchenDisplayPage() {
 
   const updateKOTStatus = async (kotBatchId: string, newStatus: string) => {
     try {
+      // Get the KOT to check if it's a takeaway order
+      const kot = kots.find((k) => k.kot_batch_id === kotBatchId);
+
+      // For takeaway orders: ready → served (auto-mark as served since takeaway is pickup-based)
+      // For dine-in orders: ready → stays ready (waiters mark as served from table sessions page)
+      const finalStatus =
+        kot?.order_type === "takeaway" && newStatus === "ready"
+          ? "served"
+          : newStatus;
+
       // Update ALL items in this KOT batch
       const { error } = await supabase
         .from("order_items")
-        .update({ status: newStatus } as any)
+        .update({ status: finalStatus } as any)
         .eq("kot_batch_id", kotBatchId);
 
       if (error) throw error;
@@ -185,7 +195,7 @@ export default function KitchenDisplayPage() {
                   leftIcon={<CheckCircle className="w-4 h-4" />}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
-                  Ready
+                  {kot.order_type === "takeaway" ? "Ready (Pickup)" : "Ready"}
                 </Button>
               )}
 
