@@ -10,6 +10,8 @@ import { GuestLayout } from "@/components/guest/GuestLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { OfferSelector } from "@/components/guest/OfferSelector";
+import { SmartOfferBanner } from "@/components/guest/SmartOfferBanner";
 import { formatCurrency } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -55,6 +57,9 @@ export default function CartPage() {
 
   // Table occupation state
   const [occupiedByDifferentUser, setOccupiedByDifferentUser] = useState(false);
+
+  // Offer state
+  const [selectedOffer, setSelectedOffer] = useState<Tables<"offers"> | null>(null);
 
   useEffect(() => {
     if (tableCode) {
@@ -160,6 +165,43 @@ export default function CartPage() {
 
   const getTotalItems = () => {
     return cart.reduce((total, item) => total + item.quantity, 0);
+  };
+
+  const calculateDiscount = () => {
+    if (!selectedOffer) return 0;
+
+    const benefits = selectedOffer.benefits as any;
+    let discount = 0;
+    const cartTotal = getTotalAmount();
+
+    if (selectedOffer.offer_type === "cart_percentage") {
+      discount = (cartTotal * (benefits.discount_percentage || 0)) / 100;
+      if (benefits.max_discount_amount) {
+        discount = Math.min(discount, benefits.max_discount_amount);
+      }
+    } else if (selectedOffer.offer_type === "cart_flat_amount") {
+      discount = benefits.discount_amount || 0;
+    } else if (selectedOffer.offer_type === "min_order_discount") {
+      const conditions = selectedOffer.conditions as any;
+      if (cartTotal >= (conditions?.threshold_amount || 0)) {
+        discount = benefits.discount_amount || 0;
+      }
+    } else if (selectedOffer.offer_type === "promo_code" || selectedOffer.offer_type === "time_based" || selectedOffer.offer_type === "customer_based") {
+      if (benefits.discount_percentage) {
+        discount = (cartTotal * benefits.discount_percentage) / 100;
+        if (benefits.max_discount_amount) {
+          discount = Math.min(discount, benefits.max_discount_amount);
+        }
+      } else if (benefits.discount_amount) {
+        discount = benefits.discount_amount;
+      }
+    }
+
+    return discount;
+  };
+
+  const getFinalAmount = () => {
+    return getTotalAmount() - calculateDiscount();
   };
 
   const handleSendOTP = async () => {
@@ -357,7 +399,8 @@ export default function CartPage() {
             total_amount: cartTotal,
             status: "placed",
             order_type: "dine-in",
-            notes: `Order placed via QR code for table ${table.table_number}`
+            notes: `Order placed via QR code for table ${table.table_number}`,
+            session_offer_id: selectedOffer?.id || null, // Save selected offer
           })
           .select()
           .single();
@@ -510,6 +553,15 @@ export default function CartPage() {
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Smart Offer Banner */}
+                {!selectedOffer && (
+                  <SmartOfferBanner
+                    cartItems={cart}
+                    cartTotal={getTotalAmount()}
+                    onViewOffers={() => router.push(`/t/${tableCode}/offers`)}
+                  />
+                )}
+
                 {/* Cart Items */}
                 <div className="space-y-4">
                   {cart.map((item) => (
@@ -551,6 +603,16 @@ export default function CartPage() {
                   ))}
                 </div>
 
+                {/* Offer Selector */}
+                <OfferSelector
+                  cartItems={cart}
+                  cartTotal={getTotalAmount()}
+                  customerPhone={currentUser?.phone}
+                  tableId={table?.id}
+                  onOfferSelect={setSelectedOffer}
+                  selectedOffer={selectedOffer}
+                />
+
                 {/* Order Summary */}
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="font-semibold text-gray-900 mb-3">Order Summary</h3>
@@ -559,13 +621,19 @@ export default function CartPage() {
                       <span>Items ({getTotalItems()})</span>
                       <span>{formatCurrency(getTotalAmount())}</span>
                     </div>
+                    {selectedOffer && calculateDiscount() > 0 && (
+                      <div className="flex justify-between text-sm text-green-600">
+                        <span>Discount ({selectedOffer.name})</span>
+                        <span>-{formatCurrency(calculateDiscount())}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span>Taxes & Fees</span>
                       <span>Included</span>
                     </div>
                     <div className="border-t pt-2 flex justify-between font-bold">
                       <span>Total</span>
-                      <span>{formatCurrency(getTotalAmount())}</span>
+                      <span>{formatCurrency(getFinalAmount())}</span>
                     </div>
                   </div>
                 </div>
@@ -604,7 +672,7 @@ export default function CartPage() {
                 >
                   {occupiedByDifferentUser ? "Table Occupied" :
                    orderPlacing ? "Placing Order..." :
-                   `Place Order • ${formatCurrency(getTotalAmount())}`}
+                   `Place Order • ${formatCurrency(getFinalAmount())}`}
                 </Button>
               </div>
             )}

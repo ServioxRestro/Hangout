@@ -17,6 +17,8 @@ import {
   Receipt,
   Settings,
   ChefHat,
+  Package,
+  QrCode,
 } from "lucide-react";
 import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
 
@@ -79,6 +81,23 @@ export default function DynamicNavbar({
       icon: ChefHat,
     },
     {
+      name: "Takeaway",
+      href: "/admin/takeaway/orders",
+      icon: Package,
+      subItems: [
+        {
+          name: "Takeaway Orders",
+          href: "/admin/takeaway/orders",
+          icon: Package,
+        },
+        {
+          name: "QR Management",
+          href: "/admin/takeaway/qr-management",
+          icon: QrCode,
+        },
+      ],
+    },
+    {
       name: "Bills & Payments",
       href: "/admin/billing",
       icon: Receipt,
@@ -116,6 +135,18 @@ export default function DynamicNavbar({
       name: "Offers",
       href: "/admin/offers",
       icon: Gift,
+      subItems: [
+        {
+          name: "All Offers",
+          href: "/admin/offers",
+          icon: Gift,
+        },
+        {
+          name: "Create Offer",
+          href: "/admin/offers/create",
+          icon: Plus,
+        },
+      ],
     },
 
     {

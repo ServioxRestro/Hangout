@@ -288,6 +288,27 @@ export type Database = {
           },
         ]
       }
+      daily_kot_counter: {
+        Row: {
+          created_at: string | null
+          date: string
+          last_kot_number: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          date?: string
+          last_kot_number?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          date?: string
+          last_kot_number?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       guest_users: {
         Row: {
           created_at: string | null
@@ -495,6 +516,7 @@ export type Database = {
           id: string
           offer_id: string
           order_id: string | null
+          table_session_id: string | null
           used_at: string | null
         }
         Insert: {
@@ -505,6 +527,7 @@ export type Database = {
           id?: string
           offer_id: string
           order_id?: string | null
+          table_session_id?: string | null
           used_at?: string | null
         }
         Update: {
@@ -515,6 +538,7 @@ export type Database = {
           id?: string
           offer_id?: string
           order_id?: string | null
+          table_session_id?: string | null
           used_at?: string | null
         }
         Relationships: [
@@ -532,10 +556,20 @@ export type Database = {
             referencedRelation: "orders"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "offer_usage_table_session_id_fkey"
+            columns: ["table_session_id"]
+            isOneToOne: false
+            referencedRelation: "table_sessions"
+            referencedColumns: ["id"]
+          },
         ]
       }
       offers: {
         Row: {
+          application_type:
+            | Database["public"]["Enums"]["offer_application_type"]
+            | null
           benefits: Json
           conditions: Json | null
           created_at: string | null
@@ -560,6 +594,9 @@ export type Database = {
           valid_hours_start: string | null
         }
         Insert: {
+          application_type?:
+            | Database["public"]["Enums"]["offer_application_type"]
+            | null
           benefits?: Json
           conditions?: Json | null
           created_at?: string | null
@@ -584,6 +621,9 @@ export type Database = {
           valid_hours_start?: string | null
         }
         Update: {
+          application_type?:
+            | Database["public"]["Enums"]["offer_application_type"]
+            | null
           benefits?: Json
           conditions?: Json | null
           created_at?: string | null
@@ -613,27 +653,36 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          kot_batch_id: string | null
+          kot_number: number | null
           menu_item_id: string | null
           order_id: string | null
           quantity: number
+          status: string | null
           total_price: number
           unit_price: number
         }
         Insert: {
           created_at?: string | null
           id?: string
+          kot_batch_id?: string | null
+          kot_number?: number | null
           menu_item_id?: string | null
           order_id?: string | null
           quantity?: number
+          status?: string | null
           total_price: number
           unit_price: number
         }
         Update: {
           created_at?: string | null
           id?: string
+          kot_batch_id?: string | null
+          kot_number?: number | null
           menu_item_id?: string | null
           order_id?: string | null
           quantity?: number
+          status?: string | null
           total_price?: number
           unit_price?: number
         }
@@ -672,9 +721,11 @@ export type Database = {
           id: string
           notes: string | null
           order_type: string
+          session_offer_id: string | null
           status: string | null
           table_id: string | null
           table_session_id: string | null
+          takeaway_qr_id: string | null
           total_amount: number
           updated_at: string | null
         }
@@ -695,9 +746,11 @@ export type Database = {
           id?: string
           notes?: string | null
           order_type?: string
+          session_offer_id?: string | null
           status?: string | null
           table_id?: string | null
           table_session_id?: string | null
+          takeaway_qr_id?: string | null
           total_amount: number
           updated_at?: string | null
         }
@@ -718,9 +771,11 @@ export type Database = {
           id?: string
           notes?: string | null
           order_type?: string
+          session_offer_id?: string | null
           status?: string | null
           table_id?: string | null
           table_session_id?: string | null
+          takeaway_qr_id?: string | null
           total_amount?: number
           updated_at?: string | null
         }
@@ -754,6 +809,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "orders_session_offer_id_fkey"
+            columns: ["session_offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "orders_table_id_fkey"
             columns: ["table_id"]
             isOneToOne: false
@@ -765,6 +827,13 @@ export type Database = {
             columns: ["table_session_id"]
             isOneToOne: false
             referencedRelation: "table_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_takeaway_qr_id_fkey"
+            columns: ["takeaway_qr_id"]
+            isOneToOne: false
+            referencedRelation: "takeaway_qr_codes"
             referencedColumns: ["id"]
           },
         ]
@@ -808,6 +877,7 @@ export type Database = {
           table_code: string
           table_number: number
           updated_at: string | null
+          veg_only: boolean
         }
         Insert: {
           created_at?: string | null
@@ -817,6 +887,7 @@ export type Database = {
           table_code: string
           table_number: number
           updated_at?: string | null
+          veg_only?: boolean
         }
         Update: {
           created_at?: string | null
@@ -826,6 +897,7 @@ export type Database = {
           table_code?: string
           table_number?: number
           updated_at?: string | null
+          veg_only?: boolean
         }
         Relationships: []
       }
@@ -882,6 +954,9 @@ export type Database = {
           customer_phone: string | null
           guest_user_id: string | null
           id: string
+          locked_offer_data: Json | null
+          locked_offer_id: string | null
+          offer_applied_at: string | null
           paid_at: string | null
           payment_method: string | null
           payment_received_by: string | null
@@ -901,6 +976,9 @@ export type Database = {
           customer_phone?: string | null
           guest_user_id?: string | null
           id?: string
+          locked_offer_data?: Json | null
+          locked_offer_id?: string | null
+          offer_applied_at?: string | null
           paid_at?: string | null
           payment_method?: string | null
           payment_received_by?: string | null
@@ -920,6 +998,9 @@ export type Database = {
           customer_phone?: string | null
           guest_user_id?: string | null
           id?: string
+          locked_offer_data?: Json | null
+          locked_offer_id?: string | null
+          offer_applied_at?: string | null
           paid_at?: string | null
           payment_method?: string | null
           payment_received_by?: string | null
@@ -947,6 +1028,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "table_sessions_locked_offer_id_fkey"
+            columns: ["locked_offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "table_sessions_payment_received_by_fkey"
             columns: ["payment_received_by"]
             isOneToOne: false
@@ -961,6 +1049,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      takeaway_qr_codes: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          is_veg_only: boolean
+          qr_code: string
+          qr_code_url: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_veg_only?: boolean
+          qr_code: string
+          qr_code_url?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_veg_only?: boolean
+          qr_code?: string
+          qr_code_url?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       tax_settings: {
         Row: {
@@ -1000,13 +1118,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      increment_offer_usage: {
-        Args: { offer_id: string }
-        Returns: undefined
-      }
+      cleanup_old_kot_counters: { Args: never; Returns: undefined }
+      get_next_kot_number: { Args: never; Returns: number }
+      increment_offer_usage: { Args: { offer_id: string }; Returns: undefined }
     }
     Enums: {
-      [_ in never]: never
+      offer_application_type: "order_level" | "session_level"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1133,6 +1250,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      offer_application_type: ["order_level", "session_level"],
+    },
   },
 } as const

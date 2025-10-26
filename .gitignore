@@ -15,6 +15,7 @@
 # testing
 /coverage
 
+docs
 
 # next.js
 /.next/
@@ -47,3 +48,4 @@ next-env.d.ts
 .vercel/
 .env*.local
 CLAUDE.md
+/testsprite_tests/

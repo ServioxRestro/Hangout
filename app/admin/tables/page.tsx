@@ -161,6 +161,10 @@ export default function TableSessionsPage() {
     (t) => getTableStatus(t) === "ready-to-bill"
   );
 
+  // Group tables by type (regular vs veg-only)
+  const regularTables = tablesData.filter((t) => !t.table.veg_only);
+  const vegOnlyTables = tablesData.filter((t) => t.table.veg_only);
+
   return (
     <div className="flex gap-6">
       {/* Left Section - Tables Grid */}
@@ -209,83 +213,194 @@ export default function TableSessionsPage() {
           </div>
         </div>
 
-        {/* Tables Grid */}
-        <div className={`grid gap-4 ${
-          showPanel
-            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4'
-            : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
-        }`}>
-          {tablesData.map((tableData) => {
-            const status = getTableStatus(tableData);
-            const colors = getTableColor(status);
+        {/* Tables Grid - Grouped by Type */}
+        <div className="space-y-6">
+          {/* Regular Tables Section */}
+          {regularTables.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                <h2 className="text-lg font-semibold text-gray-900">Regular Tables</h2>
+                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                  {regularTables.length}
+                </span>
+              </div>
+              <div className={`grid gap-4 ${
+                showPanel
+                  ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+              }`}>
+                {regularTables.map((tableData) => {
+                  const status = getTableStatus(tableData);
+                  const colors = getTableColor(status);
+                  const displayNumber = tableData.table.table_number.toString();
 
-            return (
-              <button
-                key={tableData.table.id}
-                onClick={() => {
-                  if (tableData.session) {
-                    setSelectedTable(tableData);
-                    setShowPanel(true);
-                  }
-                }}
-                className={`${colors.bg} ${colors.text} ${colors.border} border-2 rounded-xl p-6 transition-all transform hover:scale-105 cursor-pointer shadow-lg relative`}
-              >
-                {/* Table Number */}
-                <div className="text-center mb-3">
-                  <div className="text-4xl font-bold mb-1">
-                    {tableData.table.table_number}
-                  </div>
-                  <div className={`text-xs font-medium ${colors.icon}`}>
-                    {status === "available" && "Available"}
-                    {status === "active" && "Occupied"}
-                    {status === "ready-to-bill" && "Ready to Bill"}
-                  </div>
-                </div>
+                  return (
+                    <button
+                      key={tableData.table.id}
+                      onClick={() => {
+                        if (tableData.session) {
+                          setSelectedTable(tableData);
+                          setShowPanel(true);
+                        }
+                      }}
+                      className={`${colors.bg} ${colors.text} ${colors.border} border-2 rounded-xl p-6 transition-all transform hover:scale-105 cursor-pointer shadow-lg relative`}
+                    >
+                      {/* Table Number */}
+                      <div className="text-center mb-3">
+                        <div className="text-4xl font-bold mb-1">
+                          {displayNumber}
+                        </div>
+                        <div className={`text-xs font-medium ${colors.icon}`}>
+                          {status === "available" && "Available"}
+                          {status === "active" && "Occupied"}
+                          {status === "ready-to-bill" && "Ready to Bill"}
+                        </div>
+                      </div>
 
-                {/* Session Info (if active) */}
-                {tableData.session && (
-                  <div className={`text-xs space-y-1 ${colors.icon}`}>
-                    <div className="flex items-center justify-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>
-                        {formatDuration(
-                          tableData.session.session_started_at ||
-                            tableData.session.created_at ||
-                            ""
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <DollarSign className="w-3 h-3" />
-                      <span>
-                        {formatCurrency(tableData.session.total_amount || 0)}
-                      </span>
-                    </div>
-                    {tableData.session.orders &&
-                      tableData.session.orders.length > 0 && (
-                        <div className="flex items-center justify-center gap-1">
-                          <ShoppingCart className="w-3 h-3" />
-                          <span>
-                            {tableData.session.orders.length} order
-                            {tableData.session.orders.length > 1 ? "s" : ""}
+                      {/* Session Info (if active) */}
+                      {tableData.session && (
+                        <div className={`text-xs space-y-1 ${colors.icon}`}>
+                          <div className="flex items-center justify-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>
+                              {formatDuration(
+                                tableData.session.session_started_at ||
+                                  tableData.session.created_at ||
+                                  ""
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            <span>
+                              {formatCurrency(tableData.session.total_amount || 0)}
+                            </span>
+                          </div>
+                          {tableData.session.orders &&
+                            tableData.session.orders.length > 0 && (
+                              <div className="flex items-center justify-center gap-1">
+                                <ShoppingCart className="w-3 h-3" />
+                                <span>
+                                  {tableData.session.orders.length} order
+                                  {tableData.session.orders.length > 1 ? "s" : ""}
+                                </span>
+                              </div>
+                            )}
+                        </div>
+                      )}
+
+                      {/* Pulse animation for ready to bill */}
+                      {status === "ready-to-bill" && (
+                        <div className="absolute -top-1 -right-1">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
                           </span>
                         </div>
                       )}
-                  </div>
-                )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-                {/* Pulse animation for ready to bill */}
-                {status === "ready-to-bill" && (
-                  <div className="absolute -top-1 -right-1">
-                    <span className="relative flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
-                    </span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
+          {/* Veg-Only Tables Section */}
+          {vegOnlyTables.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                <h2 className="text-lg font-semibold text-gray-900">Veg-Only Tables</h2>
+                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                  {vegOnlyTables.length}
+                </span>
+              </div>
+              <div className={`grid gap-4 ${
+                showPanel
+                  ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+              }`}>
+                {vegOnlyTables.map((tableData) => {
+                  const status = getTableStatus(tableData);
+                  const colors = getTableColor(status);
+                  const displayNumber = `V${tableData.table.table_number}`;
+
+                  return (
+                    <button
+                      key={tableData.table.id}
+                      onClick={() => {
+                        if (tableData.session) {
+                          setSelectedTable(tableData);
+                          setShowPanel(true);
+                        }
+                      }}
+                      className={`${colors.bg} ${colors.text} ${colors.border} border-2 rounded-xl p-6 transition-all transform hover:scale-105 cursor-pointer shadow-lg relative`}
+                    >
+                      {/* Veg-Only Indicator */}
+                      <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-medium">
+                        🟢 Veg
+                      </div>
+
+                      {/* Table Number */}
+                      <div className="text-center mb-3">
+                        <div className="text-4xl font-bold mb-1">
+                          {displayNumber}
+                        </div>
+                        <div className={`text-xs font-medium ${colors.icon}`}>
+                          {status === "available" && "Available"}
+                          {status === "active" && "Occupied"}
+                          {status === "ready-to-bill" && "Ready to Bill"}
+                        </div>
+                      </div>
+
+                      {/* Session Info (if active) */}
+                      {tableData.session && (
+                        <div className={`text-xs space-y-1 ${colors.icon}`}>
+                          <div className="flex items-center justify-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>
+                              {formatDuration(
+                                tableData.session.session_started_at ||
+                                  tableData.session.created_at ||
+                                  ""
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            <span>
+                              {formatCurrency(tableData.session.total_amount || 0)}
+                            </span>
+                          </div>
+                          {tableData.session.orders &&
+                            tableData.session.orders.length > 0 && (
+                              <div className="flex items-center justify-center gap-1">
+                                <ShoppingCart className="w-3 h-3" />
+                                <span>
+                                  {tableData.session.orders.length} order
+                                  {tableData.session.orders.length > 1 ? "s" : ""}
+                                </span>
+                              </div>
+                            )}
+                        </div>
+                      )}
+
+                      {/* Pulse animation for ready to bill */}
+                      {status === "ready-to-bill" && (
+                        <div className="absolute -top-1 -right-1">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

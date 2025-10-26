@@ -45,31 +45,18 @@ export function CartSummary({ cart, onCheckout, onViewCart, disabled = false, di
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={onViewCart}
-            disabled={disabled}
-            className={`px-4 py-2 border rounded-lg font-medium transition-colors ${
-              disabled
-                ? "border-gray-300 text-gray-400 cursor-not-allowed"
-                : "border-orange-600 text-orange-600 hover:bg-orange-50"
-            }`}
-          >
-            View Cart
-          </button>
-          <button
-            onClick={disabled ? undefined : onCheckout}
-            disabled={disabled}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              disabled
-                ? "bg-gray-400 text-gray-200 cursor-not-allowed"
-                : "bg-orange-600 text-white hover:bg-orange-700"
-            }`}
-            title={disabled ? disabledMessage : undefined}
-          >
-            {disabled ? "Unavailable" : "Place Order"}
-          </button>
-        </div>
+        <button
+          onClick={disabled ? undefined : onCheckout}
+          disabled={disabled}
+          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+            disabled
+              ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+              : "bg-orange-600 text-white hover:bg-orange-700"
+          }`}
+          title={disabled ? disabledMessage : undefined}
+        >
+          {disabled ? "Unavailable" : "View Cart"}
+        </button>
       </div>
     </div>
   );

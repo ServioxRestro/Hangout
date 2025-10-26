@@ -13,6 +13,7 @@ import { CartSummary } from "@/components/guest/CartSummary";
 import { FeaturedOffersCarousel } from "@/components/guest/FeaturedOffersCarousel";
 import { GuestLoginModal } from "@/components/guest/GuestLoginModal";
 import { AddToCartToast } from "@/components/guest/AddToCartToast";
+import { SmartOfferBanner } from "@/components/guest/SmartOfferBanner";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import { Search, User, LogOut } from "lucide-react";
@@ -161,20 +162,28 @@ export default function TablePage() {
       const startTime = performance.now();
       console.log("🚀 Starting menu fetch...");
 
-      // Execute all queries in parallel for better performance
+      // First fetch table details to check if it's veg-only
+      const { data: tableData, error: tableError } = await supabase
+        .from("restaurant_tables")
+        .select("*")
+        .eq("table_code", tableCode)
+        .eq("is_active", true)
+        .single();
+
+      if (tableError) throw tableError;
+      if (!tableData) {
+        setError("Table not found");
+        setLoading(false);
+        return;
+      }
+
+      setTable(tableData);
+
+      // Now fetch menu with filtering based on table type
       const [
-        { data: tableData, error: tableError },
         { data: categoriesData, error: categoriesError },
         { data: itemsData, error: itemsError }
       ] = await Promise.all([
-        // Fetch table details
-        supabase
-          .from("restaurant_tables")
-          .select("*")
-          .eq("table_code", tableCode)
-          .eq("is_active", true)
-          .single(),
-
         // Fetch menu categories
         supabase
           .from("menu_categories")
@@ -182,21 +191,22 @@ export default function TablePage() {
           .eq("is_active", true)
           .order("display_order", { ascending: true }),
 
-        // Fetch menu items - optimized query
-        supabase
-          .from("menu_items")
-          .select(`
-            id,
-            name,
-            description,
-            price,
-            original_price,
-            discount_percentage,
-            has_discount,
-            image_url,
-            is_veg,
-            category_id,
-            display_order,
+        // Fetch menu items - filter by veg_only if table is veg-only
+        (async () => {
+          const query = supabase
+            .from("menu_items")
+            .select(`
+              id,
+              name,
+              description,
+              price,
+              original_price,
+              discount_percentage,
+              has_discount,
+              image_url,
+              is_veg,
+              category_id,
+              display_order,
             menu_categories!inner (
               id,
               name
@@ -204,7 +214,15 @@ export default function TablePage() {
           `)
           .eq("is_available", true)
           .eq("menu_categories.is_active", true)
-          .order("display_order", { ascending: true })
+          .order("display_order", { ascending: true });
+
+          // If this is a veg-only table, only show vegetarian items
+          if (tableData.veg_only) {
+            query.eq("is_veg", true);
+          }
+
+          return await query;
+        })()
       ]);
 
       // Check for errors
@@ -360,53 +378,60 @@ export default function TablePage() {
 
   return (
     <GuestLayout>
-      {/* Restaurant Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-40">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1 text-center">
-            <h1 className="text-xl font-bold text-gray-900">
+      {/* Restaurant Header - Non-sticky, Compact */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-gray-900">
               {process.env.NEXT_PUBLIC_RESTAURANT_NAME || "Hangout Restaurant"}
             </h1>
-            <p className="text-sm text-gray-600">Table {table?.table_number}</p>
+            <p className="text-xs text-gray-600">
+              Table {table?.veg_only ? `V${table.table_number}` : table?.table_number}
+            </p>
           </div>
 
           {/* Login/Logout Button */}
           <div className="flex-shrink-0">
             {userPhone ? (
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
-                  <User className="w-4 h-4" />
-                  <span className="max-w-[100px] truncate">+91 {userPhone}</span>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleLogout}
-                  className="flex items-center gap-2"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline">Logout</span>
-                </Button>
-              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleLogout}
+                className="flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-xs">Logout</span>
+              </Button>
             ) : (
               <Button
                 variant="primary"
                 size="sm"
                 onClick={handleLogin}
-                className="flex items-center gap-2"
+                className="flex items-center gap-1.5"
               >
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">Login</span>
+                <User className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-xs">Login</span>
               </Button>
             )}
           </div>
         </div>
-
-        {/* Menu Title */}
-        <div className="text-center">
-          <h2 className="text-lg font-semibold text-gray-900">Menu</h2>
-        </div>
       </div>
+
+      {/* Veg-Only Table Banner */}
+      {table?.veg_only && (
+        <div className="bg-green-50 border-l-4 border-green-500 p-4 mx-4 mt-4 rounded-r-lg">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <span className="text-2xl">🟢</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-green-800">
+                <span className="font-medium">Veg-Only Table:</span> This table displays only vegetarian menu items.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Table Occupation Warning */}
       {occupiedByDifferentUser && (
@@ -446,6 +471,17 @@ export default function TablePage() {
           onViewOffers={() => router.push(`/t/${tableCode}/offers`)}
         />
       </div>
+
+      {/* Smart Offer Banner */}
+      {cart.length > 0 && (
+        <div className="px-4 mt-4">
+          <SmartOfferBanner
+            cartItems={cart}
+            cartTotal={cart.reduce((sum, item) => sum + item.price * item.quantity, 0)}
+            onViewOffers={() => router.push(`/t/${tableCode}/offers`)}
+          />
+        </div>
+      )}
 
       {/* Clean Menu Layout */}
       <CleanMenuLayout
