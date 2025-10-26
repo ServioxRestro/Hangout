@@ -228,7 +228,7 @@ export default function OrdersPage() {
 
           // Fetch offer information if this bill has a discount
           let offerName = null;
-          if (existingBill.discount_amount > 0) {
+          if (existingBill.discount_amount && existingBill.discount_amount > 0) {
             const { data: offerUsageData } = await supabase
               .from("offer_usage")
               .select(`
@@ -255,25 +255,25 @@ export default function OrdersPage() {
 
           const calculation = {
             subtotal: existingBill.subtotal,
-            discount_amount: existingBill.discount_amount,
+            discount_amount: existingBill.discount_amount || 0,
             taxes: [
-              ...(existingBill.cgst_rate > 0 ? [{
+              ...(existingBill.cgst_rate && existingBill.cgst_rate > 0 ? [{
                 name: 'CGST',
                 rate: existingBill.cgst_rate,
-                amount: existingBill.cgst_amount,
+                amount: existingBill.cgst_amount || 0,
               }] : []),
-              ...(existingBill.sgst_rate > 0 ? [{
+              ...(existingBill.sgst_rate && existingBill.sgst_rate > 0 ? [{
                 name: 'SGST',
                 rate: existingBill.sgst_rate,
-                amount: existingBill.sgst_amount,
+                amount: existingBill.sgst_amount || 0,
               }] : []),
-              ...(existingBill.service_charge_rate > 0 ? [{
+              ...(existingBill.service_charge_rate && existingBill.service_charge_rate > 0 ? [{
                 name: 'Service Charge',
                 rate: existingBill.service_charge_rate,
-                amount: existingBill.service_charge_amount,
+                amount: existingBill.service_charge_amount || 0,
               }] : []),
             ],
-            tax_amount: existingBill.total_tax_amount,
+            tax_amount: existingBill.total_tax_amount || 0,
             final_amount: existingBill.final_amount,
           };
 
