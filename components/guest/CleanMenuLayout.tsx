@@ -171,13 +171,13 @@ export function CleanMenuLayout({
   return (
     <div className="relative">
       {/* Fixed Filter Bar - Sticky at top */}
-      <div className="bg-white sticky top-0 z-30 shadow-sm border-b border-gray-200">
+      <div className="bg-white sticky top-0 z-30 shadow-md border-b border-gray-100">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             {/* Category Button */}
             <button
               onClick={() => setShowCategoryModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors min-w-0 flex-1 max-w-xs"
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 rounded-xl border border-gray-200 transition-all shadow-sm hover:shadow-md min-w-0 flex-1 max-w-xs"
             >
               <Filter className="w-4 h-4 text-gray-600 flex-shrink-0" />
               <span className="text-sm font-medium text-gray-700 truncate">
@@ -194,10 +194,10 @@ export function CleanMenuLayout({
                   onNonVegFilterToggle();
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-200",
+                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl border transition-all duration-200",
                   showNonVegOnly
-                    ? "bg-red-500 text-white border-red-500 shadow-md ring-2 ring-red-200"
-                    : "bg-white text-gray-600 border-gray-200 hover:bg-red-50"
+                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white border-red-500 shadow-lg ring-2 ring-red-200"
+                    : "bg-white text-gray-600 border-gray-200 hover:bg-red-50 shadow-sm hover:shadow-md"
                 )}
               >
                 <span className={showNonVegOnly ? "text-white" : "text-red-600"}>🔴</span>
@@ -209,10 +209,10 @@ export function CleanMenuLayout({
                   onVegFilterToggle();
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-200",
+                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl border transition-all duration-200",
                   showVegOnly
-                    ? "bg-emerald-500 text-white border-emerald-500 shadow-md ring-2 ring-emerald-200"
-                    : "bg-white text-gray-600 border-gray-200 hover:bg-emerald-50"
+                    ? "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white border-emerald-500 shadow-lg ring-2 ring-emerald-200"
+                    : "bg-white text-gray-600 border-gray-200 hover:bg-emerald-50 shadow-sm hover:shadow-md"
                 )}
               >
                 <span className={showVegOnly ? "text-white" : "text-emerald-600"}>🟢</span>
@@ -224,7 +224,7 @@ export function CleanMenuLayout({
       </div>
 
       {/* Menu Content */}
-      <div className="pb-20">
+      <div className="pb-20 bg-gradient-to-b from-gray-50 to-white">
         {categoriesWithItems.length === 0 ? (
           <div className="text-center py-16 px-4">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -266,7 +266,7 @@ export function CleanMenuLayout({
                   </div>
 
                   {/* Menu Items */}
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     {items.map((item) => renderMenuItem(item))}
                   </div>
                 </div>

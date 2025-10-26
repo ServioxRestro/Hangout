@@ -188,7 +188,7 @@ export default function OrdersPage() {
   }, [currentUser?.phone, showBill, fetchOrders]);
 
   const handleGetBill = async () => {
-    // If bill already generated, just show it
+    // If bill already generated in UI, just show it
     if (billSummary) {
       setShowBill(true);
       return;
@@ -196,18 +196,117 @@ export default function OrdersPage() {
 
     setProcessingBill(true);
     try {
+      // First, check if bill already exists in database (processed by staff)
+      // Get table session ID from orders
+      const sessionId = activeOrders[0]?.table_session_id;
+
+      if (sessionId) {
+        const { data: existingBills, error: billCheckError } = await supabase
+          .from("bills")
+          .select(`
+            *,
+            bill_items (
+              id,
+              item_name,
+              quantity,
+              unit_price,
+              total_price
+            )
+          `)
+          .eq("table_session_id", sessionId)
+          .in("payment_status", ["pending", "paid"])
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (billCheckError) {
+          console.error("Error checking existing bills:", billCheckError);
+        }
+
+        // If bill exists, show it (view-only mode)
+        if (existingBills && existingBills.length > 0) {
+          const existingBill = existingBills[0];
+
+          // Fetch offer information if this bill has a discount
+          let offerName = null;
+          if (existingBill.discount_amount > 0) {
+            const { data: offerUsageData } = await supabase
+              .from("offer_usage")
+              .select(`
+                offers (
+                  name
+                )
+              `)
+              .eq("table_session_id", sessionId)
+              .single();
+
+            if (offerUsageData && offerUsageData.offers) {
+              offerName = (offerUsageData.offers as any).name;
+            }
+          }
+
+          // Convert database bill to UI format
+          const billItems: BillItem[] = (existingBill.bill_items || []).map(item => ({
+            name: item.item_name,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+            is_manual: false,
+          }));
+
+          const calculation = {
+            subtotal: existingBill.subtotal,
+            discount_amount: existingBill.discount_amount,
+            taxes: [
+              ...(existingBill.cgst_rate > 0 ? [{
+                name: 'CGST',
+                rate: existingBill.cgst_rate,
+                amount: existingBill.cgst_amount,
+              }] : []),
+              ...(existingBill.sgst_rate > 0 ? [{
+                name: 'SGST',
+                rate: existingBill.sgst_rate,
+                amount: existingBill.sgst_amount,
+              }] : []),
+              ...(existingBill.service_charge_rate > 0 ? [{
+                name: 'Service Charge',
+                rate: existingBill.service_charge_rate,
+                amount: existingBill.service_charge_amount,
+              }] : []),
+            ],
+            tax_amount: existingBill.total_tax_amount,
+            final_amount: existingBill.final_amount,
+          };
+
+          setBillSummary({
+            items: billItems,
+            calculation,
+            orderIds: activeOrders.map(o => o.id),
+            existingBill: true, // Flag to indicate this is from database
+            billNumber: existingBill.bill_number,
+            paymentStatus: existingBill.payment_status,
+            offerName: offerName, // Include offer name if available
+          });
+
+          setShowBill(true);
+          setProcessingBill(false);
+          return;
+        }
+      }
+
+      // No existing bill - generate UI-only bill preview
       // Get all active orders
-      const activeOrders = orders.filter(o =>
+      const activeOrdersList = orders.filter(o =>
         o.status !== 'completed' && o.status !== 'paid'
       );
 
-      if (activeOrders.length === 0) {
+      if (activeOrdersList.length === 0) {
         alert("No active orders to bill");
+        setProcessingBill(false);
         return;
       }
 
       // Collect all items from active orders
-      const allItems = activeOrders.flatMap(order => order.order_items);
+      const allItems = activeOrdersList.flatMap(order => order.order_items);
 
       // Check if all items are ready
       const allReady = allItems.every(item =>
@@ -239,25 +338,13 @@ export default function OrdersPage() {
       setBillSummary({
         items: billItems,
         calculation,
-        orderIds: activeOrders.map(o => o.id),
+        orderIds: activeOrdersList.map(o => o.id),
+        existingBill: false, // UI-generated preview
       });
 
-      // Mark all items as served
-      const itemIds = allItems.map(item => item.id);
-      const { error: updateError } = await supabase
-        .from("order_items")
-        .update({ status: "served" } as any)
-        .in("id", itemIds);
-
-      if (updateError) throw updateError;
-
-      // Show bill
+      // DON'T mark items as served - that's done by waiters from table sessions
+      // Just show the bill preview
       setShowBill(true);
-
-      // Refresh orders to show updated status
-      if (currentUser?.phone) {
-        await fetchOrders(currentUser.phone);
-      }
     } catch (error) {
       console.error("Error generating bill:", error);
       alert("Failed to generate bill. Please try again.");
@@ -461,7 +548,12 @@ export default function OrdersPage() {
           <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">Your Bill</h2>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Your Bill</h2>
+                  {billSummary.existingBill && billSummary.billNumber && (
+                    <p className="text-sm text-gray-600 mt-1">{billSummary.billNumber}</p>
+                  )}
+                </div>
                 <button
                   onClick={() => setShowBill(false)}
                   className="text-gray-400 hover:text-gray-600"
@@ -469,6 +561,29 @@ export default function OrdersPage() {
                   <span className="text-2xl">×</span>
                 </button>
               </div>
+
+              {/* Bill Status Indicator */}
+              {billSummary.existingBill && (
+                <div className={`mb-4 rounded-lg p-3 ${
+                  billSummary.paymentStatus === 'paid'
+                    ? 'bg-green-50 border border-green-200'
+                    : 'bg-blue-50 border border-blue-200'
+                }`}>
+                  <div className="flex items-center gap-2 text-sm">
+                    {billSummary.paymentStatus === 'paid' ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span className="text-green-800 font-medium">Paid</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4 text-blue-600" />
+                        <span className="text-blue-800 font-medium">Pending Payment</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Bill Items */}
               <div className="space-y-2 mb-4">
@@ -490,6 +605,18 @@ export default function OrdersPage() {
                   <span className="text-gray-900">{formatCurrency(billSummary.calculation.subtotal)}</span>
                 </div>
 
+                {billSummary.calculation.discount_amount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">
+                      Discount
+                      {billSummary.offerName && (
+                        <span className="text-xs text-green-600 ml-1">({billSummary.offerName})</span>
+                      )}
+                    </span>
+                    <span className="text-green-600">-{formatCurrency(billSummary.calculation.discount_amount)}</span>
+                  </div>
+                )}
+
                 {billSummary.calculation.taxes.map((tax: any, idx: number) => (
                   <div key={idx} className="flex justify-between text-sm">
                     <span className="text-gray-600">{tax.name} ({tax.rate}%)</span>
@@ -505,17 +632,50 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex gap-3">
-                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-green-900 mb-1">Ready for payment</h3>
-                    <p className="text-sm text-green-700">
-                      Please call a waiter or proceed to the counter to settle your bill
-                    </p>
+              {/* Message based on bill status */}
+              {billSummary.existingBill ? (
+                <div className={`mt-6 rounded-lg p-4 ${
+                  billSummary.paymentStatus === 'paid'
+                    ? 'bg-green-50 border border-green-200'
+                    : 'bg-blue-50 border border-blue-200'
+                }`}>
+                  <div className="flex gap-3">
+                    {billSummary.paymentStatus === 'paid' ? (
+                      <>
+                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <h3 className="font-medium text-green-900 mb-1">Payment Complete</h3>
+                          <p className="text-sm text-green-700">
+                            Thank you for dining with us!
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Receipt className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <h3 className="font-medium text-blue-900 mb-1">Bill Processed by Staff</h3>
+                          <p className="text-sm text-blue-700">
+                            Please proceed to the counter or wait for staff to collect payment
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium text-yellow-900 mb-1">Bill Preview</h3>
+                      <p className="text-sm text-yellow-700">
+                        This is an estimated bill. Please call a waiter to process your final bill.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <Button
                 variant="secondary"

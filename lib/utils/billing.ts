@@ -81,6 +81,7 @@ export function generateHTMLReceipt(params: {
   calculation: BillCalculation;
   paymentMethod: string;
   discountPercentage?: number;
+  offerName?: string | null;
   date?: Date;
 }): string {
   const {
@@ -94,6 +95,7 @@ export function generateHTMLReceipt(params: {
     calculation,
     paymentMethod,
     discountPercentage = 0,
+    offerName = null,
     date = new Date(),
   } = params;
 
@@ -171,7 +173,10 @@ export function generateHTMLReceipt(params: {
 
         <div class="row"><span>Subtotal:</span><span>${formatCurrency(calculation.subtotal)}</span></div>
         ${calculation.discount_amount > 0 ? `
-          <div class="row"><span>Discount (${discountPercentage}%):</span><span>-${formatCurrency(calculation.discount_amount)}</span></div>
+          <div class="row">
+            <span>Discount${offerName ? ` (${offerName})` : discountPercentage ? ` (${discountPercentage}%)` : ''}:</span>
+            <span>-${formatCurrency(calculation.discount_amount)}</span>
+          </div>
         ` : ''}
         ${calculation.taxes.map(tax =>
           `<div class="row"><span>${tax.name} @ ${tax.rate}%:</span><span>${formatCurrency(tax.amount)}</span></div>`

@@ -45,6 +45,7 @@ export function BillProcessingModal({
   onSuccess,
 }: BillProcessingModalProps) {
   const [taxSettings, setTaxSettings] = useState<TaxSetting[]>([]);
+  const [offerInfo, setOfferInfo] = useState<{ id: string; name: string; discount: number } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("cash");
   const [discountPercentage, setDiscountPercentage] = useState(0);
   const [processing, setProcessing] = useState(false);
@@ -52,7 +53,70 @@ export function BillProcessingModal({
 
   useEffect(() => {
     fetchTaxSettings();
+    fetchOfferInfo();
   }, []);
+
+  const fetchOfferInfo = async () => {
+    try {
+      if (!table.session?.orders || table.session.orders.length === 0) return;
+
+      // Get the offer ID from the first order with an offer
+      const orderWithOffer = table.session.orders.find(order => order.session_offer_id);
+
+      if (!orderWithOffer || !orderWithOffer.session_offer_id) return;
+
+      // Fetch offer details
+      const { data: offer, error } = await supabase
+        .from("offers")
+        .select("id, name, offer_type, benefits, conditions")
+        .eq("id", orderWithOffer.session_offer_id)
+        .single();
+
+      if (error) {
+        console.error("Error fetching offer:", error);
+        return;
+      }
+
+      if (offer) {
+        // Calculate discount based on offer type
+        const subtotal = (table.session.orders || []).reduce(
+          (sum, order) => sum + (order.total_amount || 0),
+          0
+        ) + manualItems.reduce((sum, item) => sum + item.total_price, 0);
+
+        let discount = 0;
+        const benefits = offer.benefits as any;
+
+        if (offer.offer_type === "cart_percentage" && benefits?.discount_percentage) {
+          discount = (subtotal * benefits.discount_percentage) / 100;
+        } else if (offer.offer_type === "cart_flat_amount" && benefits?.discount_amount) {
+          discount = benefits.discount_amount;
+        } else if (offer.offer_type === "min_order_discount") {
+          const conditions = offer.conditions as any;
+          if (subtotal >= conditions?.min_order_amount && benefits?.discount_percentage) {
+            discount = (subtotal * benefits.discount_percentage) / 100;
+          }
+        } else if (offer.offer_type === "promo_code" || offer.offer_type === "time_based" || offer.offer_type === "customer_based") {
+          if (benefits?.discount_percentage) {
+            discount = (subtotal * benefits.discount_percentage) / 100;
+          } else if (benefits?.discount_amount) {
+            discount = benefits.discount_amount;
+          }
+        }
+
+        setOfferInfo({
+          id: offer.id,
+          name: offer.name,
+          discount: discount,
+        });
+
+        // Set the discount percentage to 0 since offer handles it
+        setDiscountPercentage(0);
+      }
+    } catch (error) {
+      console.error("Error fetching offer info:", error);
+    }
+  };
 
   const fetchTaxSettings = async () => {
     try {
@@ -91,7 +155,8 @@ export function BillProcessingModal({
     );
     const subtotal = ordersSubtotal + manualSubtotal;
 
-    const discountAmount = (subtotal * discountPercentage) / 100;
+    // Use offer discount if available, otherwise use manual discount percentage
+    const discountAmount = offerInfo?.discount || (subtotal * discountPercentage) / 100;
     const taxableAmount = subtotal - discountAmount;
 
     const taxes = taxSettings.map((tax) => ({
@@ -121,6 +186,24 @@ export function BillProcessingModal({
     setError("");
 
     try {
+      // Check if bill already exists for this session
+      const { data: existingBills, error: checkError } = await supabase
+        .from("bills")
+        .select("id, bill_number, payment_status")
+        .eq("table_session_id", table.session.id)
+        .in("payment_status", ["pending", "paid"]);
+
+      if (checkError) throw checkError;
+
+      if (existingBills && existingBills.length > 0) {
+        const existingBill = existingBills[0];
+        throw new Error(
+          `Bill already exists for this table (${existingBill.bill_number}). ` +
+          `Status: ${existingBill.payment_status}. ` +
+          `Please check the Bills & Payment page.`
+        );
+      }
+
       // Get current user (staff member)
       const response = await fetch("/api/admin/verify", {
         method: "GET",
@@ -135,6 +218,17 @@ export function BillProcessingModal({
         Date.now()
       ).slice(-6)}`;
 
+      // Create offer usage record if offer was applied
+      if (offerInfo) {
+        await supabase.from("offer_usage").insert({
+          offer_id: offerInfo.id,
+          table_session_id: table.session.id,
+          customer_phone: table.session.customer_phone,
+          discount_amount: offerInfo.discount,
+          used_at: new Date().toISOString(),
+        });
+      }
+
       // Create bill with pending status
       const { data: billData, error: billError } = await supabase
         .from("bills")
@@ -142,7 +236,7 @@ export function BillProcessingModal({
           bill_number: billNumber,
           table_session_id: table.session.id,
           subtotal: billSummary.subtotal,
-          discount_percentage: discountPercentage,
+          discount_percentage: offerInfo ? 0 : discountPercentage, // Set to 0 if offer, otherwise manual %
           discount_amount: billSummary.discountAmount,
           cgst_rate:
             billSummary.taxes.find((t) => t.name.includes("CGST"))?.rate || 0,
@@ -336,25 +430,36 @@ export function BillProcessingModal({
               </span>
             </div>
 
-            <div className="flex justify-between items-center">
-              <span className="text-gray-700">Discount:</span>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={discountPercentage}
-                  onChange={(e) =>
-                    setDiscountPercentage(parseFloat(e.target.value) || 0)
-                  }
-                  className="w-16 px-2 py-1 border rounded text-center text-sm"
-                />
-                <span className="text-sm">%</span>
-                <span className="text-sm font-medium">
+            {offerInfo ? (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-700">
+                  Discount <span className="text-xs text-green-600">({offerInfo.name})</span>:
+                </span>
+                <span className="text-sm font-medium text-green-600">
                   -{formatCurrency(billSummary.discountAmount)}
                 </span>
               </div>
-            </div>
+            ) : (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-700">Discount:</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={discountPercentage}
+                    onChange={(e) =>
+                      setDiscountPercentage(parseFloat(e.target.value) || 0)
+                    }
+                    className="w-16 px-2 py-1 border rounded text-center text-sm"
+                  />
+                  <span className="text-sm">%</span>
+                  <span className="text-sm font-medium">
+                    -{formatCurrency(billSummary.discountAmount)}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {billSummary.taxes.map((tax) => (
               <div

@@ -21,6 +21,7 @@ interface OrderConfirmationModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   countdownSeconds?: number;
+  isPlacingOrder?: boolean;
 }
 
 export default function OrderConfirmationModal({
@@ -32,6 +33,7 @@ export default function OrderConfirmationModal({
   onConfirm,
   onCancel,
   countdownSeconds = 30,
+  isPlacingOrder = false,
 }: OrderConfirmationModalProps) {
   const [timeLeft, setTimeLeft] = useState(countdownSeconds);
   const [progress, setProgress] = useState(0);
@@ -108,22 +110,19 @@ export default function OrderConfirmationModal({
             <div className="relative">
               <button
                 onClick={onConfirm}
-                className="relative w-full overflow-hidden text-white font-bold py-5 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 group border-2 border-green-600"
+                className="relative w-full overflow-hidden font-bold py-5 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 group border-2 border-green-600 bg-green-100"
               >
-                {/* Progress Bar Background (fills from left to right) */}
+                {/* Progress Bar Background (dark green, fills from left to right) */}
                 <div
-                  className="absolute inset-0 bg-gradient-to-r from-green-500 to-green-600 transition-all duration-1000 ease-linear"
+                  className="absolute inset-0 bg-gradient-to-r from-green-600 to-green-700 transition-all duration-1000 ease-linear z-0"
                   style={{ width: `${progress}%` }}
                 />
 
-                {/* Unfilled Background */}
-                <div className="absolute inset-0 bg-gray-100" style={{ zIndex: -1 }} />
-
-                {/* Button Content */}
+                {/* Button Content - Always white text */}
                 <div className="relative z-10 flex items-center justify-center gap-3">
-                  <Check className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                  <span className="text-lg">Place Order Now</span>
-                  <span className="ml-2 font-mono text-sm opacity-90">({timeLeft}s)</span>
+                  <Check className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
+                  <span className="text-lg text-white">Place Order Now</span>
+                  <span className="ml-2 font-mono text-sm text-white opacity-95">({timeLeft}s)</span>
                 </div>
               </button>
             </div>
@@ -131,9 +130,14 @@ export default function OrderConfirmationModal({
             {/* Small Cancel Button */}
             <button
               onClick={onCancel}
-              className="w-full text-gray-500 hover:text-red-600 text-sm font-medium py-2 transition-colors"
+              disabled={isPlacingOrder}
+              className={`w-full text-sm font-semibold py-2 px-4 rounded-lg transition-colors ${
+                isPlacingOrder
+                  ? 'text-gray-400 cursor-not-allowed bg-gray-100'
+                  : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+              }`}
             >
-              Cancel Order
+              {isPlacingOrder ? 'Processing order...' : 'Cancel Order'}
             </button>
 
             {/* Order Summary */}

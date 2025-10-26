@@ -79,18 +79,82 @@ export function useBilling() {
             unit_price,
             total_price,
             order_item_id
-          ),
-          staff:generated_by (
-            name,
-            email
           )
         `)
         .eq("payment_status", "pending")
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching bills:", error);
+        throw error;
+      }
 
+      // Manually fetch admin/staff info for each bill
       const billsData = (data as any[]) || [];
+
+      // Fetch all unique generated_by IDs
+      const generatedByIds = [...new Set(billsData.map(b => b.generated_by).filter(Boolean))];
+
+      // Try to fetch from staff table
+      const { data: staffData } = await supabase
+        .from("staff")
+        .select("id, name, email")
+        .in("id", generatedByIds);
+
+      // Try to fetch from admin table
+      const { data: adminData } = await supabase
+        .from("admin")
+        .select("id, email")
+        .in("id", generatedByIds);
+
+      // Create lookup maps
+      const staffMap = new Map(staffData?.map(s => [s.id, s]) || []);
+      const adminMap = new Map(adminData?.map(a => [a.id, { ...a, name: a.email.split('@')[0] }]) || []);
+
+      // Attach staff/admin info to bills
+      billsData.forEach(bill => {
+        if (bill.generated_by) {
+          const staffInfo = staffMap.get(bill.generated_by);
+          const adminInfo = adminMap.get(bill.generated_by);
+          bill.staff = staffInfo || adminInfo || null;
+        }
+      });
+
+      // Fetch offer information for bills
+      const sessionIds = billsData.map(b => b.table_session_id).filter(Boolean);
+      if (sessionIds.length > 0) {
+        const { data: offerUsageData } = await supabase
+          .from("offer_usage")
+          .select(`
+            table_session_id,
+            discount_amount,
+            offers (
+              id,
+              name,
+              offer_type
+            )
+          `)
+          .in("table_session_id", sessionIds);
+
+        // Create offer lookup map
+        const offerMap = new Map(
+          offerUsageData?.map(ou => [ou.table_session_id, ou]) || []
+        );
+
+        // Attach offer info to bills
+        billsData.forEach(bill => {
+          if (bill.table_session_id) {
+            const offerUsage = offerMap.get(bill.table_session_id);
+            if (offerUsage) {
+              bill.offer = offerUsage.offers;
+            }
+          }
+        });
+      }
+
+      console.log("[useBilling] Fetched bills:", billsData.length);
+      console.log("[useBilling] Bills data:", billsData);
+
       setBills(billsData);
 
       // Group bills by session (dine-in) vs individual (takeaway)
@@ -127,11 +191,14 @@ export function useBilling() {
         (a, b) => a.tableNumber - b.tableNumber
       );
 
+      console.log("[useBilling] Bill groups:", groups.length);
+      console.log("[useBilling] Takeaway bills:", takeaway.length);
+
       setBillGroups(groups);
       setTakeawayBills(takeaway);
       setError("");
     } catch (error: any) {
-      console.error("Error fetching bills:", error);
+      console.error("[useBilling] Error fetching bills:", error);
       setError(error.message || "Failed to fetch bills");
     } finally {
       setLoading(false);
