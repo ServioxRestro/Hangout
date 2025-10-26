@@ -493,11 +493,17 @@ export default function CartPage() {
   };
 
   const handleConfirmOrder = async () => {
+    // Prevent cancellation once order is being placed
+    setOrderPlacing(true);
     setShowConfirmModal(false);
     await placeOrder();
   };
 
   const handleCancelConfirmation = () => {
+    // Prevent cancellation if order is already being placed
+    if (orderPlacing) {
+      return;
+    }
     setShowConfirmModal(false);
     setStep("cart");
   };
@@ -865,6 +871,7 @@ export default function CartPage() {
         onConfirm={handleConfirmOrder}
         onCancel={handleCancelConfirmation}
         countdownSeconds={30}
+        isPlacingOrder={orderPlacing}
       />
     </GuestLayout>
   );

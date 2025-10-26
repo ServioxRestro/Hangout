@@ -178,6 +178,7 @@ export default function BillingPage() {
         },
         paymentMethod: bill.payment_method || "Cash",
         discountPercentage: bill.discount_percentage,
+        offerName: (bill as any).offer?.name || null,
         date: new Date(bill.created_at),
       });
 
@@ -328,7 +329,14 @@ export default function BillingPage() {
                         </div>
                         {bill.discount_amount > 0 && (
                           <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Discount:</span>
+                            <span className="text-gray-600">
+                              Discount
+                              {(bill as any).offer?.name && (
+                                <span className="text-xs text-green-600 ml-1">
+                                  ({(bill as any).offer.name})
+                                </span>
+                              )}:
+                            </span>
                             <span className="text-red-600">
                               -{formatCurrency(bill.discount_amount)}
                             </span>
@@ -437,7 +445,14 @@ export default function BillingPage() {
                       </div>
                       {bill.discount_amount > 0 && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Discount:</span>
+                          <span className="text-gray-600">
+                            Discount
+                            {(bill as any).offer?.name && (
+                              <span className="text-xs text-green-600 ml-1">
+                                ({(bill as any).offer.name})
+                              </span>
+                            )}:
+                          </span>
                           <span className="text-red-600">
                             -{formatCurrency(bill.discount_amount)}
                           </span>

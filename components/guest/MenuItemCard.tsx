@@ -33,23 +33,23 @@ export function MenuItemCard({
   const hasDiscount = item.has_discount && item.original_price && item.original_price > item.price;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300">
+    <div className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden shadow-lg hover:shadow-2xl hover:border-orange-300 transition-all duration-300 hover:-translate-y-1 mb-1">
       <div className="flex flex-col sm:flex-row">
         {/* Item Image */}
         {item.image_url && (
-          <div className="relative w-full sm:w-32 h-40 sm:h-32 flex-shrink-0">
+          <div className="relative w-full sm:w-36 h-48 sm:h-36 flex-shrink-0">
             <img
               src={item.image_url}
               alt={item.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover rounded-tl-xl sm:rounded-l-xl sm:rounded-tr-none"
             />
             {hasDiscount && item.discount_percentage && (
-              <div className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
+              <div className="absolute top-2 left-2 bg-gradient-to-r from-red-600 to-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
                 {item.discount_percentage}% OFF
               </div>
             )}
             {item.is_veg !== undefined && (
-              <div className="absolute top-2 right-2 bg-white rounded-md p-1 shadow-md">
+              <div className="absolute top-2 right-2 bg-white rounded-lg p-1.5 shadow-lg border border-gray-200">
                 <span className={`text-lg ${item.is_veg ? 'text-green-600' : 'text-red-600'}`}>
                   {item.is_veg ? '🟢' : '🔴'}
                 </span>
@@ -59,7 +59,7 @@ export function MenuItemCard({
         )}
 
         {/* Item Details */}
-        <div className="flex-1 p-4 flex flex-col">
+        <div className="flex-1 p-4 sm:p-5 flex flex-col">
           {/* Header */}
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="flex-1 min-w-0">
@@ -115,26 +115,26 @@ export function MenuItemCard({
               {cartQuantity === 0 ? (
                 <button
                   onClick={onAdd}
-                  className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold transition-all duration-200 shadow-md hover:shadow-lg active:scale-95 whitespace-nowrap"
+                  className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white rounded-xl text-sm font-bold transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95 whitespace-nowrap"
                 >
                   Add
                 </button>
               ) : (
-                <div className="flex items-center gap-2 bg-orange-50 border-2 border-orange-600 rounded-xl p-1">
+                <div className="flex items-center gap-2 bg-gradient-to-r from-orange-50 to-orange-100 border-2 border-orange-500 rounded-xl p-1.5 shadow-md">
                   <button
                     onClick={onRemove}
-                    className="w-8 h-8 rounded-lg bg-white flex items-center justify-center hover:bg-orange-100 transition-colors shadow-sm active:scale-90"
+                    className="w-8 h-8 rounded-lg bg-white flex items-center justify-center hover:bg-orange-100 transition-colors shadow-sm active:scale-90 border border-orange-200"
                   >
                     <Minus className="w-4 h-4 text-orange-600" />
                   </button>
 
-                  <span className="min-w-[2rem] text-center font-bold text-base text-orange-600 px-1">
+                  <span className="min-w-[2rem] text-center font-bold text-base text-orange-700 px-1">
                     {cartQuantity}
                   </span>
 
                   <button
                     onClick={onAdd}
-                    className="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center hover:bg-orange-700 transition-colors shadow-sm active:scale-90"
+                    className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-600 to-orange-500 flex items-center justify-center hover:from-orange-700 hover:to-orange-600 transition-all shadow-md hover:shadow-lg active:scale-90"
                   >
                     <Plus className="w-4 h-4 text-white" />
                   </button>
