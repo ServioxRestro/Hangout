@@ -114,7 +114,7 @@ export function TakeawayBillModal({
         Date.now()
       ).slice(-6)}`;
 
-      // Create bill
+      // Create bill with pending status (staff processed, awaiting manager confirmation)
       const { data: billData, error: billError } = await supabase
         .from("bills")
         .insert({
@@ -137,10 +137,9 @@ export function TakeawayBillModal({
             bill.taxes.find((t) => t.name.includes("Service"))?.amount || 0,
           total_tax_amount: bill.taxAmount,
           final_amount: bill.finalAmount,
-          payment_status: "paid",
+          payment_status: "pending", // Staff processed, awaiting manager confirmation
           payment_method: paymentMethod,
-          paid_at: new Date().toISOString(),
-          payment_received_by: user.id,
+          generated_by: user.id, // Staff member who generated the bill
         })
         .select()
         .single();
@@ -165,12 +164,12 @@ export function TakeawayBillModal({
 
       if (itemsError) throw itemsError;
 
-      // Update all orders to paid
+      // Update all orders to pending_payment (awaiting manager confirmation)
       const orderIds = customer.orders.map((o) => o.id);
       const { error: ordersError } = await supabase
         .from("orders")
         .update({
-          status: "paid",
+          status: "pending_payment",
           updated_at: new Date().toISOString(),
         })
         .in("id", orderIds);

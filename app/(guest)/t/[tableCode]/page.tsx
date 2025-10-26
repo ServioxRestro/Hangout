@@ -65,12 +65,11 @@ export default function TablePage() {
       }
 
       // Execute all async operations in parallel
-      Promise.all([
-        fetchTableAndMenu(),
-        fetchFeaturedOffers()
-      ]).catch(error => {
-        console.error("Error loading initial data:", error);
-      });
+      Promise.all([fetchTableAndMenu(), fetchFeaturedOffers()]).catch(
+        (error) => {
+          console.error("Error loading initial data:", error);
+        }
+      );
     }
   }, [tableCode]);
 
@@ -182,7 +181,7 @@ export default function TablePage() {
       // Now fetch menu with filtering based on table type
       const [
         { data: categoriesData, error: categoriesError },
-        { data: itemsData, error: itemsError }
+        { data: itemsData, error: itemsError },
       ] = await Promise.all([
         // Fetch menu categories
         supabase
@@ -195,7 +194,8 @@ export default function TablePage() {
         (async () => {
           const query = supabase
             .from("menu_items")
-            .select(`
+            .select(
+              `
               id,
               name,
               description,
@@ -211,10 +211,11 @@ export default function TablePage() {
               id,
               name
             )
-          `)
-          .eq("is_available", true)
-          .eq("menu_categories.is_active", true)
-          .order("display_order", { ascending: true });
+          `
+            )
+            .eq("is_available", true)
+            .eq("menu_categories.is_active", true)
+            .order("display_order", { ascending: true });
 
           // If this is a veg-only table, only show vegetarian items
           if (tableData.veg_only) {
@@ -222,7 +223,7 @@ export default function TablePage() {
           }
 
           return await query;
-        })()
+        })(),
       ]);
 
       // Check for errors
@@ -253,11 +254,13 @@ export default function TablePage() {
 
       const endTime = performance.now();
       console.log(`✅ Menu loaded in ${(endTime - startTime).toFixed(2)}ms`);
-      console.log(`📊 Data loaded: ${itemsData?.length} items, ${categoriesData?.length} categories`);
+      console.log(
+        `📊 Data loaded: ${itemsData?.length} items, ${categoriesData?.length} categories`
+      );
 
       // Only fetch active orders if we have a table (async, don't wait)
       if (tableData) {
-        fetchActiveOrders().catch(error => {
+        fetchActiveOrders().catch((error) => {
           console.error("Error fetching active orders:", error);
         });
       }
@@ -269,7 +272,12 @@ export default function TablePage() {
     }
   };
 
-  const addToCart = (item: { id: string; name: string; price: number; is_veg?: boolean | null }) => {
+  const addToCart = (item: {
+    id: string;
+    name: string;
+    price: number;
+    is_veg?: boolean | null;
+  }) => {
     setCart((prev) => {
       const existingItem = prev.find((cartItem) => cartItem.id === item.id);
       if (existingItem) {
@@ -332,7 +340,7 @@ export default function TablePage() {
       window.dispatchEvent(new Event("storage"));
       window.dispatchEvent(new Event("cartUpdated"));
     } else {
-      alert('Failed to sign out: ' + result.message);
+      alert("Failed to sign out: " + result.message);
     }
   };
 
@@ -386,7 +394,8 @@ export default function TablePage() {
               {process.env.NEXT_PUBLIC_RESTAURANT_NAME || "Hangout Restaurant"}
             </h1>
             <p className="text-xs text-gray-600">
-              Table {table?.veg_only ? `V${table.table_number}` : table?.table_number}
+              Table{" "}
+              {table?.veg_only ? `V${table.table_number}` : table?.table_number}
             </p>
           </div>
 
@@ -417,34 +426,29 @@ export default function TablePage() {
         </div>
       </div>
 
-      {/* Veg-Only Table Banner */}
-      {table?.veg_only && (
-        <div className="bg-green-50 border-l-4 border-green-500 p-4 mx-4 mt-4 rounded-r-lg">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <span className="text-2xl">🟢</span>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-green-800">
-                <span className="font-medium">Veg-Only Table:</span> This table displays only vegetarian menu items.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Table Occupation Warning */}
       {occupiedByDifferentUser && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mx-4 mt-4 rounded-r-lg">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              <svg
+                className="h-5 w-5 text-yellow-400"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
             <div className="ml-3">
               <p className="text-sm text-yellow-800">
-                <span className="font-medium">Table Occupied:</span> This table is currently being used by another customer. You can browse the menu, but ordering may not be available until their order is completed.
+                <span className="font-medium">Table Occupied:</span> This table
+                is currently being used by another customer. You can browse the
+                menu, but ordering may not be available until their order is
+                completed.
               </p>
             </div>
           </div>
@@ -457,7 +461,9 @@ export default function TablePage() {
           <div className="flex">
             <div className="ml-3">
               <p className="text-sm text-blue-800">
-                <span className="font-medium">Your Active Orders:</span> You have {activeOrders} active order{activeOrders !== 1 ? 's' : ''} at this table.
+                <span className="font-medium">Your Active Orders:</span> You
+                have {activeOrders} active order{activeOrders !== 1 ? "s" : ""}{" "}
+                at this table.
               </p>
             </div>
           </div>
@@ -477,7 +483,10 @@ export default function TablePage() {
         <div className="px-4 mt-4">
           <SmartOfferBanner
             cartItems={cart}
-            cartTotal={cart.reduce((sum, item) => sum + item.price * item.quantity, 0)}
+            cartTotal={cart.reduce(
+              (sum, item) => sum + item.price * item.quantity,
+              0
+            )}
             onViewOffers={() => router.push(`/t/${tableCode}/offers`)}
           />
         </div>

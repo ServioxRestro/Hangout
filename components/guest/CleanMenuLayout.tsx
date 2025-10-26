@@ -33,6 +33,7 @@ interface CleanMenuLayoutProps {
   onVegFilterToggle: () => void;
   onNonVegFilterToggle: () => void;
   renderMenuItem: (item: MenuItem) => React.ReactNode;
+  hideNonVegFilter?: boolean;
 }
 
 export function CleanMenuLayout({
@@ -42,7 +43,8 @@ export function CleanMenuLayout({
   showNonVegOnly,
   onVegFilterToggle,
   onNonVegFilterToggle,
-  renderMenuItem
+  renderMenuItem,
+  hideNonVegFilter = false
 }: CleanMenuLayoutProps) {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>("");
@@ -188,21 +190,23 @@ export function CleanMenuLayout({
 
             {/* Veg Filter Buttons */}
             <div className="flex gap-2 flex-shrink-0">
-              <button
-                onClick={() => {
-                  console.log("Non-Veg filter toggled, current state:", showNonVegOnly);
-                  onNonVegFilterToggle();
-                }}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl border transition-all duration-200",
-                  showNonVegOnly
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white border-red-500 shadow-lg ring-2 ring-red-200"
-                    : "bg-white text-gray-600 border-gray-200 hover:bg-red-50 shadow-sm hover:shadow-md"
-                )}
-              >
-                <span className={showNonVegOnly ? "text-white" : "text-red-600"}>🔴</span>
-                <span className="hidden sm:inline">Non-Veg</span>
-              </button>
+              {!hideNonVegFilter && (
+                <button
+                  onClick={() => {
+                    console.log("Non-Veg filter toggled, current state:", showNonVegOnly);
+                    onNonVegFilterToggle();
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl border transition-all duration-200",
+                    showNonVegOnly
+                      ? "bg-gradient-to-r from-red-600 to-red-500 text-white border-red-500 shadow-lg ring-2 ring-red-200"
+                      : "bg-white text-gray-600 border-gray-200 hover:bg-red-50 shadow-sm hover:shadow-md"
+                  )}
+                >
+                  <span className={showNonVegOnly ? "text-white" : "text-red-600"}>🔴</span>
+                  <span className="hidden sm:inline">Non-Veg</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   console.log("Veg filter toggled, current state:", showVegOnly);

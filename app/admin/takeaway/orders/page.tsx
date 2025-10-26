@@ -80,7 +80,7 @@ export default function TakeawayOrdersPage() {
         `
         )
         .eq("order_type", "takeaway")
-        .not("status", "in", '("cancelled")')
+        .not("status", "in", '("cancelled","pending_payment","paid")')
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -104,7 +104,7 @@ export default function TakeawayOrdersPage() {
 
       if (!groups.has(key)) {
         groups.set(key, {
-          customerName: order.customer_name || "Unknown Customer",
+          customerName: order.guest_users?.name || order.customer_name || "Unknown Customer",
           customerPhone: order.customer_phone,
           orders: [],
           totalAmount: 0,

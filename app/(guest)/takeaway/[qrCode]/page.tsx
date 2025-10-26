@@ -11,6 +11,7 @@ import { CleanMenuLayout } from "@/components/guest/CleanMenuLayout";
 import { MenuItemCard } from "@/components/guest/MenuItemCard";
 import { CartSummary } from "@/components/guest/CartSummary";
 import { GuestLoginModal } from "@/components/guest/GuestLoginModal";
+import { AddToCartToast } from "@/components/guest/AddToCartToast";
 import Modal from "@/components/admin/Modal";
 import FormField from "@/components/admin/FormField";
 import Input from "@/components/admin/Input";
@@ -110,31 +111,20 @@ export default function TakeawayMenuPage() {
         setShowVegOnly(true);
       }
 
-      // 2. Check authentication
+      // 2. Check authentication (but don't block menu loading)
       const user = await getCurrentUser();
 
-      if (!user || !user.phone) {
-        setShowLoginModal(true);
-        setLoading(false);
-        return;
-      }
+      if (user && user.phone) {
+        // 3. Get or check guest user if logged in
+        const { data: guestData } = await supabase
+          .from("guest_users")
+          .select("*")
+          .eq("phone", user.phone)
+          .single();
 
-      // 3. Get or check guest user
-      const { data: guestData } = await supabase
-        .from("guest_users")
-        .select("*")
-        .eq("phone", user.phone)
-        .single();
-
-      if (guestData) {
-        setGuestUser(guestData);
-        // If guest doesn't have a name, show modal
-        if (!guestData.name || guestData.name.trim() === "") {
-          setShowNameModal(true);
+        if (guestData) {
+          setGuestUser(guestData);
         }
-      } else {
-        // Guest user doesn't exist, show name modal
-        setShowNameModal(true);
       }
 
       // 4. Fetch menu items (filtered by veg_only if needed)
@@ -249,18 +239,7 @@ export default function TakeawayMenuPage() {
   };
 
   const addToCart = (item: MenuItem, quantity: number = 1) => {
-    // Check if user is logged in
-    if (!guestUser) {
-      setShowLoginModal(true);
-      return;
-    }
-
-    // Check if user has name
-    if (!guestUser.name || guestUser.name.trim() === "") {
-      setShowNameModal(true);
-      return;
-    }
-
+    // No login check - allow adding to cart without login
     setCart((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
@@ -370,9 +349,10 @@ export default function TakeawayMenuPage() {
         categories={categories}
         menuItems={menuItems}
         showVegOnly={takeawayQR.is_veg_only ? true : showVegOnly}
-        showNonVegOnly={takeawayQR.is_veg_only ? false : showNonVegOnly}
+        showNonVegOnly={showNonVegOnly}
         onVegFilterToggle={() => !takeawayQR.is_veg_only && setShowVegOnly((prev) => !prev)}
-        onNonVegFilterToggle={() => !takeawayQR.is_veg_only && setShowNonVegOnly((prev) => !prev)}
+        onNonVegFilterToggle={() => setShowNonVegOnly((prev) => !prev)}
+        hideNonVegFilter={takeawayQR.is_veg_only}
         renderMenuItem={(item) => {
           const cartItem = cart.find((i) => i.id === item.id);
           const currentQuantity = cartItem?.quantity || 0;
@@ -395,8 +375,8 @@ export default function TakeawayMenuPage() {
       {cart.length > 0 && (
         <CartSummary
           cart={cart}
-          onCheckout={() => router.push(`/takeaway/${qrCode}/checkout`)}
-          onViewCart={() => router.push(`/takeaway/${qrCode}/checkout`)}
+          onCheckout={() => router.push(`/takeaway/${qrCode}/cart`)}
+          onViewCart={() => router.push(`/takeaway/${qrCode}/cart`)}
         />
       )}
 
@@ -453,25 +433,13 @@ export default function TakeawayMenuPage() {
       </Modal>
 
       {/* Add to Cart Toast */}
-      {showToast && (
-        <div className="fixed bottom-20 left-4 right-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-4 mx-auto max-w-md">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-gray-900 text-sm">Added to cart</p>
-                <p className="text-sm text-gray-600">
-                  {toastData.quantity}x {toastData.itemName}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddToCartToast
+        show={showToast}
+        itemName={toastData.itemName}
+        quantity={toastData.quantity}
+        qrCode={qrCode}
+        onClose={() => setShowToast(false)}
+      />
     </GuestLayout>
   );
 }

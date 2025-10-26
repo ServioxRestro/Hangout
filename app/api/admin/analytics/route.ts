@@ -38,31 +38,29 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get("period") || "30d"; // 7d, 30d, 90d, 1y, all
 
     // Calculate date range
-    let dateFilter = "";
+    let startDateObj: Date | null = null;
+    let endDateObj: Date | null = null;
     const now = new Date();
 
     if (startDate && endDate) {
-      dateFilter = `created_at >= '${startDate}' AND created_at <= '${endDate}'`;
+      startDateObj = new Date(startDate);
+      endDateObj = new Date(endDate);
     } else {
       switch (period) {
         case "7d":
-          const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          dateFilter = `created_at >= '${sevenDaysAgo.toISOString()}'`;
+          startDateObj = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           break;
         case "30d":
-          const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          dateFilter = `created_at >= '${thirtyDaysAgo.toISOString()}'`;
+          startDateObj = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
           break;
         case "90d":
-          const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-          dateFilter = `created_at >= '${ninetyDaysAgo.toISOString()}'`;
+          startDateObj = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
           break;
         case "1y":
-          const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-          dateFilter = `created_at >= '${oneYearAgo.toISOString()}'`;
+          startDateObj = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
           break;
         case "all":
-          dateFilter = "1=1";
+          startDateObj = null; // No filter for "all"
           break;
       }
     }
@@ -76,12 +74,12 @@ export async function GET(request: NextRequest) {
       offersData,
       tablesData,
     ] = await Promise.all([
-      fetchRevenueMetrics(dateFilter),
-      fetchOrdersMetrics(dateFilter),
-      fetchCustomersMetrics(dateFilter),
-      fetchMenuMetrics(dateFilter),
-      fetchOffersMetrics(dateFilter),
-      fetchTablesMetrics(dateFilter),
+      fetchRevenueMetrics(startDateObj, endDateObj),
+      fetchOrdersMetrics(startDateObj, endDateObj),
+      fetchCustomersMetrics(startDateObj, endDateObj),
+      fetchMenuMetrics(startDateObj, endDateObj),
+      fetchOffersMetrics(startDateObj, endDateObj),
+      fetchTablesMetrics(startDateObj, endDateObj),
     ]);
 
     return NextResponse.json({
@@ -111,7 +109,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Revenue Analytics
-async function fetchRevenueMetrics(dateFilter: string) {
+async function fetchRevenueMetrics(startDate: Date | null, endDate: Date | null) {
   // Total revenue from paid bills
   const { data: bills, error } = await supabase
     .from("bills")
@@ -121,10 +119,18 @@ async function fetchRevenueMetrics(dateFilter: string) {
   if (error) throw error;
 
   const filteredBills = bills?.filter((bill) => {
-    if (dateFilter === "1=1") return true;
     if (!bill.created_at) return false;
-    const createdAt = new Date(bill.created_at);
-    return eval(dateFilter.replace(/created_at/g, `new Date('${bill.created_at}')`));
+
+    // If no date filter, include all
+    if (!startDate && !endDate) return true;
+
+    const billDate = new Date(bill.created_at);
+
+    // Check if within date range
+    if (startDate && billDate < startDate) return false;
+    if (endDate && billDate > endDate) return false;
+
+    return true;
   }) || [];
 
   const total = filteredBills.reduce((sum, bill) => sum + Number(bill.final_amount), 0);
@@ -157,7 +163,7 @@ async function fetchRevenueMetrics(dateFilter: string) {
 }
 
 // Orders Analytics
-async function fetchOrdersMetrics(dateFilter: string) {
+async function fetchOrdersMetrics(startDate: Date | null, endDate: Date | null) {
   const { data: orders, error } = await supabase
     .from("orders")
     .select("id, status, order_type, created_at, total_amount");
@@ -165,9 +171,18 @@ async function fetchOrdersMetrics(dateFilter: string) {
   if (error) throw error;
 
   const filteredOrders = orders?.filter((order) => {
-    if (dateFilter === "1=1") return true;
     if (!order.created_at) return false;
-    return eval(dateFilter.replace(/created_at/g, `new Date('${order.created_at}')`));
+
+    // If no date filter, include all
+    if (!startDate && !endDate) return true;
+
+    const orderDate = new Date(order.created_at);
+
+    // Check if within date range
+    if (startDate && orderDate < startDate) return false;
+    if (endDate && orderDate > endDate) return false;
+
+    return true;
   }) || [];
 
   // Group by status
@@ -206,7 +221,7 @@ async function fetchOrdersMetrics(dateFilter: string) {
 }
 
 // Customers Analytics
-async function fetchCustomersMetrics(dateFilter: string) {
+async function fetchCustomersMetrics(startDate: Date | null, endDate: Date | null) {
   const { data: customers, error } = await supabase
     .from("guest_users")
     .select("id, phone, total_orders, total_spent, visit_count, created_at, first_visit_at");
@@ -214,9 +229,18 @@ async function fetchCustomersMetrics(dateFilter: string) {
   if (error) throw error;
 
   const filteredCustomers = customers?.filter((customer) => {
-    if (dateFilter === "1=1") return true;
     if (!customer.created_at) return false;
-    return eval(dateFilter.replace(/created_at/g, `new Date('${customer.created_at}')`));
+
+    // If no date filter, include all
+    if (!startDate && !endDate) return true;
+
+    const customerDate = new Date(customer.created_at);
+
+    // Check if within date range
+    if (startDate && customerDate < startDate) return false;
+    if (endDate && customerDate > endDate) return false;
+
+    return true;
   }) || [];
 
   // New vs returning
@@ -260,7 +284,7 @@ async function fetchCustomersMetrics(dateFilter: string) {
 }
 
 // Menu Analytics
-async function fetchMenuMetrics(dateFilter: string) {
+async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
   // Get order items with menu item details
   const { data: orderItems, error } = await supabase
     .from("order_items")
@@ -285,8 +309,18 @@ async function fetchMenuMetrics(dateFilter: string) {
   if (error) throw error;
 
   const filteredItems = orderItems?.filter((item) => {
-    if (dateFilter === "1=1") return true;
-    return eval(dateFilter.replace(/created_at/g, `new Date('${item.created_at}')`));
+    if (!item.created_at) return false;
+
+    // If no date filter, include all
+    if (!startDate && !endDate) return true;
+
+    const itemDate = new Date(item.created_at);
+
+    // Check if within date range
+    if (startDate && itemDate < startDate) return false;
+    if (endDate && itemDate > endDate) return false;
+
+    return true;
   }) || [];
 
   // Top selling items
@@ -354,7 +388,7 @@ async function fetchMenuMetrics(dateFilter: string) {
 }
 
 // Offers Analytics
-async function fetchOffersMetrics(dateFilter: string) {
+async function fetchOffersMetrics(startDate: Date | null, endDate: Date | null) {
   const { data: offers, error } = await supabase
     .from("offers")
     .select("id, name, offer_type, usage_count, is_active, created_at");
@@ -369,8 +403,18 @@ async function fetchOffersMetrics(dateFilter: string) {
   if (usageError) throw usageError;
 
   const filteredUsage = offerUsage?.filter((usage) => {
-    if (dateFilter === "1=1") return true;
-    return eval(dateFilter.replace(/created_at/g, `new Date('${usage.used_at}')`));
+    if (!usage.used_at) return false;
+
+    // If no date filter, include all
+    if (!startDate && !endDate) return true;
+
+    const usageDate = new Date(usage.used_at);
+
+    // Check if within date range
+    if (startDate && usageDate < startDate) return false;
+    if (endDate && usageDate > endDate) return false;
+
+    return true;
   }) || [];
 
   // Calculate metrics per offer
@@ -409,7 +453,7 @@ async function fetchOffersMetrics(dateFilter: string) {
 }
 
 // Tables Analytics
-async function fetchTablesMetrics(dateFilter: string) {
+async function fetchTablesMetrics(startDate: Date | null, endDate: Date | null) {
   const { data: sessions, error } = await supabase
     .from("table_sessions")
     .select(`
@@ -428,9 +472,18 @@ async function fetchTablesMetrics(dateFilter: string) {
   if (error) throw error;
 
   const filteredSessions = sessions?.filter((session) => {
-    if (dateFilter === "1=1") return true;
     if (!session.created_at) return false;
-    return eval(dateFilter.replace(/created_at/g, `new Date('${session.created_at}')`));
+
+    // If no date filter, include all
+    if (!startDate && !endDate) return true;
+
+    const sessionDate = new Date(session.created_at);
+
+    // Check if within date range
+    if (startDate && sessionDate < startDate) return false;
+    if (endDate && sessionDate > endDate) return false;
+
+    return true;
   }) || [];
 
   // Revenue per table
