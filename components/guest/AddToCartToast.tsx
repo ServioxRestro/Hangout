@@ -9,7 +9,8 @@ interface AddToCartToastProps {
   show: boolean;
   itemName: string;
   quantity: number;
-  tableCode: string;
+  tableCode?: string;
+  qrCode?: string;
   onClose: () => void;
 }
 
@@ -18,6 +19,7 @@ export function AddToCartToast({
   itemName,
   quantity,
   tableCode,
+  qrCode,
   onClose,
 }: AddToCartToastProps) {
   const router = useRouter();
@@ -37,7 +39,8 @@ export function AddToCartToast({
   }, [show, onClose]);
 
   const handleViewCart = () => {
-    router.push(`/t/${tableCode}/cart`);
+    const cartPath = qrCode ? `/takeaway/${qrCode}/cart` : `/t/${tableCode}/cart`;
+    router.push(cartPath);
     onClose();
   };
 

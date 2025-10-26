@@ -27,14 +27,23 @@ export function GuestLayout({
   const pathname = usePathname();
   const params = useParams();
   const tableCode = params?.tableCode as string;
+  const qrCode = params?.qrCode as string;
 
-  // Auto-logout hook - silently logs out 15 minutes after billing
+  // Determine if this is takeaway or dine-in
+  const isTakeaway = pathname?.includes('/takeaway/');
+  const code = isTakeaway ? qrCode : tableCode;
+
+  // Auto-logout hook - works for both dine-in and takeaway
+  // Dine-in: Logs out 15 min after table session ends
+  // Takeaway: Logs out 15 min after latest order is paid
   useAutoLogout({
     tableCode,
+    qrCode,
     customerPhone: customerPhone || undefined,
-    enabled: !!tableCode && !!customerPhone,
+    enabled: !!customerPhone && (isTakeaway ? !!qrCode : !!tableCode),
     logoutDelayMinutes: 15,
-    silentLogout: true, // No warning, just silent logout
+    silentLogout: true,
+    isTakeaway,
   });
 
   // Get current user on mount
@@ -51,11 +60,12 @@ export function GuestLayout({
   // Listen for cart updates from localStorage
   useEffect(() => {
     const updateCartCount = () => {
-      if (!tableCode) return;
+      if (!code) return;
 
       try {
+        const cartKey = isTakeaway ? `takeaway_cart_${code}` : `cart_${code}`;
         const cart = JSON.parse(
-          localStorage.getItem(`cart_${tableCode}`) || "[]"
+          localStorage.getItem(cartKey) || "[]"
         );
         const totalCount = cart.reduce(
           (sum: number, item: any) => sum + item.quantity,
@@ -81,17 +91,18 @@ export function GuestLayout({
       window.removeEventListener("storage", updateCartCount);
       window.removeEventListener("cartUpdated", handleCartUpdate);
     };
-  }, [tableCode]);
+  }, [code, isTakeaway]);
 
   const getTabProps = (path: string) => ({
     isActive: pathname === path,
-    href: tableCode ? path : "#",
+    href: code ? path : "#",
   });
 
-  const menuTab = getTabProps(`/t/${tableCode}`);
-  const cartTab = getTabProps(`/t/${tableCode}/cart`);
-  const ordersTab = getTabProps(`/t/${tableCode}/orders`);
-  const offersTab = getTabProps(`/t/${tableCode}/offers`);
+  const basePath = isTakeaway ? `/takeaway/${qrCode}` : `/t/${tableCode}`;
+  const menuTab = getTabProps(basePath);
+  const cartTab = getTabProps(`${basePath}/cart`);
+  const ordersTab = getTabProps(`${basePath}/orders`);
+  const offersTab = getTabProps(`${basePath}/offers`);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,7 +110,7 @@ export function GuestLayout({
       <div className={showNavigation ? "pb-20" : ""}>{children}</div>
 
       {/* Bottom Tab Navigation */}
-      {showNavigation && tableCode && (
+      {showNavigation && code && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
           <div className="grid grid-cols-4 h-16">
             {/* Offers Tab */}
