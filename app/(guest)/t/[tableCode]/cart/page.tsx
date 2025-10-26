@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { OfferSelector } from "@/components/guest/OfferSelector";
 import { SmartOfferBanner } from "@/components/guest/SmartOfferBanner";
+import OrderConfirmationModal from "@/components/guest/OrderConfirmationModal";
 import { formatCurrency } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -46,7 +47,7 @@ export default function CartPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Checkout State
-  const [step, setStep] = useState<"cart" | "phone" | "otp" | "placing" | "success">("cart");
+  const [step, setStep] = useState<"cart" | "phone" | "otp" | "confirming" | "placing" | "success">("cart");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSending, setOtpSending] = useState(false);
@@ -54,6 +55,7 @@ export default function CartPage() {
   const [orderPlacing, setOrderPlacing] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [isAddingToExisting, setIsAddingToExisting] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Table occupation state
   const [occupiedByDifferentUser, setOccupiedByDifferentUser] = useState(false);
@@ -245,7 +247,10 @@ export default function CartPage() {
         const formattedPhone = result.data.phone;
         setCurrentUser({ phone: formattedPhone });
         setPhone(formattedPhone); // Update phone state to use formatted phone
-        await placeOrder();
+
+        // Show confirmation modal instead of placing order immediately
+        setStep("confirming");
+        setShowConfirmModal(true);
       } else {
         setError(result.message || "Invalid OTP");
       }
@@ -479,10 +484,22 @@ export default function CartPage() {
     }
 
     if (currentUser) {
-      await placeOrder();
+      // Show confirmation modal for logged-in users
+      setStep("confirming");
+      setShowConfirmModal(true);
     } else {
       setStep("phone");
     }
+  };
+
+  const handleConfirmOrder = async () => {
+    setShowConfirmModal(false);
+    await placeOrder();
+  };
+
+  const handleCancelConfirmation = () => {
+    setShowConfirmModal(false);
+    setStep("cart");
   };
 
   if (loading) {
@@ -837,6 +854,18 @@ export default function CartPage() {
           </div>
         )}
       </div>
+
+      {/* Order Confirmation Modal */}
+      <OrderConfirmationModal
+        isOpen={showConfirmModal}
+        cartItems={cart}
+        totalAmount={getTotalAmount()}
+        discount={calculateDiscount()}
+        finalAmount={getFinalAmount()}
+        onConfirm={handleConfirmOrder}
+        onCancel={handleCancelConfirmation}
+        countdownSeconds={30}
+      />
     </GuestLayout>
   );
 }

@@ -19,6 +19,7 @@ import {
   ChefHat,
   Package,
   QrCode,
+  TrendingUp,
 } from "lucide-react";
 import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
 
@@ -58,6 +59,7 @@ export default function DynamicNavbar({
       href: "/admin/dashboard",
       icon: LayoutDashboard,
     },
+
     {
       name: "Tables",
       href: "/admin/tables",
@@ -153,6 +155,11 @@ export default function DynamicNavbar({
       name: "Staff",
       href: "/admin/staff",
       icon: User,
+    },
+    {
+      name: "Analytics",
+      href: "/admin/analytics",
+      icon: TrendingUp,
     },
     {
       name: "Settings",
