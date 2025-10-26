@@ -22,6 +22,8 @@ type Order = {
   status: string;
   total_amount: number;
   created_at: string;
+  session_offer_id: string | null;
+  session_offer?: Tables<"offers"> | null;
   order_items: OrderItem[];
 };
 
@@ -74,6 +76,14 @@ export function useTableSessions() {
             status,
             total_amount,
             created_at,
+            session_offer_id,
+            session_offer:offers!session_offer_id (
+              id,
+              name,
+              offer_type,
+              benefits,
+              conditions
+            ),
             order_items (
               id,
               quantity,

@@ -1,133 +1,138 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
 
-export interface OrderWithDetails {
+export interface BillWithDetails {
   id: string;
-  total_amount: number;
-  status: string;
-  created_at: string;
-  customer_phone: string | null;
-  customer_email: string | null;
-  notes: string | null;
+  bill_number: string;
   table_session_id: string | null;
-  order_type?: string;
+  subtotal: number;
+  discount_amount: number;
+  discount_percentage: number;
+  cgst_rate: number;
+  cgst_amount: number;
+  sgst_rate: number;
+  sgst_amount: number;
+  service_charge_rate: number;
+  service_charge_amount: number;
+  total_tax_amount: number;
+  final_amount: number;
+  payment_method: string | null;
+  payment_status: string;
+  generated_by: string | null;
+  generated_at: string;
+  created_at: string;
   table_sessions: {
     id: string;
-    status: string;
-    session_started_at: string;
-    customer_phone: string | null;
     restaurant_tables: {
       table_number: number;
+      veg_only: boolean;
     } | null;
   } | null;
-  order_items: Array<{
+  bill_items: Array<{
     id: string;
+    item_name: string;
     quantity: number;
     unit_price: number;
     total_price: number;
-    menu_items: {
-      id: string;
-      name: string;
-      is_veg: boolean;
-    } | null;
+    order_item_id: string | null;
   }>;
+  staff?: {
+    name: string;
+    email: string;
+  } | null;
 }
 
-export interface SessionGroup {
+export interface BillGroup {
   sessionId: string;
   tableNumber: number;
-  customerPhone: string | null;
-  sessionStartedAt: string;
-  orders: OrderWithDetails[];
+  bills: BillWithDetails[];
   totalAmount: number;
-  orderCount: number;
+  billCount: number;
 }
 
 export function useBilling() {
-  const [orders, setOrders] = useState<OrderWithDetails[]>([]);
-  const [sessionGroups, setSessionGroups] = useState<SessionGroup[]>([]);
-  const [takeawayOrders, setTakeawayOrders] = useState<OrderWithDetails[]>([]);
+  const [bills, setBills] = useState<BillWithDetails[]>([]);
+  const [billGroups, setBillGroups] = useState<BillGroup[]>([]);
+  const [takeawayBills, setTakeawayBills] = useState<BillWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [taxSettings, setTaxSettings] = useState<any[]>([]);
 
   const fetchOrders = useCallback(async () => {
     try {
+      // Fetch pending bills (staff processed, awaiting manager confirmation)
       const { data, error } = await supabase
-        .from("orders")
+        .from("bills")
         .select(`
           *,
           table_sessions (
             id,
-            status,
-            session_started_at,
-            customer_phone,
             restaurant_tables (
-              table_number
+              table_number,
+              veg_only
             )
           ),
-          order_items (
+          bill_items (
             id,
+            item_name,
             quantity,
             unit_price,
             total_price,
-            menu_items (
-              id,
-              name,
-              is_veg
-            )
+            order_item_id
+          ),
+          staff:generated_by (
+            name,
+            email
           )
         `)
-        .in("status", ["served"])
+        .eq("payment_status", "pending")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      const ordersData = (data as OrderWithDetails[]) || [];
-      setOrders(ordersData);
+      const billsData = (data as any[]) || [];
+      setBills(billsData);
 
-      // Group orders by session
-      const sessionMap = new Map<string, SessionGroup>();
-      const takeaway: OrderWithDetails[] = [];
+      // Group bills by session (dine-in) vs individual (takeaway)
+      const sessionMap = new Map<string, BillGroup>();
+      const takeaway: BillWithDetails[] = [];
 
-      ordersData.forEach((order) => {
-        if (order.table_sessions && order.table_session_id) {
-          const sessionId = order.table_session_id;
+      billsData.forEach((bill) => {
+        if (bill.table_sessions && bill.table_session_id) {
+          const sessionId = bill.table_session_id;
 
           if (sessionMap.has(sessionId)) {
             const group = sessionMap.get(sessionId)!;
-            group.orders.push(order);
-            group.totalAmount += order.total_amount;
-            group.orderCount++;
+            group.bills.push(bill);
+            group.totalAmount += bill.final_amount;
+            group.billCount++;
           } else {
             sessionMap.set(sessionId, {
               sessionId,
               tableNumber:
-                order.table_sessions.restaurant_tables?.table_number || 0,
-              customerPhone: order.table_sessions.customer_phone,
-              sessionStartedAt: order.table_sessions.session_started_at,
-              orders: [order],
-              totalAmount: order.total_amount,
-              orderCount: 1,
+                bill.table_sessions.restaurant_tables?.table_number || 0,
+              bills: [bill],
+              totalAmount: bill.final_amount,
+              billCount: 1,
             });
           }
         } else {
-          // Takeaway orders (no session)
-          takeaway.push(order);
+          // Takeaway bills (no session)
+          takeaway.push(bill);
         }
       });
 
-      // Sort sessions by table number
-      const sessions = Array.from(sessionMap.values()).sort(
+      // Sort bill groups by table number
+      const groups = Array.from(sessionMap.values()).sort(
         (a, b) => a.tableNumber - b.tableNumber
       );
 
-      setSessionGroups(sessions);
-      setTakeawayOrders(takeaway);
+      setBillGroups(groups);
+      setTakeawayBills(takeaway);
       setError("");
     } catch (error: any) {
-      console.error("Error fetching orders:", error);
-      setError(error.message || "Failed to fetch orders");
+      console.error("Error fetching bills:", error);
+      setError(error.message || "Failed to fetch bills");
     } finally {
       setLoading(false);
     }
@@ -149,9 +154,9 @@ export function useBilling() {
   }, []);
 
   return {
-    orders,
-    sessionGroups,
-    takeawayOrders,
+    bills,
+    billGroups,
+    takeawayBills,
     loading,
     error,
     taxSettings,

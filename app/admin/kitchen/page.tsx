@@ -42,8 +42,13 @@ export default function KitchenDisplayPage() {
             id,
             order_type,
             table_id,
+            customer_name,
             restaurant_tables (
-              table_number
+              table_number,
+              veg_only
+            ),
+            takeaway_qr_codes (
+              is_veg_only
             )
           )
         `)
@@ -65,6 +70,9 @@ export default function KitchenDisplayPage() {
             kot_number: item.kot_number,
             kot_batch_id: batchId,
             table_number: item.orders?.restaurant_tables?.table_number || null,
+            table_veg_only: item.orders?.restaurant_tables?.veg_only || false,
+            customer_name: item.orders?.customer_name || null,
+            takeaway_qr_is_veg_only: item.orders?.takeaway_qr_codes?.is_veg_only || false,
             order_id: item.orders?.id || "",
             order_type: item.orders?.order_type || "dine-in",
             kot_status: "placed",

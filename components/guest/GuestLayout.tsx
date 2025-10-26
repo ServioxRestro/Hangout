@@ -10,6 +10,8 @@ import {
   Gift,
   User,
 } from "lucide-react";
+import { getCurrentUser } from "@/lib/auth/msg91-widget";
+import { useAutoLogout } from "@/hooks/useAutoLogout";
 
 interface GuestLayoutProps {
   children: React.ReactNode;
@@ -21,9 +23,30 @@ export function GuestLayout({
   showNavigation = true,
 }: GuestLayoutProps) {
   const [cartCount, setCartCount] = useState(0);
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
   const pathname = usePathname();
   const params = useParams();
   const tableCode = params?.tableCode as string;
+
+  // Auto-logout hook - silently logs out 15 minutes after billing
+  useAutoLogout({
+    tableCode,
+    customerPhone: customerPhone || undefined,
+    enabled: !!tableCode && !!customerPhone,
+    logoutDelayMinutes: 15,
+    silentLogout: true, // No warning, just silent logout
+  });
+
+  // Get current user on mount
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const user = await getCurrentUser();
+      if (user) {
+        setCustomerPhone(user.phone);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
 
   // Listen for cart updates from localStorage
   useEffect(() => {

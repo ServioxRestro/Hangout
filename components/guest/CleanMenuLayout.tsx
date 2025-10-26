@@ -170,9 +170,9 @@ export function CleanMenuLayout({
 
   return (
     <div className="relative">
-      {/* Fixed Header */}
-      <div className="bg-white sticky top-20 z-30 shadow-sm border-b border-gray-200">
-        <div className="px-4 py-4">
+      {/* Fixed Filter Bar - Sticky at top */}
+      <div className="bg-white sticky top-0 z-30 shadow-sm border-b border-gray-200">
+        <div className="px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             {/* Category Button */}
             <button

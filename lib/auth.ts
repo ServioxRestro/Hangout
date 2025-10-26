@@ -87,10 +87,28 @@ export function canAccessRoute(userRole: UserRole, route: string): boolean {
 
   // Define what each role can access
   const roleAccess = {
-    waiter: ['/admin/orders', '/admin/orders/create', '/admin/orders/history', '/admin/tables/sessions', '/admin/billing'], // Waiters can access billing for payment processing
-    manager: ['/admin/dashboard', '/admin/orders', '/admin/orders/create', '/admin/orders/history', '/admin/tables', '/admin/tables/sessions', '/admin/menu', '/admin/offers', '/admin/billing', '/admin/settings']
-    // Note: /admin/staff and /admin/settings are only accessible to super_admin and manager respectively
-    // Note: Waiters cannot access /admin/tables (main tables page), only /admin/tables/sessions
+    waiter: [
+      '/admin/orders',
+      '/admin/orders/create',
+      '/admin/orders/history',
+      '/admin/tables',           // Can view table sessions (NOT table management)
+      '/admin/tables/sessions'   // Can process bills from tables
+      // NOTE: Waiters CANNOT access /admin/billing (bills & payment - manager only)
+      // NOTE: Waiters CANNOT access /admin/tables/management (table management - admin only)
+    ],
+    manager: [
+      '/admin/dashboard',
+      '/admin/orders',
+      '/admin/orders/create',
+      '/admin/orders/history',
+      '/admin/tables',            // Can view table sessions
+      '/admin/tables/sessions',   // Can view table sessions
+      '/admin/menu',
+      '/admin/offers',
+      '/admin/billing',           // Can confirm payments and print bills
+      '/admin/settings'
+      // NOTE: Managers CANNOT access /admin/tables/management (admin only)
+    ]
   }
 
   const allowedRoutes = roleAccess[userRole] || []

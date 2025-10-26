@@ -2,75 +2,75 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
-import Button from "@/components/admin/Button";
+import Button from "../Button";
 import { formatCurrency } from "@/lib/constants";
-import { CheckCircle, Printer, X } from "lucide-react";
+import { X, Receipt, Printer } from "lucide-react";
 import {
   generateHTMLReceipt,
   printHTMLReceipt,
   type BillItem,
 } from "@/lib/utils/billing";
-import type { OrderWithDetails } from "@/hooks/useBilling";
 
-interface ManualItem {
+interface TakeawayBillModalProps {
+  customer: {
+    customerName: string;
+    customerPhone: string | null;
+    orders: any[];
+    totalAmount: number;
+    earliestOrderTime?: string | null;
+  };
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+interface TaxSetting {
   id: string;
   name: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
+  rate: number;
+  is_active: boolean | null;
+  display_order?: number | null;
+  applies_to?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
-interface BillSummary {
-  subtotal: number;
-  discountPercentage: number;
-  discountAmount: number;
-  taxAmount: number;
-  finalAmount: number;
-  taxes: Array<{
-    name: string;
-    rate: number;
-    amount: number;
-  }>;
-}
-
-interface PaymentModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  selectedOrders: OrderWithDetails[];
-  manualItems: ManualItem[];
-  taxSettings: any[];
-  onPaymentComplete: (billData: any) => void;
-}
-
-export function PaymentModal({
-  isOpen,
+export function TakeawayBillModal({
+  customer,
   onClose,
-  selectedOrders,
-  manualItems,
-  taxSettings,
-  onPaymentComplete,
-}: PaymentModalProps) {
+  onSuccess,
+}: TakeawayBillModalProps) {
+  const [taxSettings, setTaxSettings] = useState<TaxSetting[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">(
+    "cash"
+  );
   const [discountPercentage, setDiscountPercentage] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("cash");
   const [processing, setProcessing] = useState(false);
-  const [billSummary, setBillSummary] = useState<BillSummary | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (isOpen) {
-      calculateBill();
+    fetchTaxSettings();
+  }, []);
+
+  const fetchTaxSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("tax_settings")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+
+      if (error) throw error;
+      setTaxSettings(data || []);
+    } catch (error) {
+      console.error("Error fetching tax settings:", error);
     }
-  }, [isOpen, selectedOrders, manualItems, discountPercentage, taxSettings]);
+  };
 
   const calculateBill = () => {
-    const ordersSubtotal = selectedOrders.reduce(
+    const subtotal = customer.orders.reduce(
       (sum, order) => sum + order.total_amount,
       0
     );
-    const manualSubtotal = manualItems.reduce(
-      (sum, item) => sum + item.total_price,
-      0
-    );
-    const subtotal = ordersSubtotal + manualSubtotal;
 
     const discountAmount = (subtotal * discountPercentage) / 100;
     const taxableAmount = subtotal - discountAmount;
@@ -84,119 +84,59 @@ export function PaymentModal({
     const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
     const finalAmount = taxableAmount + taxAmount;
 
-    setBillSummary({
+    return {
       subtotal,
-      discountPercentage,
       discountAmount,
+      taxes,
       taxAmount,
       finalAmount,
-      taxes,
-    });
+    };
   };
 
-  const handlePrint = () => {
-    if (!billSummary) return;
+  const bill = calculateBill();
 
-    const allOrderItems = selectedOrders.flatMap((order) => order.order_items);
-
-    const billItems: BillItem[] = [
-      ...allOrderItems.map((item) => ({
-        name: item.menu_items?.name || "Unknown",
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-        is_manual: false,
-      })),
-      ...manualItems.map((item) => ({
-        name: item.name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-        is_manual: true,
-      })),
-    ];
-
-    // Determine order type and table info
-    const firstOrder = selectedOrders[0];
-    const orderType = firstOrder?.order_type || "dine-in";
-    const tableNumber = firstOrder?.table_sessions?.restaurant_tables
-      ?.table_number
-      ? String(firstOrder.table_sessions.restaurant_tables.table_number)
-      : undefined;
-
-    const htmlReceipt = generateHTMLReceipt({
-      tableNumber,
-      orderType: orderType as "dine-in" | "takeaway",
-      items: billItems,
-      calculation: {
-        subtotal: billSummary.subtotal,
-        discount_amount: billSummary.discountAmount,
-        taxable_amount: billSummary.subtotal - billSummary.discountAmount,
-        taxes: billSummary.taxes,
-        tax_amount: billSummary.taxAmount,
-        final_amount: billSummary.finalAmount,
-      },
-      paymentMethod,
-      discountPercentage,
-    });
-
-    printHTMLReceipt(htmlReceipt);
-  };
-
-  const handlePayment = async () => {
-    if (!billSummary || selectedOrders.length === 0) return;
-
+  const handleProcessBill = async () => {
     setProcessing(true);
+    setError("");
+
     try {
+      // Get current user
       const response = await fetch("/api/admin/verify", {
         method: "GET",
         credentials: "include",
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to verify admin");
-      }
-
+      if (!response.ok) throw new Error("Failed to verify user");
       const { user } = await response.json();
 
-      // Create bill number
+      // Generate bill number
       const billNumber = `BILL-${new Date().getFullYear()}-${String(
         Date.now()
       ).slice(-6)}`;
-
-      // Determine if this is a session or standalone orders
-      const firstOrder = selectedOrders[0];
-      const tableSessionId = firstOrder?.table_session_id || null;
 
       // Create bill
       const { data: billData, error: billError } = await supabase
         .from("bills")
         .insert({
           bill_number: billNumber,
-          table_session_id: tableSessionId,
-          subtotal: billSummary.subtotal,
+          table_session_id: null, // Takeaway has no session
+          subtotal: bill.subtotal,
           discount_percentage: discountPercentage,
-          discount_amount: billSummary.discountAmount,
+          discount_amount: bill.discountAmount,
           cgst_rate:
-            billSummary.taxes.find((t: any) => t.name.includes("CGST"))?.rate ||
-            0,
+            bill.taxes.find((t) => t.name.includes("CGST"))?.rate || 0,
           cgst_amount:
-            billSummary.taxes.find((t: any) => t.name.includes("CGST"))
-              ?.amount || 0,
+            bill.taxes.find((t) => t.name.includes("CGST"))?.amount || 0,
           sgst_rate:
-            billSummary.taxes.find((t: any) => t.name.includes("SGST"))?.rate ||
-            0,
+            bill.taxes.find((t) => t.name.includes("SGST"))?.rate || 0,
           sgst_amount:
-            billSummary.taxes.find((t: any) => t.name.includes("SGST"))
-              ?.amount || 0,
+            bill.taxes.find((t) => t.name.includes("SGST"))?.amount || 0,
           service_charge_rate:
-            billSummary.taxes.find((t: any) => t.name.includes("Service"))
-              ?.rate || 0,
+            bill.taxes.find((t) => t.name.includes("Service"))?.rate || 0,
           service_charge_amount:
-            billSummary.taxes.find((t: any) => t.name.includes("Service"))
-              ?.amount || 0,
-          total_tax_amount: billSummary.taxAmount,
-          final_amount: billSummary.finalAmount,
+            bill.taxes.find((t) => t.name.includes("Service"))?.amount || 0,
+          total_tax_amount: bill.taxAmount,
+          final_amount: bill.finalAmount,
           payment_status: "paid",
           payment_method: paymentMethod,
           paid_at: new Date().toISOString(),
@@ -207,9 +147,9 @@ export function PaymentModal({
 
       if (billError) throw billError;
 
-      // Create bill items
-      const allOrderItems = selectedOrders.flatMap((order) =>
-        order.order_items.map((item) => ({
+      // Create bill items from all order items
+      const allOrderItems = customer.orders.flatMap((order) =>
+        order.order_items.map((item: any) => ({
           bill_id: billData.id,
           order_item_id: item.id,
           item_name: item.menu_items?.name || "Unknown Item",
@@ -219,25 +159,14 @@ export function PaymentModal({
         }))
       );
 
-      const manualBillItems = manualItems.map((item) => ({
-        bill_id: billData.id,
-        order_item_id: null,
-        item_name: item.name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-      }));
-
-      const allBillItems = [...allOrderItems, ...manualBillItems];
-
       const { error: itemsError } = await supabase
         .from("bill_items")
-        .insert(allBillItems);
+        .insert(allOrderItems);
 
       if (itemsError) throw itemsError;
 
-      // Update orders to paid
-      const orderIds = selectedOrders.map((o) => o.id);
+      // Update all orders to paid
+      const orderIds = customer.orders.map((o) => o.id);
       const { error: ordersError } = await supabase
         .from("orders")
         .update({
@@ -248,33 +177,44 @@ export function PaymentModal({
 
       if (ordersError) throw ordersError;
 
-      // If session exists, mark it as completed
-      if (tableSessionId) {
-        await supabase
-          .from("table_sessions")
-          .update({
-            status: "completed",
-            payment_method: paymentMethod,
-            paid_at: new Date().toISOString(),
-            session_ended_at: new Date().toISOString(),
-          })
-          .eq("id", tableSessionId);
-      }
-
-      onPaymentComplete({
-        ...billData,
-        billNumber,
-        finalAmount: billSummary.finalAmount,
-      });
-    } catch (error: any) {
-      console.error("Error processing payment:", error);
-      alert("Failed to process payment: " + error.message);
+      onSuccess();
+    } catch (err: any) {
+      console.error("Error processing bill:", err);
+      setError(err.message || "Failed to process bill");
     } finally {
       setProcessing(false);
     }
   };
 
-  if (!isOpen || !billSummary) return null;
+  const handlePrint = () => {
+    // Prepare bill items for receipt
+    const billItems: BillItem[] = customer.orders.flatMap((order) =>
+      order.order_items.map((item: any) => ({
+        name: item.menu_items?.name || "Unknown",
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        is_manual: false,
+      }))
+    );
+
+    const htmlReceipt = generateHTMLReceipt({
+      orderType: "takeaway",
+      items: billItems,
+      calculation: {
+        subtotal: bill.subtotal,
+        discount_amount: bill.discountAmount,
+        taxable_amount: bill.subtotal - bill.discountAmount,
+        taxes: bill.taxes,
+        tax_amount: bill.taxAmount,
+        final_amount: bill.finalAmount,
+      },
+      paymentMethod,
+      discountPercentage,
+    });
+
+    printHTMLReceipt(htmlReceipt);
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -284,10 +224,10 @@ export function PaymentModal({
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">
-                Process Payment
+                Process Takeaway Bill
               </h2>
               <p className="text-gray-600">
-                {selectedOrders.length} order(s) selected
+                {customer.customerName} • {customer.orders.length} order(s)
               </p>
             </div>
             <button
@@ -299,13 +239,20 @@ export function PaymentModal({
             </button>
           </div>
 
+          {/* Error Display */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           {/* Bill Summary */}
           <div className="space-y-4 mb-6">
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-medium">
-                  {formatCurrency(billSummary.subtotal)}
+                  {formatCurrency(bill.subtotal)}
                 </span>
               </div>
 
@@ -326,13 +273,13 @@ export function PaymentModal({
                   />
                   <span>%</span>
                   <span className="font-medium w-20 text-right">
-                    -{formatCurrency(billSummary.discountAmount)}
+                    -{formatCurrency(bill.discountAmount)}
                   </span>
                 </div>
               </div>
 
               {/* Taxes */}
-              {billSummary.taxes.map((tax: any) => (
+              {bill.taxes.map((tax) => (
                 <div
                   key={tax.name}
                   className="flex justify-between text-sm text-gray-600"
@@ -349,7 +296,7 @@ export function PaymentModal({
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total:</span>
                   <span className="text-green-600">
-                    {formatCurrency(billSummary.finalAmount)}
+                    {formatCurrency(bill.finalAmount)}
                   </span>
                 </div>
               </div>
@@ -399,29 +346,13 @@ export function PaymentModal({
               Print
             </Button>
             <Button
-              variant="secondary"
-              onClick={onClose}
-              disabled={processing}
-            >
-              Cancel
-            </Button>
-            <Button
               variant="primary"
-              onClick={handlePayment}
+              onClick={handleProcessBill}
+              leftIcon={<Receipt className="w-4 h-4" />}
+              loading={processing}
               className="flex-1"
-              disabled={processing}
-              leftIcon={
-                processing ? undefined : <CheckCircle className="w-4 h-4" />
-              }
             >
-              {processing ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Processing...
-                </div>
-              ) : (
-                `Pay ${formatCurrency(billSummary.finalAmount)}`
-              )}
+              Confirm Payment
             </Button>
           </div>
         </div>

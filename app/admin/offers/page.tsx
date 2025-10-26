@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
@@ -25,7 +26,6 @@ import {
   Copy,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
-import CreateOfferModal from "@/components/admin/offers/CreateOfferModal";
 import EditOfferModal from "@/components/admin/offers/EditOfferModal";
 
 type Offer = {
@@ -67,10 +67,10 @@ const offerTypeConfig = {
 };
 
 export default function OffersPage() {
+  const router = useRouter();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [filteredOffers, setFilteredOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
   
   // Filter states
@@ -306,7 +306,7 @@ export default function OffersPage() {
             </Button>
             <Button
               variant="primary"
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => router.push("/admin/offers/create")}
               leftIcon={<Plus className="w-4 h-4" />}
             >
               Create Offer
@@ -507,7 +507,7 @@ export default function OffersPage() {
             <p className="text-gray-500 mb-6">Create your first promotional offer to attract customers.</p>
             <Button
               variant="primary"
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => router.push("/admin/offers/create")}
               leftIcon={<Plus className="w-4 h-4" />}
             >
               Create Your First Offer
@@ -619,17 +619,6 @@ export default function OffersPage() {
           </div>
         )}
       </Card>
-
-      {/* Create Offer Modal */}
-      {showCreateModal && (
-        <CreateOfferModal
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={() => {
-            setShowCreateModal(false);
-            fetchOffers();
-          }}
-        />
-      )}
 
       {/* Edit Offer Modal */}
       {editingOffer && (

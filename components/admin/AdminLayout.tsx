@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, ChevronLeft, Menu, X, Bell, Search, User } from "lucide-react";
 import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
 import DynamicNavbar from "./DynamicNavbar";
+import { NotificationProvider } from "@/contexts/NotificationContext";
+import NotificationPanel from "./NotificationPanel";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -119,7 +121,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   return (
-    <div className="h-screen flex bg-gray-50">
+    <NotificationProvider enabled={true}>
+      <div className="h-screen flex bg-gray-50">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
@@ -265,9 +268,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </div>
             <div className="ml-4 flex items-center space-x-4">
               {/* Notifications */}
-              <button className="p-2 text-gray-400 hover:text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
-                <Bell className="h-5 w-5" />
-              </button>
+              <NotificationPanel />
 
               {/* Profile */}
               <div className="flex items-center space-x-3">
@@ -295,5 +296,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </main>
       </div>
     </div>
+    </NotificationProvider>
   );
 }

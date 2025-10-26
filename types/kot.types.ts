@@ -19,6 +19,9 @@ export interface KOT {
   kot_number: number;
   kot_batch_id: string;
   table_number: string | null;
+  table_veg_only?: boolean;
+  customer_name?: string | null;
+  takeaway_qr_is_veg_only?: boolean;
   order_id: string;
   order_type: OrderType;
   kot_status: KOTStatus;
