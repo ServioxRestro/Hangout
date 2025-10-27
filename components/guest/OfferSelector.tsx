@@ -15,8 +15,15 @@ import {
   AlertCircle,
   Info,
   X,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import {
+  checkOfferEligibility,
+  type OfferEligibility,
+  type CartItem as EligibilityCartItem,
+} from "@/lib/offers/eligibility";
+import { FreeItemSelector } from "@/components/guest/FreeItemSelector";
 
 type Offer = Tables<"offers"> & {
   offer_items?: Array<
@@ -33,6 +40,8 @@ interface CartItem {
   price: number;
   quantity: number;
   category_id?: string;
+  isFree?: boolean;
+  linkedOfferId?: string;
 }
 
 interface OfferSelectorProps {
@@ -40,14 +49,10 @@ interface OfferSelectorProps {
   cartTotal: number;
   customerPhone?: string;
   tableId?: string;
+  orderType?: "dine-in" | "takeaway";
   onOfferSelect: (offer: Offer | null) => void;
   selectedOffer: Offer | null;
-}
-
-interface OfferValidation {
-  isValid: boolean;
-  reason?: string;
-  discount?: number;
+  onFreeItemAdd?: (items: CartItem[]) => void;
 }
 
 export function OfferSelector({
@@ -55,33 +60,47 @@ export function OfferSelector({
   cartTotal,
   customerPhone,
   tableId,
+  orderType = "dine-in",
   onOfferSelect,
   selectedOffer,
+  onFreeItemAdd,
 }: OfferSelectorProps) {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showOfferList, setShowOfferList] = useState(false);
-  const [validationCache, setValidationCache] = useState<
-    Record<string, OfferValidation>
+  const [eligibilityCache, setEligibilityCache] = useState<
+    Record<string, OfferEligibility>
   >({});
+  const [showFreeItemModal, setShowFreeItemModal] = useState(false);
+  const [pendingOfferForFreeItem, setPendingOfferForFreeItem] =
+    useState<Offer | null>(null);
+  const [availableFreeItems, setAvailableFreeItems] = useState<
+    Array<{
+      id: string;
+      name: string;
+      price: number;
+      type: "item" | "category";
+    }>
+  >([]);
+  const [maxFreeItemPrice, setMaxFreeItemPrice] = useState<number>(0);
 
   useEffect(() => {
     fetchOffers();
-  }, []);
+  }, [orderType]);
 
   useEffect(() => {
-    // Revalidate selected offer when cart changes
-    if (selectedOffer) {
-      validateOffer(selectedOffer).then((validation) => {
-        if (!validation.isValid) {
-          onOfferSelect(null); // Auto-deselect if no longer valid
-        }
-      });
+    // Revalidate all offers when cart changes
+    if (offers.length > 0) {
+      validateAllOffers();
     }
-  }, [cartTotal, cartItems]);
+  }, [cartTotal, cartItems, customerPhone]);
 
   const fetchOffers = async () => {
     try {
+      // Determine the filter field based on order type
+      const filterField =
+        orderType === "dine-in" ? "enabled_for_dinein" : "enabled_for_takeaway";
+
       // Fetch active session-level offers (applied at billing)
       const { data: offersData, error: offersError } = await supabase
         .from("offers")
@@ -96,6 +115,7 @@ export function OfferSelector({
         `
         )
         .eq("is_active", true)
+        .eq(filterField, true) // Filter by order type
         .eq("application_type", "session_level") // Only session-level offers
         .order("priority", { ascending: false });
 
@@ -105,11 +125,7 @@ export function OfferSelector({
       setOffers(validOffers);
 
       // Validate all offers
-      const validations: Record<string, OfferValidation> = {};
-      for (const offer of validOffers) {
-        validations[offer.id] = await validateOffer(offer);
-      }
-      setValidationCache(validations);
+      await validateAllOffers(validOffers);
     } catch (error: any) {
       console.error("Error fetching offers:", error);
     } finally {
@@ -117,155 +133,132 @@ export function OfferSelector({
     }
   };
 
-  const validateOffer = async (offer: Offer): Promise<OfferValidation> => {
-    const benefits = offer.benefits as any;
-    const conditions = offer.conditions as any;
+  const validateAllOffers = async (offersList = offers) => {
+    const eligibilities: Record<string, OfferEligibility> = {};
 
-    // 1. Check date validity
-    const now = new Date();
-    if (offer.start_date && new Date(offer.start_date) > now) {
-      return { isValid: false, reason: "Offer not started yet" };
-    }
-    if (offer.end_date && new Date(offer.end_date) < now) {
-      return { isValid: false, reason: "Offer has expired" };
+    for (const offer of offersList) {
+      const cartItemsForCheck: EligibilityCartItem[] = cartItems.map(
+        (item) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          category_id: item.category_id,
+        })
+      );
+
+      const eligibility = await checkOfferEligibility(
+        offer,
+        cartItemsForCheck,
+        cartTotal,
+        customerPhone,
+        offer.offer_items
+      );
+
+      eligibilities[offer.id] = eligibility;
     }
 
-    // 2. Check time validity
-    if (offer.valid_hours_start && offer.valid_hours_end) {
-      const currentTime = now.toTimeString().slice(0, 5);
+    setEligibilityCache(eligibilities);
+
+    // Auto-deselect if selected offer is no longer eligible
+    if (
+      selectedOffer &&
+      eligibilities[selectedOffer.id] &&
+      !eligibilities[selectedOffer.id].isEligible
+    ) {
+      onOfferSelect(null);
+    }
+  };
+
+  const handleOfferClick = async (offer: Offer) => {
+    const eligibility = eligibilityCache[offer.id];
+
+    if (!eligibility || !eligibility.isEligible) {
+      return; // Can't select ineligible offers
+    }
+
+    // Check if this offer requires user action (free item selection)
+    if (eligibility.requiresUserAction && eligibility.availableFreeItems) {
+      setPendingOfferForFreeItem(offer);
+      setAvailableFreeItems(eligibility.availableFreeItems);
+
+      // Get max price from offer benefits
+      const benefits = offer.benefits as any;
+      setMaxFreeItemPrice(benefits.max_free_item_price || 0);
+
+      setShowFreeItemModal(true);
+      setShowOfferList(false);
+    } else {
+      // Directly apply offer with auto-added free items if any
+      onOfferSelect(offer);
+
       if (
-        currentTime < offer.valid_hours_start ||
-        currentTime > offer.valid_hours_end
+        eligibility.freeItems &&
+        eligibility.freeItems.length > 0 &&
+        onFreeItemAdd
       ) {
-        return {
-          isValid: false,
-          reason: `Valid only between ${offer.valid_hours_start} - ${offer.valid_hours_end}`,
-        };
+        onFreeItemAdd(eligibility.freeItems);
       }
+
+      setShowOfferList(false);
+    }
+  };
+
+  const handleFreeItemSelect = (selectedItem: {
+    id: string;
+    name: string;
+    price: number;
+  }) => {
+    if (!pendingOfferForFreeItem) return;
+
+    // Create free item for cart
+    const freeItem: CartItem = {
+      id: selectedItem.id,
+      name: selectedItem.name,
+      price: selectedItem.price,
+      quantity: 1,
+      isFree: true,
+      linkedOfferId: pendingOfferForFreeItem.id,
+    };
+
+    // Apply the offer
+    onOfferSelect(pendingOfferForFreeItem);
+
+    // Add free item to cart
+    if (onFreeItemAdd) {
+      onFreeItemAdd([freeItem]);
     }
 
-    // 3. Check day validity
-    if (offer.valid_days && offer.valid_days.length > 0) {
-      const currentDay = now
-        .toLocaleDateString("en-US", { weekday: "long" })
-        .toLowerCase();
-      if (!offer.valid_days.includes(currentDay)) {
-        const validDaysStr = offer.valid_days
-          .map((day) => day.charAt(0).toUpperCase() + day.slice(1))
-          .join(", ");
-        return {
-          isValid: false,
-          reason: `Valid only on ${validDaysStr}`,
-        };
-      }
-    }
-
-    // 4. Check minimum amount
-    if (conditions?.min_amount && cartTotal < conditions.min_amount) {
-      return {
-        isValid: false,
-        reason: `Minimum order amount: ${formatCurrency(conditions.min_amount)}`,
-      };
-    }
-
-    // 5. Check customer type (if phone available)
-    if (offer.target_customer_type !== "all" && customerPhone) {
-      const { data: guestUser } = await supabase
-        .from("guest_users")
-        .select("visit_count")
-        .eq("phone", customerPhone)
-        .maybeSingle();
-
-      const visitCount = guestUser?.visit_count || 0;
-
-      if (offer.target_customer_type === "new" && visitCount > 0) {
-        return { isValid: false, reason: "Only for new customers" };
-      }
-      if (offer.target_customer_type === "returning" && visitCount === 0) {
-        return { isValid: false, reason: "Only for returning customers" };
-      }
-      if (offer.target_customer_type === "loyalty") {
-        const minOrders = (offer.conditions as any)?.min_orders_count || 5;
-        if (visitCount < minOrders) {
-          return { isValid: false, reason: `Requires ${minOrders}+ previous orders` };
-        }
-      }
-    }
-
-    // 6. Check usage limit
-    if (offer.usage_limit && offer.usage_count) {
-      if (offer.usage_count >= offer.usage_limit) {
-        return { isValid: false, reason: "Usage limit reached" };
-      }
-    }
-
-    // 7. Calculate discount
-    let discount = 0;
-    switch (offer.offer_type) {
-      case "cart_percentage":
-        discount = (cartTotal * (benefits.discount_percentage || 0)) / 100;
-        if (benefits.max_discount_amount) {
-          discount = Math.min(discount, benefits.max_discount_amount);
-        }
-        break;
-      case "cart_flat_amount":
-        discount = benefits.discount_amount || 0;
-        break;
-      case "min_order_discount":
-        if (conditions?.threshold_amount && cartTotal >= conditions.threshold_amount) {
-          discount = benefits.discount_amount || 0;
-        } else {
-          return {
-            isValid: false,
-            reason: `Spend ${formatCurrency(conditions?.threshold_amount || 0)} to unlock`,
-          };
-        }
-        break;
-      case "promo_code":
-        // Promo codes can have percentage or flat discount
-        if (benefits.discount_percentage) {
-          discount = (cartTotal * benefits.discount_percentage) / 100;
-          if (benefits.max_discount_amount) {
-            discount = Math.min(discount, benefits.max_discount_amount);
-          }
-        } else if (benefits.discount_amount) {
-          discount = benefits.discount_amount;
-        }
-        break;
-      default:
-        // For time_based, customer_based - check if they have discount
-        if (benefits.discount_percentage) {
-          discount = (cartTotal * benefits.discount_percentage) / 100;
-          if (benefits.max_discount_amount) {
-            discount = Math.min(discount, benefits.max_discount_amount);
-          }
-        } else if (benefits.discount_amount) {
-          discount = benefits.discount_amount;
-        }
-    }
-
-    return { isValid: true, discount };
+    // Clean up
+    setShowFreeItemModal(false);
+    setPendingOfferForFreeItem(null);
+    setAvailableFreeItems([]);
   };
 
   const getOfferIcon = (offerType: string) => {
     switch (offerType) {
       case "cart_percentage":
       case "min_order_discount":
+      case "item_percentage":
         return <Percent className="w-5 h-5" />;
       case "cart_flat_amount":
-        return <Tag className="w-5 h-5" />;
+      case "item_free_addon":
+      case "item_buy_get_free":
+      case "cart_threshold_item":
+        return <Gift className="w-5 h-5" />;
       case "time_based":
         return <Clock className="w-5 h-5" />;
       case "customer_based":
         return <Users className="w-5 h-5" />;
       case "promo_code":
+      case "combo_meal":
         return <Tag className="w-5 h-5" />;
       default:
         return <Gift className="w-5 h-5" />;
     }
   };
 
-  const formatOfferSummary = (offer: Offer, validation: OfferValidation) => {
+  const formatOfferSummary = (offer: Offer, eligibility: OfferEligibility) => {
     const benefits = offer.benefits as any;
     const conditions = offer.conditions as any;
 
@@ -281,7 +274,26 @@ export function OfferSelector({
         summary = `${formatCurrency(benefits.discount_amount)} off`;
         break;
       case "min_order_discount":
-        summary = `${formatCurrency(benefits.discount_amount)} off on orders above ${formatCurrency(conditions.threshold_amount)}`;
+        summary = `${formatCurrency(
+          benefits.discount_amount
+        )} off on orders above ${formatCurrency(conditions.threshold_amount)}`;
+        break;
+      case "cart_threshold_item":
+        summary = `Free item on orders above ${formatCurrency(
+          conditions.threshold_amount
+        )}`;
+        break;
+      case "item_buy_get_free":
+        summary = `Buy ${benefits.buy_quantity}, Get 1 free`;
+        break;
+      case "item_free_addon":
+        summary = `Free item with purchase`;
+        break;
+      case "item_percentage":
+        summary = `${benefits.discount_percentage}% off on selected items`;
+        break;
+      case "combo_meal":
+        summary = `Combo deal - ${formatCurrency(benefits.combo_price)}`;
         break;
       case "promo_code":
         if (benefits.discount_percentage) {
@@ -297,15 +309,21 @@ export function OfferSelector({
         summary = offer.description || "Special offer";
     }
 
-    if (validation.isValid && validation.discount) {
-      summary += ` • Save ${formatCurrency(validation.discount)}`;
+    if (eligibility.isEligible && eligibility.discount > 0) {
+      summary += ` • Save ${formatCurrency(eligibility.discount)}`;
+    }
+
+    if (eligibility.freeItems && eligibility.freeItems.length > 0) {
+      summary += ` • ${eligibility.freeItems.length} free item${
+        eligibility.freeItems.length > 1 ? "s" : ""
+      }`;
     }
 
     return summary;
   };
 
-  const handleOfferSelect = (offer: Offer | null) => {
-    onOfferSelect(offer);
+  const handleOfferDeselect = () => {
+    onOfferSelect(null);
     setShowOfferList(false);
   };
 
@@ -313,180 +331,250 @@ export function OfferSelector({
     return null; // Don't show while loading
   }
 
-  const applicableOffers = offers.filter((o) => validationCache[o.id]?.isValid);
-  const inapplicableOffers = offers.filter(
-    (o) => !validationCache[o.id]?.isValid
+  // Categorize offers into 3 sections
+  const applicableOffers = offers.filter(
+    (o) => eligibilityCache[o.id]?.isEligible
   );
+  const almostThereOffers = offers.filter((o) => {
+    const elig = eligibilityCache[o.id];
+    return !elig?.isEligible && elig?.reason?.includes("Add ₹");
+  });
+  const notEligibleOffers = offers.filter((o) => {
+    const elig = eligibilityCache[o.id];
+    return !elig?.isEligible && !elig?.reason?.includes("Add ₹");
+  });
 
   return (
-    <div className="space-y-3">
-      {/* Selected Offer Display */}
-      {selectedOffer ? (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 flex-1">
-              <div className="p-2 bg-white rounded-lg shadow-sm text-green-600">
-                {getOfferIcon(selectedOffer.offer_type)}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span className="font-semibold text-green-900">
-                    Offer Applied
-                  </span>
+    <>
+      <div className="space-y-3">
+        {/* Selected Offer Display */}
+        {selectedOffer ? (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 flex-1">
+                <div className="p-2 bg-white rounded-lg shadow-sm text-green-600">
+                  {getOfferIcon(selectedOffer.offer_type)}
                 </div>
-                <div className="text-sm font-medium text-green-800">
-                  {selectedOffer.name}
-                </div>
-                <div className="text-xs text-green-700 mt-1">
-                  {formatOfferSummary(
-                    selectedOffer,
-                    validationCache[selectedOffer.id]
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="font-semibold text-green-900">
+                      Offer Applied
+                    </span>
+                  </div>
+                  <div className="text-sm font-medium text-green-800">
+                    {selectedOffer.name}
+                  </div>
+                  <div className="text-xs text-green-700 mt-1">
+                    {formatOfferSummary(
+                      selectedOffer,
+                      eligibilityCache[selectedOffer.id]
+                    )}
+                  </div>
+                  {selectedOffer.promo_code && (
+                    <div className="mt-2">
+                      <span className="text-xs text-green-600">Code: </span>
+                      <span className="font-mono font-bold text-xs bg-white px-2 py-1 rounded border border-green-200">
+                        {selectedOffer.promo_code}
+                      </span>
+                    </div>
                   )}
                 </div>
-                {selectedOffer.promo_code && (
-                  <div className="mt-2">
-                    <span className="text-xs text-green-600">Code: </span>
-                    <span className="font-mono font-bold text-xs bg-white px-2 py-1 rounded border border-green-200">
-                      {selectedOffer.promo_code}
-                    </span>
+              </div>
+              <button
+                onClick={handleOfferDeselect}
+                className="p-1 hover:bg-green-100 rounded-lg text-green-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Offer Selection Button */}
+            <button
+              onClick={() => setShowOfferList(!showOfferList)}
+              className="w-full bg-white border-2 border-dashed border-blue-300 rounded-lg p-4 hover:border-blue-500 hover:bg-blue-50 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                    <Gift className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-semibold text-gray-900">
+                      Apply Offer
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {applicableOffers.length > 0
+                        ? `${applicableOffers.length} offer${
+                            applicableOffers.length !== 1 ? "s" : ""
+                          } available`
+                        : almostThereOffers.length > 0
+                        ? `${almostThereOffers.length} offer${
+                            almostThereOffers.length !== 1 ? "s" : ""
+                          } almost there`
+                        : "View available offers"}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight
+                  className={`w-5 h-5 text-gray-400 transition-transform ${
+                    showOfferList ? "rotate-90" : ""
+                  }`}
+                />
+              </div>
+            </button>
+
+            {/* Offer List */}
+            {showOfferList && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+                {/* Section 1: Applicable Offers (Green) */}
+                {applicableOffers.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-green-700 mb-3">
+                      <CheckCircle className="w-4 h-4" />
+                      Available Now
+                    </div>
+                    <div className="space-y-2">
+                      {applicableOffers.map((offer) => {
+                        const eligibility = eligibilityCache[offer.id];
+                        return (
+                          <button
+                            key={offer.id}
+                            onClick={() => handleOfferClick(offer)}
+                            className="w-full text-left bg-green-50 border-2 border-green-200 rounded-lg p-3 hover:bg-green-100 hover:border-green-300 transition-colors"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 bg-white rounded-lg shadow-sm text-green-600">
+                                {getOfferIcon(offer.offer_type)}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-900 text-sm">
+                                  {offer.name}
+                                </div>
+                                <div className="text-xs text-gray-700 mt-1">
+                                  {formatOfferSummary(offer, eligibility)}
+                                </div>
+                                {offer.promo_code && (
+                                  <div className="mt-2">
+                                    <span className="text-xs text-gray-600">
+                                      Code:{" "}
+                                    </span>
+                                    <span className="font-mono font-bold text-xs bg-white px-2 py-1 rounded border">
+                                      {offer.promo_code}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-green-600 mt-1" />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 2: Almost There (Amber) */}
+                {almostThereOffers.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 mb-3">
+                      <TrendingUp className="w-4 h-4" />
+                      Almost There
+                    </div>
+                    <div className="space-y-2">
+                      {almostThereOffers.map((offer) => {
+                        const eligibility = eligibilityCache[offer.id];
+                        return (
+                          <div
+                            key={offer.id}
+                            className="bg-amber-50 border border-amber-200 rounded-lg p-3"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 bg-white rounded-lg shadow-sm text-amber-600">
+                                {getOfferIcon(offer.offer_type)}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-900 text-sm">
+                                  {offer.name}
+                                </div>
+                                <div className="flex items-center gap-1 mt-1">
+                                  <TrendingUp className="w-3 h-3 text-amber-600" />
+                                  <div className="text-xs text-amber-700 font-medium">
+                                    {eligibility.reason}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 3: Not Eligible (Grey) */}
+                {notEligibleOffers.length > 0 && (
+                  <div>
+                    <div className="text-sm font-semibold text-gray-500 mb-3">
+                      Not Eligible
+                    </div>
+                    <div className="space-y-2">
+                      {notEligibleOffers.map((offer) => {
+                        const eligibility = eligibilityCache[offer.id];
+                        return (
+                          <div
+                            key={offer.id}
+                            className="bg-gray-50 border border-gray-200 rounded-lg p-3 opacity-60"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 bg-white rounded-lg shadow-sm text-gray-400">
+                                {getOfferIcon(offer.offer_type)}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-700 text-sm">
+                                  {offer.name}
+                                </div>
+                                <div className="flex items-center gap-1 mt-1">
+                                  <Info className="w-3 h-3 text-gray-500" />
+                                  <div className="text-xs text-gray-600">
+                                    {eligibility.reason}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {offers.length === 0 && (
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    No offers available at the moment
                   </div>
                 )}
               </div>
-            </div>
-            <button
-              onClick={() => handleOfferSelect(null)}
-              className="p-1 hover:bg-green-100 rounded-lg text-green-600"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Offer Selection Button */}
-          <button
-            onClick={() => setShowOfferList(!showOfferList)}
-            className="w-full bg-white border-2 border-dashed border-blue-300 rounded-lg p-4 hover:border-blue-500 hover:bg-blue-50 transition-colors"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
-                  <Gift className="w-5 h-5" />
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold text-gray-900">
-                    Apply Offer
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    {applicableOffers.length > 0
-                      ? `${applicableOffers.length} offer${applicableOffers.length !== 1 ? "s" : ""} available`
-                      : "View available offers"}
-                  </div>
-                </div>
-              </div>
-              <ChevronRight
-                className={`w-5 h-5 text-gray-400 transition-transform ${
-                  showOfferList ? "rotate-90" : ""
-                }`}
-              />
-            </div>
-          </button>
+            )}
+          </>
+        )}
+      </div>
 
-          {/* Offer List */}
-          {showOfferList && (
-            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-              {/* Applicable Offers */}
-              {applicableOffers.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold text-gray-900 mb-3">
-                    Available Now
-                  </div>
-                  <div className="space-y-2">
-                    {applicableOffers.map((offer) => {
-                      const validation = validationCache[offer.id];
-                      return (
-                        <button
-                          key={offer.id}
-                          onClick={() => handleOfferSelect(offer)}
-                          className="w-full text-left bg-blue-50 border border-blue-200 rounded-lg p-3 hover:bg-blue-100 transition-colors"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 bg-white rounded-lg shadow-sm text-blue-600">
-                              {getOfferIcon(offer.offer_type)}
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-semibold text-gray-900 text-sm">
-                                {offer.name}
-                              </div>
-                              <div className="text-xs text-gray-700 mt-1">
-                                {formatOfferSummary(offer, validation)}
-                              </div>
-                              {offer.promo_code && (
-                                <div className="mt-2">
-                                  <span className="text-xs text-gray-600">
-                                    Code:{" "}
-                                  </span>
-                                  <span className="font-mono font-bold text-xs bg-white px-2 py-1 rounded border">
-                                    {offer.promo_code}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Inapplicable Offers */}
-              {inapplicableOffers.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold text-gray-500 mb-3">
-                    Not Eligible
-                  </div>
-                  <div className="space-y-2">
-                    {inapplicableOffers.map((offer) => {
-                      const validation = validationCache[offer.id];
-                      return (
-                        <div
-                          key={offer.id}
-                          className="bg-gray-50 border border-gray-200 rounded-lg p-3 opacity-60"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 bg-white rounded-lg shadow-sm text-gray-400">
-                              {getOfferIcon(offer.offer_type)}
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-semibold text-gray-700 text-sm">
-                                {offer.name}
-                              </div>
-                              <div className="flex items-center gap-1 mt-1">
-                                <Info className="w-3 h-3 text-gray-500" />
-                                <div className="text-xs text-gray-600">
-                                  {validation.reason}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {offers.length === 0 && (
-                <div className="text-center py-4 text-gray-500 text-sm">
-                  No offers available at the moment
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
+      {/* Free Item Selection Modal */}
+      <FreeItemSelector
+        isOpen={showFreeItemModal}
+        onClose={() => {
+          setShowFreeItemModal(false);
+          setPendingOfferForFreeItem(null);
+          setAvailableFreeItems([]);
+        }}
+        availableItems={availableFreeItems}
+        maxPrice={maxFreeItemPrice}
+        offerName={pendingOfferForFreeItem?.name || ""}
+        onSelect={handleFreeItemSelect}
+      />
+    </>
   );
 }

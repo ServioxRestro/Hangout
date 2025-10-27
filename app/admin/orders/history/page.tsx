@@ -7,6 +7,7 @@ import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
 import Table from "@/components/admin/Table";
 import Button from "@/components/admin/Button";
+import { getCurrentAuthUser, type UserRole } from "@/lib/auth";
 import {
   Download,
   Search,
@@ -15,7 +16,7 @@ import {
   CheckCircle,
   AlertCircle,
   Bell,
-  DollarSign,
+  IndianRupee,
   User,
   Hash,
   X,
@@ -48,14 +49,23 @@ export default function OrderHistoryPage() {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState("today");
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     fetchOrders();
+    fetchUserRole();
   }, []);
 
   useEffect(() => {
     filterOrders();
   }, [orders, statusFilter, searchTerm, dateFilter]);
+
+  const fetchUserRole = async () => {
+    const user = await getCurrentAuthUser();
+    if (user) {
+      setUserRole(user.role);
+    }
+  };
 
   const fetchOrders = async () => {
     try {
@@ -135,6 +145,17 @@ export default function OrderHistoryPage() {
       filtered = filtered.filter(
         (order) => new Date(order.created_at || "") >= today
       );
+    } else if (dateFilter === "yesterday") {
+      const yesterday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 1
+      );
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      filtered = filtered.filter((order) => {
+        const orderDate = new Date(order.created_at || "");
+        return orderDate >= yesterday && orderDate < today;
+      });
     } else if (dateFilter === "week") {
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       filtered = filtered.filter(
@@ -151,23 +172,23 @@ export default function OrderHistoryPage() {
   };
 
   const getCreatorInfo = (order: any) => {
-    if (order.created_by_type === 'admin' && order.created_by_admin) {
+    if (order.created_by_type === "admin" && order.created_by_admin) {
       return {
-        type: 'Admin',
+        type: "Admin",
         name: order.created_by_admin.email,
-        icon: '👑'
+        icon: "👑",
       };
-    } else if (order.created_by_type === 'staff' && order.created_by_staff) {
+    } else if (order.created_by_type === "staff" && order.created_by_staff) {
       return {
-        type: 'Staff',
+        type: "Staff",
         name: order.created_by_staff.name || order.created_by_staff.email,
-        icon: '👤'
+        icon: "👤",
       };
     } else {
       return {
-        type: 'System',
-        name: 'Unknown',
-        icon: '🤖'
+        type: "System",
+        name: "Unknown",
+        icon: "🤖",
       };
     }
   };
@@ -235,7 +256,9 @@ export default function OrderHistoryPage() {
         [
           order.id,
           new Date(order.created_at || "").toLocaleDateString(),
-          order.restaurant_tables ? `Table ${order.restaurant_tables.table_number}` : "Takeaway",
+          order.restaurant_tables
+            ? `Table ${order.restaurant_tables.table_number}`
+            : "Takeaway",
           order.customer_phone || "",
           order.order_items.length + " items",
           `${formatCurrency(order.total_amount)}`,
@@ -286,10 +309,9 @@ export default function OrderHistoryPage() {
             </span>
           </div>
           <div className="text-xs text-gray-500">
-            {record.restaurant_tables ?
-              `Table ${record.restaurant_tables.table_number}` :
-              "Takeaway"
-            }
+            {record.restaurant_tables
+              ? `Table ${record.restaurant_tables.table_number}`
+              : "Takeaway"}
           </div>
         </div>
       ),
@@ -336,7 +358,7 @@ export default function OrderHistoryPage() {
       title: "Total",
       render: (amount: number) => (
         <div className="flex items-center font-semibold text-green-600">
-          <DollarSign className="w-4 h-4 mr-1" />
+          <IndianRupee className="w-4 h-4 mr-1" />
           {formatCurrency(amount)}
         </div>
       ),
@@ -356,7 +378,9 @@ export default function OrderHistoryPage() {
             <span className="mr-2">{creator.icon}</span>
             <div>
               <div className="text-xs text-gray-500">{creator.type}</div>
-              <div className="font-medium text-gray-900 text-sm">{creator.name}</div>
+              <div className="font-medium text-gray-900 text-sm">
+                {creator.name}
+              </div>
             </div>
           </div>
         );
@@ -455,10 +479,15 @@ export default function OrderHistoryPage() {
                 onChange={(e) => setDateFilter(e.target.value)}
                 className="block w-full rounded-lg border-gray-300 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="all">All Time</option>
                 <option value="today">Today</option>
-                <option value="week">Last 7 Days</option>
-                <option value="month">Last 30 Days</option>
+                <option value="yesterday">Yesterday</option>
+                {userRole !== "manager" && (
+                  <>
+                    <option value="week">Last 7 Days</option>
+                    <option value="month">Last 30 Days</option>
+                    <option value="all">All Time</option>
+                  </>
+                )}
               </select>
             </div>
 

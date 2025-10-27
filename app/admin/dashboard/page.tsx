@@ -7,7 +7,7 @@ import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import {
   ShoppingBag,
-  DollarSign,
+  IndianRupee,
   Timer,
   Table2,
   Menu as MenuIcon,
@@ -78,8 +78,7 @@ export default function AdminDashboard() {
         existing.orders.push(order as Order);
         existing.totalAmount += order.total_amount || 0;
         if (
-          new Date(order.created_at || "") <
-          new Date(existing.oldestOrderTime)
+          new Date(order.created_at || "") < new Date(existing.oldestOrderTime)
         ) {
           existing.oldestOrderTime = order.created_at || "";
         }
@@ -103,7 +102,6 @@ export default function AdminDashboard() {
   const handleRefresh = () => {
     refetch();
   };
-
 
   const getOrderPriority = (createdAt: string) => {
     const now = new Date().getTime();
@@ -260,7 +258,7 @@ export default function AdminDashboard() {
             title="Today's Revenue"
             value={formatCurrencyCompact(stats.todayRevenue)}
             change={{ value: "Today", trend: "up" }}
-            icon={<DollarSign className="w-6 h-6" />}
+            icon={<IndianRupee className="w-6 h-6" />}
             color="green"
           />
         </div>

@@ -12,7 +12,7 @@ import {
   ShoppingCart,
   ChefHat,
   Receipt,
-  DollarSign,
+  IndianRupee,
   Info,
   Volume2,
   VolumeX,
@@ -45,7 +45,7 @@ export default function NotificationPanel() {
       case "billing":
         return <Receipt className="w-5 h-5" />;
       case "payment":
-        return <DollarSign className="w-5 h-5" />;
+        return <IndianRupee className="w-5 h-5" />;
       default:
         return <Info className="w-5 h-5" />;
     }
@@ -116,7 +116,9 @@ export default function NotificationPanel() {
                   <button
                     onClick={toggleSound}
                     className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                    title={playSound ? "Mute notifications" : "Unmute notifications"}
+                    title={
+                      playSound ? "Mute notifications" : "Unmute notifications"
+                    }
                   >
                     {playSound ? (
                       <Volume2 className="w-4 h-4 text-gray-600" />
@@ -237,7 +239,9 @@ export default function NotificationPanel() {
                                 </button>
                               )}
                               <button
-                                onClick={() => clearNotification(notification.id)}
+                                onClick={() =>
+                                  clearNotification(notification.id)
+                                }
                                 className="p-1 rounded hover:bg-gray-200 transition-colors"
                                 title="Dismiss"
                               >

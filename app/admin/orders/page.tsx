@@ -175,84 +175,97 @@ export default function OrdersOverviewPage() {
               No active KOTs in kitchen
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      KOT #
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Type
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Table
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Items
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Age
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {kots.map((kot) => (
-                    <tr
-                      key={kot.kotNumber}
-                      className={kot.age > 15 ? "bg-red-50" : ""}
-                    >
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="font-bold text-blue-600">
-                          #{kot.kotNumber}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {kot.orderType === "dine-in" ? (
-                          <span className="text-sm text-gray-700">Dine-In</span>
-                        ) : (
-                          <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
-                            Takeaway
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                        {kot.tableNumber || "-"}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                        {kot.itemCount} {kot.itemCount === 1 ? "item" : "items"}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(
-                            kot.status
-                          )}`}
-                        >
-                          {kot.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-gray-400" />
-                          <span
-                            className={
-                              kot.age > 15
-                                ? "text-red-600 font-medium"
-                                : "text-gray-600"
-                            }
+            <>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle">
+                  <div className="overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                            KOT #
+                          </th>
+                          <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                            Type
+                          </th>
+                          <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                            Table
+                          </th>
+                          <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                            Items
+                          </th>
+                          <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                            Status
+                          </th>
+                          <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                            Age
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {kots.map((kot) => (
+                          <tr
+                            key={kot.kotNumber}
+                            className={kot.age > 15 ? "bg-red-50" : ""}
                           >
-                            {kot.age} min
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                            <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+                              <span className="font-bold text-blue-600 text-sm">
+                                #{kot.kotNumber}
+                              </span>
+                            </td>
+                            <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+                              {kot.orderType === "dine-in" ? (
+                                <span className="text-xs sm:text-sm text-gray-700">
+                                  Dine-In
+                                </span>
+                              ) : (
+                                <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
+                                  Takeaway
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-xs sm:text-sm text-gray-700">
+                              {kot.tableNumber || "-"}
+                            </td>
+                            <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-xs sm:text-sm text-gray-700">
+                              {kot.itemCount}{" "}
+                              {kot.itemCount === 1 ? "item" : "items"}
+                            </td>
+                            <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(
+                                  kot.status
+                                )}`}
+                              >
+                                {kot.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-xs sm:text-sm">
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                <span
+                                  className={
+                                    kot.age > 15
+                                      ? "text-red-600 font-medium"
+                                      : "text-gray-600"
+                                  }
+                                >
+                                  {kot.age} min
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              {/* Scroll indicator for mobile */}
+              <div className="sm:hidden px-4 py-2 text-xs text-gray-500 text-center border-t border-gray-200 bg-gray-50 -mx-4">
+                ← Swipe to view all columns →
+              </div>
+            </>
           )}
         </div>
       </Card>

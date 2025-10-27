@@ -3,7 +3,11 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import { getCurrentUser, sendPhoneOTP, verifyPhoneOTP } from "@/lib/auth/msg91-widget";
+import {
+  getCurrentUser,
+  sendPhoneOTP,
+  verifyPhoneOTP,
+} from "@/lib/auth/msg91-widget";
 import { getGuestUserByPhone, updateLastVisitedTable } from "@/lib/guest-user";
 import type { Tables } from "@/types/database.types";
 import { GuestLayout } from "@/components/guest/GuestLayout";
@@ -22,7 +26,8 @@ import {
   Plus,
   Minus,
   Trash2,
-  ShoppingCart
+  ShoppingCart,
+  Gift,
 } from "lucide-react";
 
 type RestaurantTable = Tables<"restaurant_tables">;
@@ -33,6 +38,9 @@ interface CartItem {
   price: number;
   quantity: number;
   is_veg: boolean;
+  category_id?: string;
+  isFree?: boolean;
+  linkedOfferId?: string;
 }
 
 export default function CartPage() {
@@ -47,7 +55,9 @@ export default function CartPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Checkout State
-  const [step, setStep] = useState<"cart" | "phone" | "otp" | "confirming" | "placing" | "success">("cart");
+  const [step, setStep] = useState<
+    "cart" | "phone" | "otp" | "confirming" | "placing" | "success"
+  >("cart");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSending, setOtpSending] = useState(false);
@@ -61,7 +71,9 @@ export default function CartPage() {
   const [occupiedByDifferentUser, setOccupiedByDifferentUser] = useState(false);
 
   // Offer state
-  const [selectedOffer, setSelectedOffer] = useState<Tables<"offers"> | null>(null);
+  const [selectedOffer, setSelectedOffer] = useState<Tables<"offers"> | null>(
+    null
+  );
 
   useEffect(() => {
     if (tableCode) {
@@ -113,7 +125,9 @@ export default function CartPage() {
       if (!sessionError && activeSession) {
         const currentUserPhone = (await getCurrentUser())?.phone;
         if (currentUserPhone) {
-          setOccupiedByDifferentUser(activeSession.customer_phone !== currentUserPhone);
+          setOccupiedByDifferentUser(
+            activeSession.customer_phone !== currentUserPhone
+          );
         } else {
           setOccupiedByDifferentUser(true);
         }
@@ -146,23 +160,75 @@ export default function CartPage() {
       return;
     }
 
-    const newCart = cart.map(item =>
+    const newCart = cart.map((item) =>
       item.id === itemId ? { ...item, quantity: newQuantity } : item
     );
     updateCart(newCart);
   };
 
   const removeItem = (itemId: string) => {
-    const newCart = cart.filter(item => item.id !== itemId);
+    // Check if this item is linked to an offer
+    const itemToRemove = cart.find((item) => item.id === itemId);
+
+    // If removing a free item or an item linked to an offer with free items, deselect the offer
+    if (
+      itemToRemove?.isFree ||
+      (selectedOffer &&
+        cart.some((item) => item.linkedOfferId === selectedOffer.id))
+    ) {
+      setSelectedOffer(null);
+      // Remove all items linked to this offer
+      const newCart = cart.filter(
+        (item) => !item.linkedOfferId && item.id !== itemId
+      );
+      updateCart(newCart);
+    } else {
+      const newCart = cart.filter((item) => item.id !== itemId);
+      updateCart(newCart);
+    }
+  };
+
+  const handleFreeItemsAdd = async (
+    freeItems: Array<{
+      id: string;
+      name: string;
+      price: number;
+      quantity: number;
+      category_id?: string;
+      isFree?: boolean;
+      linkedOfferId?: string;
+    }>
+  ) => {
+    // Fetch is_veg status for free items from database
+    const itemIds = freeItems.map((item) => item.id);
+    const { data: menuItems } = await supabase
+      .from("menu_items")
+      .select("id, is_veg")
+      .in("id", itemIds);
+
+    // Add free items to cart with is_veg property
+    const freeItemsWithVeg: CartItem[] = freeItems.map((item) => {
+      const menuItem = menuItems?.find((mi) => mi.id === item.id);
+      return {
+        ...item,
+        is_veg: menuItem?.is_veg ?? true, // Default to true if not found
+      };
+    });
+
+    const newCart = [...cart, ...freeItemsWithVeg];
     updateCart(newCart);
   };
 
   const clearCart = () => {
     updateCart([]);
+    setSelectedOffer(null);
   };
 
   const getTotalAmount = () => {
-    return cart.reduce((total, item) => total + item.price * item.quantity, 0);
+    // Only count non-free items
+    return cart
+      .filter((item) => !item.isFree)
+      .reduce((total, item) => total + item.price * item.quantity, 0);
   };
 
   const getTotalItems = () => {
@@ -188,7 +254,11 @@ export default function CartPage() {
       if (cartTotal >= (conditions?.threshold_amount || 0)) {
         discount = benefits.discount_amount || 0;
       }
-    } else if (selectedOffer.offer_type === "promo_code" || selectedOffer.offer_type === "time_based" || selectedOffer.offer_type === "customer_based") {
+    } else if (
+      selectedOffer.offer_type === "promo_code" ||
+      selectedOffer.offer_type === "time_based" ||
+      selectedOffer.offer_type === "customer_based"
+    ) {
       if (benefits.discount_percentage) {
         discount = (cartTotal * benefits.discount_percentage) / 100;
         if (benefits.max_discount_amount) {
@@ -208,7 +278,7 @@ export default function CartPage() {
 
   const handleSendOTP = async () => {
     // Validate phone number (must be 10 digits)
-    const cleaned = phone.replace(/\D/g, '');
+    const cleaned = phone.replace(/\D/g, "");
     if (!cleaned || cleaned.length !== 10) {
       setError("Please enter a valid 10-digit phone number");
       return;
@@ -313,29 +383,31 @@ export default function CartPage() {
           offerType: selectedOffer.offer_type,
           cartTotal,
           discountAmount,
-          benefits
+          benefits,
         });
       }
 
       // Prepare cart items for the database function
-      const cartItems = cart.map(item => ({
+      const cartItems = cart.map((item) => ({
         id: item.id,
         quantity: item.quantity,
-        price: item.price
+        price: item.price,
       }));
 
       // Call optimized database function (reduces 11 queries to 1!)
-      const { data, error: rpcError } = await supabase
-        .rpc('place_order_optimized', {
+      const { data, error: rpcError } = await supabase.rpc(
+        "place_order_optimized",
+        {
           p_table_code: tableCode,
           p_customer_phone: phone,
           p_cart_items: cartItems,
           p_cart_total: getTotalAmount(),
           p_guest_user_id: guestUserId || undefined,
-          p_order_type: 'dine-in',
+          p_order_type: "dine-in",
           p_offer_id: selectedOffer?.id || undefined,
-          p_offer_discount: discountAmount
-        });
+          p_offer_discount: discountAmount,
+        }
+      );
 
       if (rpcError) {
         throw new Error(rpcError.message || "Failed to place order");
@@ -356,7 +428,6 @@ export default function CartPage() {
       // Clear cart
       updateCart([]);
       setStep("success");
-
     } catch (error: any) {
       console.error("Order placement error:", error);
       setError(error.message || "Failed to place order. Please try again.");
@@ -425,14 +496,17 @@ export default function CartPage() {
           )}
           <div className="flex-1">
             <h1 className="text-lg font-bold text-gray-900">
-              {step === "success" ? "Order Placed!" :
-               step === "placing" ? "Placing Order..." :
-               step === "phone" ? "Enter Phone Number" :
-               step === "otp" ? "Verify OTP" : "Your Cart"}
+              {step === "success"
+                ? "Order Placed!"
+                : step === "placing"
+                ? "Placing Order..."
+                : step === "phone"
+                ? "Enter Phone Number"
+                : step === "otp"
+                ? "Verify OTP"
+                : "Your Cart"}
             </h1>
-            <p className="text-sm text-gray-600">
-              Table {table?.table_number}
-            </p>
+            <p className="text-sm text-gray-600">Table {table?.table_number}</p>
           </div>
           {step === "cart" && cart.length > 0 && (
             <button
@@ -454,8 +528,12 @@ export default function CartPage() {
                 <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <ShoppingCart className="w-10 h-10 text-gray-400" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Your cart is empty</h3>
-                <p className="text-gray-500 mb-6">Add items from the menu to get started</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Your cart is empty
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  Add items from the menu to get started
+                </p>
                 <Button
                   variant="primary"
                   onClick={() => router.push(`/t/${tableCode}`)}
@@ -477,39 +555,79 @@ export default function CartPage() {
                 {/* Cart Items */}
                 <div className="space-y-4">
                   {cart.map((item) => (
-                    <div key={item.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div
+                      key={`${item.id}-${item.linkedOfferId || "regular"}`}
+                      className={`rounded-lg border p-4 ${
+                        item.isFree
+                          ? "bg-green-50 border-green-200"
+                          : "bg-white border-gray-200"
+                      }`}
+                    >
                       <div className="flex items-center gap-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900">{item.name}</h3>
-                            {item.is_veg && <span className="text-green-600 text-sm">🟢</span>}
+                            <h3 className="font-semibold text-gray-900">
+                              {item.name}
+                            </h3>
+                            {item.is_veg && (
+                              <span className="text-green-600 text-sm">🟢</span>
+                            )}
+                            {item.isFree && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-600 text-white">
+                                <Gift className="w-3 h-3" />
+                                FREE
+                              </span>
+                            )}
                           </div>
                           <div className="text-gray-600 text-sm">
-                            {formatCurrency(item.price)} each
+                            {item.isFree ? (
+                              <span className="line-through">
+                                {formatCurrency(item.price)}
+                              </span>
+                            ) : (
+                              `${formatCurrency(item.price)} each`
+                            )}
                           </div>
-                          <div className="font-bold text-gray-900 mt-1">
-                            {formatCurrency(item.price * item.quantity)}
+                          <div
+                            className={`font-bold mt-1 ${
+                              item.isFree ? "text-green-600" : "text-gray-900"
+                            }`}
+                          >
+                            {item.isFree
+                              ? "FREE"
+                              : formatCurrency(item.price * item.quantity)}
                           </div>
                         </div>
 
                         {/* Quantity Controls */}
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <span className="font-semibold text-lg min-w-[2rem] text-center">
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {!item.isFree && (
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() =>
+                                updateQuantity(item.id, item.quantity - 1)
+                              }
+                              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <span className="font-semibold text-lg min-w-[2rem] text-center">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() =>
+                                updateQuantity(item.id, item.quantity + 1)
+                              }
+                              className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                        {item.isFree && (
+                          <div className="text-xs text-green-700 font-medium">
+                            Linked to offer
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -521,13 +639,17 @@ export default function CartPage() {
                   cartTotal={getTotalAmount()}
                   customerPhone={currentUser?.phone}
                   tableId={table?.id}
+                  orderType="dine-in"
                   onOfferSelect={setSelectedOffer}
                   selectedOffer={selectedOffer}
+                  onFreeItemAdd={handleFreeItemsAdd}
                 />
 
                 {/* Order Summary */}
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3">Order Summary</h3>
+                  <h3 className="font-semibold text-gray-900 mb-3">
+                    Order Summary
+                  </h3>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Items ({getTotalItems()})</span>
@@ -557,7 +679,9 @@ export default function CartPage() {
                       <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
                       <div className="ml-3">
                         <p className="text-sm text-yellow-800">
-                          <span className="font-medium">Table Occupied:</span> This table is currently being used by another customer. Please wait until their order is completed.
+                          <span className="font-medium">Table Occupied:</span>{" "}
+                          This table is currently being used by another
+                          customer. Please wait until their order is completed.
                         </p>
                       </div>
                     </div>
@@ -569,7 +693,9 @@ export default function CartPage() {
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center gap-2 text-green-800">
                       <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Signed in as +91 {currentUser.phone}</span>
+                      <span className="font-medium">
+                        Signed in as +91 {currentUser.phone}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -582,9 +708,11 @@ export default function CartPage() {
                   disabled={orderPlacing || occupiedByDifferentUser}
                   className="w-full"
                 >
-                  {occupiedByDifferentUser ? "Table Occupied" :
-                   orderPlacing ? "Placing Order..." :
-                   `Place Order • ${formatCurrency(getFinalAmount())}`}
+                  {occupiedByDifferentUser
+                    ? "Table Occupied"
+                    : orderPlacing
+                    ? "Placing Order..."
+                    : `Place Order • ${formatCurrency(getFinalAmount())}`}
                 </Button>
               </div>
             )}
@@ -613,7 +741,9 @@ export default function CartPage() {
                   type="tel"
                   placeholder="Enter 10-digit mobile number"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  onChange={(e) =>
+                    setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                  }
                   className="w-full pl-14"
                   maxLength={10}
                 />
@@ -699,9 +829,7 @@ export default function CartPage() {
             <div className="mt-4 text-lg font-medium text-gray-900">
               Placing your order...
             </div>
-            <div className="text-gray-600">
-              Please don't close this page
-            </div>
+            <div className="text-gray-600">Please don't close this page</div>
           </div>
         )}
 
@@ -714,13 +842,14 @@ export default function CartPage() {
 
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                {isAddingToExisting ? "Items Added Successfully!" : "Order Placed Successfully!"}
+                {isAddingToExisting
+                  ? "Items Added Successfully!"
+                  : "Order Placed Successfully!"}
               </h2>
               <p className="text-gray-600">
                 {isAddingToExisting
                   ? "New items have been added to your order and sent to the kitchen"
-                  : "Your order has been sent to the kitchen"
-                }
+                  : "Your order has been sent to the kitchen"}
               </p>
             </div>
 

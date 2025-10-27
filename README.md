@@ -9,7 +9,7 @@ A modern QR-based ordering system for restaurants built with Next.js 14, Supabas
 - **QR Code Scanning**: Each table has a unique QR code that opens `/t/[tableCode]`
 - **Mobile-Optimized Menu**: Browse categories and menu items
 - **Shopping Cart**: Add items with quantities and special instructions
-- **WhatsApp OTP Authentication**: Secure login using phone number + WhatsApp OTP
+- **OTP Authentication**: Secure login using phone number OTP
 - **Order Tracking**: Real-time order status updates
 
 ### Admin Side (Restaurant Management)

@@ -34,11 +34,16 @@ interface TaxSetting {
 }
 
 export default function SettingsPage() {
-  const [restaurantSettings, setRestaurantSettings] = useState<Record<string, string>>({});
+  const [restaurantSettings, setRestaurantSettings] = useState<
+    Record<string, string>
+  >({});
   const [taxSettings, setTaxSettings] = useState<TaxSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
@@ -58,7 +63,7 @@ export default function SettingsPage() {
       }
 
       const { user } = await response.json();
-      if (user.role === 'waiter') {
+      if (user.role === "waiter") {
         // Waiters don't have access to settings
         window.location.href = "/admin/orders";
         return;
@@ -95,24 +100,22 @@ export default function SettingsPage() {
 
       if (taxError) throw taxError;
 
-      setTaxSettings(taxData as any || []);
+      setTaxSettings((taxData as any) || []);
     } catch (error) {
       console.error("Error fetching settings:", error);
-      setMessage({ type: 'error', text: 'Failed to load settings' });
+      setMessage({ type: "error", text: "Failed to load settings" });
     } finally {
       setLoading(false);
     }
   };
 
   const updateRestaurantSetting = (key: string, value: string) => {
-    setRestaurantSettings(prev => ({ ...prev, [key]: value }));
+    setRestaurantSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const updateTaxSetting = (id: string, field: string, value: any) => {
-    setTaxSettings(prev =>
-      prev.map(tax =>
-        tax.id === id ? { ...tax, [field]: value } : tax
-      )
+    setTaxSettings((prev) =>
+      prev.map((tax) => (tax.id === id ? { ...tax, [field]: value } : tax))
     );
   };
 
@@ -123,15 +126,16 @@ export default function SettingsPage() {
     try {
       // Save restaurant settings
       for (const [key, value] of Object.entries(restaurantSettings)) {
-        const { error } = await supabase
-          .from("restaurant_settings")
-          .upsert({
+        const { error } = await supabase.from("restaurant_settings").upsert(
+          {
             setting_key: key,
             setting_value: value,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'setting_key'
-          });
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "setting_key",
+          }
+        );
 
         if (error) throw error;
       }
@@ -145,17 +149,17 @@ export default function SettingsPage() {
             rate: taxSetting.rate,
             is_active: taxSetting.is_active,
             applies_to: taxSetting.applies_to,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq("id", taxSetting.id);
 
         if (error) throw error;
       }
 
-      setMessage({ type: 'success', text: 'Settings saved successfully!' });
+      setMessage({ type: "success", text: "Settings saved successfully!" });
     } catch (error) {
       console.error("Error saving settings:", error);
-      setMessage({ type: 'error', text: 'Failed to save settings' });
+      setMessage({ type: "error", text: "Failed to save settings" });
     } finally {
       setSaving(false);
     }
@@ -177,7 +181,9 @@ export default function SettingsPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Restaurant Settings</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Restaurant Settings
+          </h1>
           <p className="text-gray-600 mt-1">
             Configure restaurant information and billing settings
           </p>
@@ -193,13 +199,15 @@ export default function SettingsPage() {
       </div>
 
       {message && (
-        <div className={`mb-6 p-4 rounded-lg border ${
-          message.type === 'success'
-            ? 'bg-green-50 border-green-200 text-green-800'
-            : 'bg-red-50 border-red-200 text-red-800'
-        }`}>
+        <div
+          className={`mb-6 p-4 rounded-lg border ${
+            message.type === "success"
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
           <div className="flex items-center gap-2">
-            {message.type === 'success' ? (
+            {message.type === "success" ? (
               <CheckCircle className="w-5 h-5" />
             ) : (
               <AlertCircle className="w-5 h-5" />
@@ -215,15 +223,19 @@ export default function SettingsPage() {
           <div className="p-6">
             <div className="flex items-center gap-2 mb-6">
               <Building2 className="w-5 h-5 text-blue-600" />
-              <h2 className="text-xl font-semibold text-gray-900">Restaurant Information</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Restaurant Information
+              </h2>
             </div>
 
             <div className="space-y-4">
               <FormField label="Restaurant Name" required>
                 <Input
                   type="text"
-                  value={restaurantSettings.restaurant_name || ''}
-                  onChange={(e) => updateRestaurantSetting('restaurant_name', e.target.value)}
+                  value={restaurantSettings.restaurant_name || ""}
+                  onChange={(e) =>
+                    updateRestaurantSetting("restaurant_name", e.target.value)
+                  }
                   placeholder="Enter restaurant name"
                   leftIcon={<Building2 className="w-4 h-4" />}
                 />
@@ -232,8 +244,13 @@ export default function SettingsPage() {
               <FormField label="Address">
                 <Input
                   type="text"
-                  value={restaurantSettings.restaurant_address || ''}
-                  onChange={(e) => updateRestaurantSetting('restaurant_address', e.target.value)}
+                  value={restaurantSettings.restaurant_address || ""}
+                  onChange={(e) =>
+                    updateRestaurantSetting(
+                      "restaurant_address",
+                      e.target.value
+                    )
+                  }
                   placeholder="Enter restaurant address"
                 />
               </FormField>
@@ -241,18 +258,25 @@ export default function SettingsPage() {
               <FormField label="Phone Number">
                 <Input
                   type="tel"
-                  value={restaurantSettings.restaurant_phone || ''}
-                  onChange={(e) => updateRestaurantSetting('restaurant_phone', e.target.value)}
+                  value={restaurantSettings.restaurant_phone || ""}
+                  onChange={(e) =>
+                    updateRestaurantSetting("restaurant_phone", e.target.value)
+                  }
                   placeholder="Enter phone number"
                   leftIcon={<Phone className="w-4 h-4" />}
                 />
               </FormField>
 
-              <FormField label="GST Number" description="Optional - Leave empty if not applicable">
+              <FormField
+                label="GST Number"
+                description="Optional - Leave empty if not applicable"
+              >
                 <Input
                   type="text"
-                  value={restaurantSettings.gst_number || ''}
-                  onChange={(e) => updateRestaurantSetting('gst_number', e.target.value)}
+                  value={restaurantSettings.gst_number || ""}
+                  onChange={(e) =>
+                    updateRestaurantSetting("gst_number", e.target.value)
+                  }
                   placeholder="Enter GST number (e.g., 07AABCU9603R1ZX)"
                   leftIcon={<FileText className="w-4 h-4" />}
                 />
@@ -266,18 +290,62 @@ export default function SettingsPage() {
           <div className="p-6">
             <div className="flex items-center gap-2 mb-6">
               <Percent className="w-5 h-5 text-green-600" />
-              <h2 className="text-xl font-semibold text-gray-900">Tax Configuration</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Tax Configuration
+              </h2>
+            </div>
+
+            {/* Tax Inclusive/Exclusive Toggle */}
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-gray-900 mb-1">
+                    Tax Calculation Mode
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {restaurantSettings.tax_inclusive === "true"
+                      ? "Menu prices include taxes (tax-inclusive)"
+                      : "Taxes added during billing (tax-exclusive)"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={restaurantSettings.tax_inclusive === "true"}
+                      onChange={(e) =>
+                        updateRestaurantSetting(
+                          "tax_inclusive",
+                          e.target.checked ? "true" : "false"
+                        )
+                      }
+                    />
+                    <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ms-3 text-sm font-medium text-gray-900">
+                      {restaurantSettings.tax_inclusive === "true"
+                        ? "Inclusive"
+                        : "Exclusive"}
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
               {taxSettings.map((tax) => (
-                <div key={tax.id} className="p-4 border border-gray-200 rounded-lg">
+                <div
+                  key={tax.id}
+                  className="p-4 border border-gray-200 rounded-lg"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Input
                         type="text"
                         value={tax.name}
-                        onChange={(e) => updateTaxSetting(tax.id, 'name', e.target.value)}
+                        onChange={(e) =>
+                          updateTaxSetting(tax.id, "name", e.target.value)
+                        }
                         className="font-medium"
                         placeholder="Tax name"
                       />
@@ -285,7 +353,13 @@ export default function SettingsPage() {
                         <input
                           type="checkbox"
                           checked={tax.is_active}
-                          onChange={(e) => updateTaxSetting(tax.id, 'is_active', e.target.checked)}
+                          onChange={(e) =>
+                            updateTaxSetting(
+                              tax.id,
+                              "is_active",
+                              e.target.checked
+                            )
+                          }
                           className="rounded border-gray-300"
                         />
                         <span className="text-sm text-gray-600">Active</span>
@@ -301,7 +375,13 @@ export default function SettingsPage() {
                         min="0"
                         max="100"
                         value={tax.rate}
-                        onChange={(e) => updateTaxSetting(tax.id, 'rate', parseFloat(e.target.value) || 0)}
+                        onChange={(e) =>
+                          updateTaxSetting(
+                            tax.id,
+                            "rate",
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
                         placeholder="0.00"
                       />
                     </FormField>
@@ -309,7 +389,9 @@ export default function SettingsPage() {
                     <FormField label="Applies To">
                       <select
                         value={tax.applies_to}
-                        onChange={(e) => updateTaxSetting(tax.id, 'applies_to', e.target.value)}
+                        onChange={(e) =>
+                          updateTaxSetting(tax.id, "applies_to", e.target.value)
+                        }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         <option value="all">All Items</option>
@@ -324,7 +406,8 @@ export default function SettingsPage() {
 
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
-                <strong>Note:</strong> Changes to tax settings will apply to all new bills generated after saving.
+                <strong>Note:</strong> Changes to tax settings will apply to all
+                new bills generated after saving.
               </p>
             </div>
           </div>
@@ -332,42 +415,6 @@ export default function SettingsPage() {
       </div>
 
       {/* Preview Section */}
-      <Card className="mt-8">
-        <div className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Bill Preview</h3>
-          <div className="bg-gray-50 p-4 rounded-lg font-mono text-sm">
-            <div className="text-center mb-4">
-              <div className="font-bold">{restaurantSettings.restaurant_name || 'Restaurant Name'}</div>
-              {restaurantSettings.restaurant_address && (
-                <div>{restaurantSettings.restaurant_address}</div>
-              )}
-              {restaurantSettings.restaurant_phone && (
-                <div>Phone: {restaurantSettings.restaurant_phone}</div>
-              )}
-              {restaurantSettings.gst_number && (
-                <div>GST: {restaurantSettings.gst_number}</div>
-              )}
-            </div>
-            <div className="border-t border-gray-300 my-2"></div>
-            <div>Bill No: BILL-2024-001</div>
-            <div>Date: {new Date().toLocaleDateString()}</div>
-            <div>Table: 5</div>
-            <div className="border-t border-gray-300 my-2"></div>
-            <div>Sample Item         1  ₹100.00  ₹100.00</div>
-            <div className="border-t border-gray-300 my-2"></div>
-            <div>Subtotal:                      ₹100.00</div>
-            {taxSettings.filter(t => t.is_active).map(tax => (
-              <div key={tax.id}>
-                {tax.name} @ {tax.rate}%: {' '.repeat(Math.max(0, 20 - tax.name.length))} ₹{(100 * tax.rate / 100).toFixed(2)}
-              </div>
-            ))}
-            <div className="border-t border-gray-300 my-2"></div>
-            <div className="font-bold">
-              TOTAL: {' '.repeat(20)} ₹{(100 + taxSettings.filter(t => t.is_active).reduce((sum, t) => sum + (100 * t.rate / 100), 0)).toFixed(2)}
-            </div>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 }

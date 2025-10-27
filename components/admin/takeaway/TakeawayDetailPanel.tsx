@@ -11,7 +11,7 @@ import {
   User,
   Phone,
   Clock,
-  DollarSign,
+  IndianRupee,
   Package,
   CheckCircle,
   AlertCircle,
@@ -42,7 +42,9 @@ export function TakeawayDetailPanel({
   const [showBillingModal, setShowBillingModal] = useState(false);
 
   // Check if all orders are served (ready for billing)
-  const allOrdersServed = customer.orders.every(order => order.status === 'served');
+  const allOrdersServed = customer.orders.every(
+    (order) => order.status === "served"
+  );
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     setProcessingOrderId(orderId);
@@ -135,7 +137,7 @@ export function TakeawayDetailPanel({
             </div>
           </div>
           <div className="bg-green-50 rounded-lg p-3 text-center">
-            <DollarSign className="w-4 h-4 text-green-600 mx-auto mb-1" />
+            <IndianRupee className="w-4 h-4 text-green-600 mx-auto mb-1" />
             <div className="text-xs text-green-600 font-medium">Total</div>
             <div className="text-lg font-bold text-green-900">
               {formatCurrency(customer.totalAmount)}
@@ -145,7 +147,9 @@ export function TakeawayDetailPanel({
             <Clock className="w-4 h-4 text-blue-600 mx-auto mb-1" />
             <div className="text-xs text-blue-600 font-medium">Time</div>
             <div className="text-xs font-bold text-blue-900">
-              {customer.earliestOrderTime ? formatDuration(customer.earliestOrderTime) : "N/A"}
+              {customer.earliestOrderTime
+                ? formatDuration(customer.earliestOrderTime)
+                : "N/A"}
             </div>
           </div>
         </div>
@@ -190,7 +194,9 @@ export function TakeawayDetailPanel({
               {/* Order Items - Grouped by Veg/Non-Veg */}
               <div className="space-y-2 mb-3">
                 {/* Veg Items */}
-                {order.order_items.some((item: any) => item.menu_items?.is_veg) && (
+                {order.order_items.some(
+                  (item: any) => item.menu_items?.is_veg
+                ) && (
                   <div className="bg-green-50 border border-green-200 rounded p-2">
                     <div className="text-xs font-bold text-green-800 mb-1 uppercase">
                       🟢 Veg Items
@@ -221,7 +227,9 @@ export function TakeawayDetailPanel({
                 )}
 
                 {/* Non-Veg Items */}
-                {order.order_items.some((item: any) => !item.menu_items?.is_veg) && (
+                {order.order_items.some(
+                  (item: any) => !item.menu_items?.is_veg
+                ) && (
                   <div className="bg-red-50 border border-red-200 rounded p-2">
                     <div className="text-xs font-bold text-red-800 mb-1 uppercase">
                       🔴 Non-Veg Items
@@ -286,7 +294,7 @@ export function TakeawayDetailPanel({
                 )}
                 {order.status === "served" && (
                   <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 px-3 py-1.5 rounded border border-purple-200">
-                    <DollarSign className="w-4 h-4" />
+                    <IndianRupee className="w-4 h-4" />
                     <span>Ready for billing</span>
                   </div>
                 )}

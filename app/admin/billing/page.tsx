@@ -150,6 +150,39 @@ export default function BillingPage() {
         });
       }
 
+      // Reconstruct items_with_taxes for receipt printing
+      // Since old bills don't have per-item tax breakdown, we calculate it
+      const totalTaxRate = (bill.cgst_rate || 0) + (bill.sgst_rate || 0);
+      const items_with_taxes = billItems.map(item => {
+        // Reverse calculate base price from total (assuming tax-inclusive)
+        const base_price = item.total_price / (1 + totalTaxRate / 100);
+        const item_taxes = [];
+
+        if (bill.cgst_rate > 0) {
+          item_taxes.push({
+            name: "CGST",
+            rate: bill.cgst_rate,
+            amount: (base_price * bill.cgst_rate) / 100,
+          });
+        }
+        if (bill.sgst_rate > 0) {
+          item_taxes.push({
+            name: "SGST",
+            rate: bill.sgst_rate,
+            amount: (base_price * bill.sgst_rate) / 100,
+          });
+        }
+
+        return {
+          ...item,
+          base_price: Math.round(base_price * 100) / 100,
+          item_taxes: item_taxes.map(t => ({
+            ...t,
+            amount: Math.round(t.amount * 100) / 100,
+          })),
+        };
+      });
+
       // Generate HTML receipt
       const htmlReceipt = generateHTMLReceipt({
         settings: {
@@ -161,13 +194,13 @@ export default function BillingPage() {
         billNumber: bill.bill_number,
         tableNumber: bill.table_sessions?.restaurant_tables?.table_number?.toString() || null,
         orderType: bill.table_session_id ? "dine-in" : "takeaway",
-        items: billItems,
         calculation: {
+          items_with_taxes,
           subtotal: bill.subtotal,
+          taxable_subtotal: bill.subtotal,
+          total_gst: bill.total_tax_amount,
+          subtotal_with_tax: bill.subtotal + bill.total_tax_amount,
           discount_amount: bill.discount_amount,
-          taxable_amount: bill.subtotal - bill.discount_amount,
-          taxes,
-          tax_amount: bill.total_tax_amount,
           final_amount: bill.final_amount,
         },
         paymentMethod: bill.payment_method || "Cash",

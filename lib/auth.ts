@@ -80,6 +80,25 @@ export async function createAdminHash(password: string): Promise<string> {
   return await bcrypt.hash(password, saltRounds)
 }
 
+// Helper to get current user from API
+export async function getCurrentAuthUser(): Promise<AuthUser | null> {
+  try {
+    const response = await fetch('/api/admin/verify', {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.user;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching current user:', error);
+    return null;
+  }
+}
+
 // Simple role-based access control
 export function canAccessRoute(userRole: UserRole, route: string): boolean {
   // Super admin can access everything
@@ -90,7 +109,7 @@ export function canAccessRoute(userRole: UserRole, route: string): boolean {
     waiter: [
       '/admin/orders',
       '/admin/orders/create',
-      '/admin/orders/history',
+      // NOTE: Removed /admin/orders/history - waiters cannot view order history
       '/admin/tables',              // Can view table sessions (NOT table management)
       '/admin/tables/sessions',     // Can process bills from tables
       '/admin/takeaway/orders',     // Can view takeaway orders
@@ -100,6 +119,7 @@ export function canAccessRoute(userRole: UserRole, route: string): boolean {
       // NOTE: Waiters CANNOT access /admin/takeaway/qr-management (QR management - admin only)
       // NOTE: Waiters CANNOT access /admin/staff (staff management - admin only)
       // NOTE: Waiters CANNOT access /admin/analytics/* (analytics - admin only)
+      // NOTE: Waiters CANNOT access /admin/orders/history (order history - manager/admin only)
     ],
     manager: [
       '/admin/dashboard',
@@ -113,12 +133,14 @@ export function canAccessRoute(userRole: UserRole, route: string): boolean {
       '/admin/offers',
       '/admin/offers/create',
       '/admin/billing',                   // Can confirm payments and print bills
-      '/admin/settings',
+      '/admin/billing/history',           // Can view billing history (limited to today/yesterday)
+      // NOTE: Removed /admin/settings - managers cannot access settings
       '/admin/kitchen',                   // Can view kitchen display
       '/admin/takeaway/orders',           // Can view takeaway orders
       '/admin/takeaway/qr-management'     // Can manage takeaway QR codes
       // NOTE: Managers CANNOT access /admin/staff (admin only)
       // NOTE: Managers CANNOT access /admin/analytics/* (admin only)
+      // NOTE: Managers CANNOT access /admin/settings (admin only)
     ]
   }
 

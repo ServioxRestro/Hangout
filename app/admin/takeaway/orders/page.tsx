@@ -12,7 +12,7 @@ import {
   User,
   Phone,
   RefreshCw,
-  DollarSign,
+  IndianRupee,
   AlertCircle,
   ShoppingCart,
 } from "lucide-react";
@@ -40,7 +40,8 @@ interface CustomerGroup {
 export default function TakeawayOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerGroup | null>(null);
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerGroup | null>(null);
   const [showPanel, setShowPanel] = useState(false);
 
   useEffect(() => {
@@ -104,7 +105,10 @@ export default function TakeawayOrdersPage() {
 
       if (!groups.has(key)) {
         groups.set(key, {
-          customerName: order.guest_users?.name || order.customer_name || "Unknown Customer",
+          customerName:
+            order.guest_users?.name ||
+            order.customer_name ||
+            "Unknown Customer",
           customerPhone: order.customer_phone,
           orders: [],
           totalAmount: 0,
@@ -117,7 +121,11 @@ export default function TakeawayOrdersPage() {
       group.orders.push(order);
       group.totalAmount += order.total_amount || 0;
 
-      if (order.created_at && group.earliestOrderTime && order.created_at < group.earliestOrderTime) {
+      if (
+        order.created_at &&
+        group.earliestOrderTime &&
+        order.created_at < group.earliestOrderTime
+      ) {
         group.earliestOrderTime = order.created_at;
       } else if (order.created_at && !group.earliestOrderTime) {
         group.earliestOrderTime = order.created_at;
@@ -132,8 +140,12 @@ export default function TakeawayOrdersPage() {
         paid: 5,
       };
 
-      const currentPriority = group.latestStatus ? (statusPriority[group.latestStatus] || 999) : 999;
-      const newPriority = order.status ? (statusPriority[order.status] || 999) : 999;
+      const currentPriority = group.latestStatus
+        ? statusPriority[group.latestStatus] || 999
+        : 999;
+      const newPriority = order.status
+        ? statusPriority[order.status] || 999
+        : 999;
 
       if (newPriority < currentPriority) {
         group.latestStatus = order.status;
@@ -142,8 +154,12 @@ export default function TakeawayOrdersPage() {
 
     // Convert to array and sort by earliest order time
     return Array.from(groups.values()).sort((a, b) => {
-      const aTime = a.earliestOrderTime ? new Date(a.earliestOrderTime).getTime() : 0;
-      const bTime = b.earliestOrderTime ? new Date(b.earliestOrderTime).getTime() : 0;
+      const aTime = a.earliestOrderTime
+        ? new Date(a.earliestOrderTime).getTime()
+        : 0;
+      const bTime = b.earliestOrderTime
+        ? new Date(b.earliestOrderTime).getTime()
+        : 0;
       return aTime - bTime;
     });
   };
@@ -354,10 +370,14 @@ export default function TakeawayOrdersPage() {
                     <div className={`text-xs space-y-1 ${colors.icon}`}>
                       <div className="flex items-center justify-center gap-1">
                         <Clock className="w-3 h-3" />
-                        <span>{group.earliestOrderTime ? formatDuration(group.earliestOrderTime) : "N/A"}</span>
+                        <span>
+                          {group.earliestOrderTime
+                            ? formatDuration(group.earliestOrderTime)
+                            : "N/A"}
+                        </span>
                       </div>
                       <div className="flex items-center justify-center gap-1">
-                        <DollarSign className="w-3 h-3" />
+                        <IndianRupee className="w-3 h-3" />
                         <span>{formatCurrency(group.totalAmount)}</span>
                       </div>
                       <div className="flex items-center justify-center gap-1">

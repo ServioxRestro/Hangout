@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase/client";
 import Button from "../Button";
 import { formatCurrency } from "@/lib/constants";
 import { X, Plus, Trash2, Receipt, AlertCircle } from "lucide-react";
 import type { TableWithSession } from "@/hooks/useTableSessions";
+import { calculateBill as calculateBillUtil, type BillItem } from "@/lib/utils/billing";
+import { useBillCalculation } from "@/hooks/useBillCalculation";
+import { BillSummary } from "@/components/billing/BillSummary";
 
 interface ManualItem {
   id: string;
@@ -45,6 +48,7 @@ export function BillProcessingModal({
   onSuccess,
 }: BillProcessingModalProps) {
   const [taxSettings, setTaxSettings] = useState<TaxSetting[]>([]);
+  const [taxInclusive, setTaxInclusive] = useState(false);
   const [offerInfo, setOfferInfo] = useState<{ id: string; name: string; discount: number } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("cash");
   const [discountPercentage, setDiscountPercentage] = useState(0);
@@ -54,31 +58,38 @@ export function BillProcessingModal({
   useEffect(() => {
     fetchTaxSettings();
     fetchOfferInfo();
+    fetchTaxMode();
   }, []);
 
   const fetchOfferInfo = async () => {
     try {
-      if (!table.session?.orders || table.session.orders.length === 0) return;
+      if (!table.session) return;
 
-      // Get the offer ID from the first order with an offer
-      const orderWithOffer = table.session.orders.find(order => order.session_offer_id);
+      // Fetch offer information from offer_usage table linked to session
+      const { data: offerUsage, error: offerUsageError } = await supabase
+        .from("offer_usage")
+        .select(`
+          discount_amount,
+          offers (
+            id,
+            name,
+            offer_type,
+            benefits,
+            conditions
+          )
+        `)
+        .eq("table_session_id", table.session.id)
+        .maybeSingle();
 
-      if (!orderWithOffer || !orderWithOffer.session_offer_id) return;
-
-      // Fetch offer details
-      const { data: offer, error } = await supabase
-        .from("offers")
-        .select("id, name, offer_type, benefits, conditions")
-        .eq("id", orderWithOffer.session_offer_id)
-        .single();
-
-      if (error) {
-        console.error("Error fetching offer:", error);
+      if (offerUsageError) {
+        console.error("Error fetching offer usage:", offerUsageError);
         return;
       }
 
-      if (offer) {
-        // Calculate discount based on offer type
+      if (offerUsage && offerUsage.offers) {
+        const offer = offerUsage.offers as any;
+
+        // Calculate discount based on offer type and current subtotal
         const subtotal = (table.session.orders || []).reduce(
           (sum, order) => sum + (order.total_amount || 0),
           0
@@ -88,19 +99,20 @@ export function BillProcessingModal({
         const benefits = offer.benefits as any;
 
         if (offer.offer_type === "cart_percentage" && benefits?.discount_percentage) {
-          discount = (subtotal * benefits.discount_percentage) / 100;
+          // Round to nearest whole number
+          discount = Math.round((subtotal * benefits.discount_percentage) / 100);
         } else if (offer.offer_type === "cart_flat_amount" && benefits?.discount_amount) {
-          discount = benefits.discount_amount;
+          discount = Math.round(benefits.discount_amount);
         } else if (offer.offer_type === "min_order_discount") {
           const conditions = offer.conditions as any;
           if (subtotal >= conditions?.min_order_amount && benefits?.discount_percentage) {
-            discount = (subtotal * benefits.discount_percentage) / 100;
+            discount = Math.round((subtotal * benefits.discount_percentage) / 100);
           }
         } else if (offer.offer_type === "promo_code" || offer.offer_type === "time_based" || offer.offer_type === "customer_based") {
           if (benefits?.discount_percentage) {
-            discount = (subtotal * benefits.discount_percentage) / 100;
+            discount = Math.round((subtotal * benefits.discount_percentage) / 100);
           } else if (benefits?.discount_amount) {
-            discount = benefits.discount_amount;
+            discount = Math.round(benefits.discount_amount);
           }
         }
 
@@ -133,48 +145,72 @@ export function BillProcessingModal({
     }
   };
 
+  const fetchTaxMode = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("restaurant_settings")
+        .select("setting_value")
+        .eq("setting_key", "tax_inclusive")
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error("Error fetching tax mode:", error);
+        return;
+      }
+
+      setTaxInclusive(data?.setting_value === 'true');
+    } catch (error) {
+      console.error("Error fetching tax mode:", error);
+    }
+  };
+
   const calculateBill = () => {
     if (!table.session?.orders) {
       return {
+        items_with_taxes: [],
         subtotal: 0,
-        discountAmount: 0,
-        taxes: [],
-        taxAmount: 0,
-        finalAmount: 0,
+        taxable_subtotal: 0,
+        total_gst: 0,
+        subtotal_with_tax: 0,
+        discount_amount: 0,
+        final_amount: 0,
       };
     }
 
-    // Calculate subtotal from orders + manual items
-    const ordersSubtotal = (table.session.orders || []).reduce(
-      (sum, order) => sum + (order.total_amount || 0),
-      0
+    // Prepare bill items from orders and manual items
+    const orderItems: BillItem[] = (table.session.orders || []).flatMap(order =>
+      (order.order_items || []).map(item => ({
+        name: item.menu_items?.name || "Unknown Item",
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+      }))
     );
-    const manualSubtotal = manualItems.reduce(
-      (sum, item) => sum + item.total_price,
-      0
-    );
-    const subtotal = ordersSubtotal + manualSubtotal;
 
-    // Use offer discount if available, otherwise use manual discount percentage
-    const discountAmount = offerInfo?.discount || (subtotal * discountPercentage) / 100;
-    const taxableAmount = subtotal - discountAmount;
-
-    const taxes = taxSettings.map((tax) => ({
-      name: tax.name,
-      rate: tax.rate,
-      amount: (taxableAmount * tax.rate) / 100,
+    const manualBillItems: BillItem[] = manualItems.map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_price: item.total_price,
+      is_manual: true,
     }));
 
-    const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
-    const finalAmount = taxableAmount + taxAmount;
+    const allItems = [...orderItems, ...manualBillItems];
 
-    return {
-      subtotal,
-      discountAmount,
-      taxes,
-      taxAmount,
-      finalAmount,
-    };
+    // Calculate discount percentage from offer if available
+    const effectiveDiscountPercentage = offerInfo?.discount
+      ? (offerInfo.discount / allItems.reduce((sum, item) => sum + item.total_price, 0)) * 100
+      : discountPercentage;
+
+    // Use the utility function with tax_inclusive parameter
+    const calculation = calculateBillUtil(
+      allItems,
+      effectiveDiscountPercentage,
+      taxSettings.map(tax => ({ name: tax.name, rate: tax.rate })),
+      taxInclusive
+    );
+
+    return calculation;
   };
 
   const billSummary = calculateBill();
@@ -229,6 +265,19 @@ export function BillProcessingModal({
         });
       }
 
+      // Aggregate taxes from all items for bill table
+      const aggregatedTaxes = billSummary.items_with_taxes.reduce((acc, item) => {
+        item.item_taxes.forEach(tax => {
+          const existing = acc.find(t => t.name === tax.name);
+          if (existing) {
+            existing.amount += tax.amount;
+          } else {
+            acc.push({ name: tax.name, rate: tax.rate, amount: tax.amount });
+          }
+        });
+        return acc;
+      }, [] as Array<{ name: string; rate: number; amount: number }>);
+
       // Create bill with pending status
       const { data: billData, error: billError } = await supabase
         .from("bills")
@@ -237,21 +286,21 @@ export function BillProcessingModal({
           table_session_id: table.session.id,
           subtotal: billSummary.subtotal,
           discount_percentage: offerInfo ? 0 : discountPercentage, // Set to 0 if offer, otherwise manual %
-          discount_amount: billSummary.discountAmount,
+          discount_amount: billSummary.discount_amount,
           cgst_rate:
-            billSummary.taxes.find((t) => t.name.includes("CGST"))?.rate || 0,
+            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.rate || 0,
           cgst_amount:
-            billSummary.taxes.find((t) => t.name.includes("CGST"))?.amount || 0,
+            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.amount || 0,
           sgst_rate:
-            billSummary.taxes.find((t) => t.name.includes("SGST"))?.rate || 0,
+            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.rate || 0,
           sgst_amount:
-            billSummary.taxes.find((t) => t.name.includes("SGST"))?.amount || 0,
+            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.amount || 0,
           service_charge_rate:
-            billSummary.taxes.find((t) => t.name.includes("Service"))?.rate || 0,
+            aggregatedTaxes.find((t) => t.name.includes("Service"))?.rate || 0,
           service_charge_amount:
-            billSummary.taxes.find((t) => t.name.includes("Service"))?.amount || 0,
-          total_tax_amount: billSummary.taxAmount,
-          final_amount: billSummary.finalAmount,
+            aggregatedTaxes.find((t) => t.name.includes("Service"))?.amount || 0,
+          total_tax_amount: billSummary.total_gst,
+          final_amount: billSummary.final_amount,
           payment_status: "pending", // Staff processed, awaiting manager confirmation
           payment_method: paymentMethod,
           generated_by: user.id, // Staff member who generated the bill
@@ -424,19 +473,31 @@ export function BillProcessingModal({
           {/* Bill Summary */}
           <div className="border-t pt-4 space-y-3">
             <div className="flex justify-between text-gray-700">
-              <span>Subtotal:</span>
+              <span>Subtotal (Base Price):</span>
               <span className="font-medium">
                 {formatCurrency(billSummary.subtotal)}
               </span>
             </div>
 
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>Total GST:</span>
+              <span>{formatCurrency(billSummary.total_gst)}</span>
+            </div>
+
+            <div className="flex justify-between text-gray-700 border-t pt-2">
+              <span>Total Before Discount:</span>
+              <span className="font-medium">
+                {formatCurrency(billSummary.subtotal_with_tax)}
+              </span>
+            </div>
+
             {offerInfo ? (
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center bg-green-50 p-2 rounded">
                 <span className="text-gray-700">
-                  Discount <span className="text-xs text-green-600">({offerInfo.name})</span>:
+                  Discount <span className="text-xs text-green-600 font-medium">({offerInfo.name})</span>:
                 </span>
                 <span className="text-sm font-medium text-green-600">
-                  -{formatCurrency(billSummary.discountAmount)}
+                  -{formatCurrency(billSummary.discount_amount)}
                 </span>
               </div>
             ) : (
@@ -454,29 +515,17 @@ export function BillProcessingModal({
                     className="w-16 px-2 py-1 border rounded text-center text-sm"
                   />
                   <span className="text-sm">%</span>
-                  <span className="text-sm font-medium">
-                    -{formatCurrency(billSummary.discountAmount)}
+                  <span className="text-sm font-medium text-red-600">
+                    -{formatCurrency(billSummary.discount_amount)}
                   </span>
                 </div>
               </div>
             )}
 
-            {billSummary.taxes.map((tax) => (
-              <div
-                key={tax.name}
-                className="flex justify-between text-sm text-gray-600"
-              >
-                <span>
-                  {tax.name} ({tax.rate}%):
-                </span>
-                <span>{formatCurrency(tax.amount)}</span>
-              </div>
-            ))}
-
             <div className="border-t pt-3 flex justify-between font-bold text-lg">
-              <span>Total:</span>
+              <span>Grand Total:</span>
               <span className="text-green-600">
-                {formatCurrency(billSummary.finalAmount)}
+                {formatCurrency(billSummary.final_amount)}
               </span>
             </div>
           </div>
