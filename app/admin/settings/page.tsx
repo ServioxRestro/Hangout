@@ -269,6 +269,36 @@ export default function SettingsPage() {
               <h2 className="text-xl font-semibold text-gray-900">Tax Configuration</h2>
             </div>
 
+            {/* Tax Inclusive/Exclusive Toggle */}
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-gray-900 mb-1">Tax Calculation Mode</div>
+                  <div className="text-sm text-gray-600">
+                    {restaurantSettings.tax_inclusive === 'true'
+                      ? 'Menu prices include taxes (tax-inclusive)'
+                      : 'Taxes added during billing (tax-exclusive)'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={restaurantSettings.tax_inclusive === 'true'}
+                      onChange={(e) =>
+                        updateRestaurantSetting('tax_inclusive', e.target.checked ? 'true' : 'false')
+                      }
+                    />
+                    <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ms-3 text-sm font-medium text-gray-900">
+                      {restaurantSettings.tax_inclusive === 'true' ? 'Inclusive' : 'Exclusive'}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-4">
               {taxSettings.map((tax) => (
                 <div key={tax.id} className="p-4 border border-gray-200 rounded-lg">

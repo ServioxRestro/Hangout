@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import RoleGuard from "@/components/admin/RoleGuard";
 import Button from "@/components/admin/Button";
@@ -188,7 +188,12 @@ const daysOfWeek = [
 export default function CreateOfferFormPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const offerType = params?.offerType as string;
+
+  // Check if we're in edit mode
+  const isEditMode = searchParams.get('edit') === 'true';
+  const editOfferId = searchParams.get('id');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,6 +253,51 @@ export default function CreateOfferFormPage() {
   useEffect(() => {
     fetchMenuData();
   }, []);
+
+  // Pre-fill form when in edit mode
+  useEffect(() => {
+    if (isEditMode && searchParams) {
+      try {
+        const conditions = searchParams.get('conditions') ? JSON.parse(searchParams.get('conditions') || '{}') : {};
+        const benefits = searchParams.get('benefits') ? JSON.parse(searchParams.get('benefits') || '{}') : {};
+        const validDays = searchParams.get('valid_days') ? JSON.parse(searchParams.get('valid_days') || '[]') : [];
+
+        setFormData({
+          name: searchParams.get('name') || '',
+          description: searchParams.get('description') || '',
+          image_url: searchParams.get('image_url') || '',
+          is_active: searchParams.get('is_active') === 'true',
+          priority: Number(searchParams.get('priority') || 5),
+          start_date: searchParams.get('start_date') || '',
+          end_date: searchParams.get('end_date') || '',
+          usage_limit: searchParams.get('usage_limit') || '',
+          promo_code: searchParams.get('promo_code') || '',
+          valid_days: validDays,
+          valid_hours_start: searchParams.get('valid_hours_start') || '',
+          valid_hours_end: searchParams.get('valid_hours_end') || '',
+          target_customer_type: searchParams.get('target_customer_type') || 'all',
+          // Benefits
+          discount_percentage: benefits.discount_percentage?.toString() || '',
+          discount_amount: benefits.discount_amount?.toString() || '',
+          max_discount_amount: benefits.max_discount_amount?.toString() || '',
+          max_price: benefits.max_price?.toString() || '',
+          buy_quantity: benefits.buy_quantity?.toString() || '',
+          get_quantity: benefits.get_quantity?.toString() || '',
+          get_same_item: benefits.get_same_item || false,
+          free_category: benefits.free_category || '',
+          combo_price: benefits.combo_price?.toString() || '',
+          is_customizable: benefits.is_customizable || false,
+          // Conditions
+          min_amount: conditions.min_amount?.toString() || '',
+          threshold_amount: conditions.threshold_amount?.toString() || '',
+          min_quantity: conditions.min_quantity?.toString() || '',
+          min_orders_count: searchParams.get('min_orders_count') || conditions.min_orders_count?.toString() || '',
+        });
+      } catch (error) {
+        console.error('Error parsing edit data:', error);
+      }
+    }
+  }, [isEditMode, searchParams]);
 
   const fetchMenuData = async () => {
     try {
@@ -370,34 +420,52 @@ export default function CreateOfferFormPage() {
         conditions.customer_type = formData.target_customer_type;
       }
 
-      // Insert offer
-      const { data: offer, error: offerError } = await supabase
-        .from("offers")
-        .insert([
-          {
-            name: formData.name,
-            description: formData.description,
-            offer_type: offerType,
-            application_type: config.application_type,
-            is_active: formData.is_active,
-            priority: Number(formData.priority),
-            start_date: formData.start_date || null,
-            end_date: formData.end_date || null,
-            usage_limit: formData.usage_limit
-              ? Number(formData.usage_limit)
-              : null,
-            promo_code: formData.promo_code || null,
-            valid_days: formData.valid_days.length > 0 ? formData.valid_days : null,
-            valid_hours_start: formData.valid_hours_start || null,
-            valid_hours_end: formData.valid_hours_end || null,
-            target_customer_type: formData.target_customer_type,
-            image_url: formData.image_url || null,
-            conditions,
-            benefits,
-          },
-        ])
-        .select()
-        .single();
+      // Create or update offer
+      let offer: any;
+      let offerError: any;
+
+      const offerData = {
+        name: formData.name,
+        description: formData.description,
+        offer_type: offerType,
+        application_type: config.application_type,
+        is_active: formData.is_active,
+        priority: Number(formData.priority),
+        start_date: formData.start_date || null,
+        end_date: formData.end_date || null,
+        usage_limit: formData.usage_limit
+          ? Number(formData.usage_limit)
+          : null,
+        promo_code: formData.promo_code || null,
+        valid_days: formData.valid_days.length > 0 ? formData.valid_days : null,
+        valid_hours_start: formData.valid_hours_start || null,
+        valid_hours_end: formData.valid_hours_end || null,
+        target_customer_type: formData.target_customer_type,
+        image_url: formData.image_url || null,
+        conditions,
+        benefits,
+      };
+
+      if (isEditMode && editOfferId) {
+        // Update existing offer
+        const result = await supabase
+          .from("offers")
+          .update(offerData)
+          .eq("id", editOfferId)
+          .select()
+          .single();
+        offer = result.data;
+        offerError = result.error;
+      } else {
+        // Insert new offer
+        const result = await supabase
+          .from("offers")
+          .insert([offerData])
+          .select()
+          .single();
+        offer = result.data;
+        offerError = result.error;
+      }
 
       if (offerError) throw offerError;
 
@@ -1451,7 +1519,7 @@ export default function CreateOfferFormPage() {
               loading={loading}
               leftIcon={<Save className="w-4 h-4" />}
             >
-              Create Offer
+              {isEditMode ? 'Update Offer' : 'Create Offer'}
             </Button>
           </div>
         </form>

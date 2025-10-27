@@ -74,33 +74,56 @@ export function BillingModal({
   const calculateBillSummary = () => {
     if (!selectedTable?.session) return;
 
-    const ordersSubtotal = selectedTable.session.total_amount || 0;
-    const manualSubtotal = manualItems.reduce(
-      (sum, item) => sum + item.total_price,
-      0
+    // Prepare all bill items (orders + manual)
+    const orderItems: BillItem[] = (selectedTable.session.orders || []).flatMap(order =>
+      (order.order_items || []).map(item => ({
+        name: item.menu_items?.name || "Unknown Item",
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+      }))
     );
-    const subtotal = ordersSubtotal + manualSubtotal;
 
-    const discountAmount = (subtotal * discountPercentage) / 100;
-    const taxableAmount = subtotal - discountAmount;
-
-    const taxes = taxSettings.map((tax) => ({
-      name: tax.name,
-      rate: tax.rate,
-      amount: (taxableAmount * tax.rate) / 100,
+    const manualBillItems: BillItem[] = manualItems.map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_price: item.total_price,
+      is_manual: true,
     }));
 
-    const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
-    const finalAmount = taxableAmount + taxAmount;
+    const allItems = [...orderItems, ...manualBillItems];
 
-    setBillSummary({
-      subtotal,
+    // Use the new utility function
+    const calculation = calculateBill(
+      allItems,
       discountPercentage,
-      discountAmount,
-      taxableAmount,
-      taxAmount,
-      finalAmount,
-      taxes,
+      taxSettings.map(tax => ({ name: tax.name, rate: tax.rate })),
+      false // TODO: Fetch tax_inclusive setting
+    );
+
+    // Aggregate taxes for compatibility
+    const aggregatedTaxes = calculation.items_with_taxes.reduce((acc, item) => {
+      item.item_taxes.forEach(tax => {
+        const existing = acc.find(t => t.name === tax.name);
+        if (existing) {
+          existing.amount += tax.amount;
+        } else {
+          acc.push({ name: tax.name, rate: tax.rate, amount: tax.amount });
+        }
+      });
+      return acc;
+    }, [] as Array<{ name: string; rate: number; amount: number }>);
+
+    // Convert to old format for compatibility
+    setBillSummary({
+      subtotal: calculation.subtotal,
+      discountPercentage,
+      discountAmount: calculation.discount_amount,
+      taxableAmount: calculation.taxable_subtotal,
+      taxAmount: calculation.total_gst,
+      finalAmount: calculation.final_amount,
+      taxes: aggregatedTaxes,
     });
   };
 
@@ -127,18 +150,38 @@ export function BillingModal({
       })),
     ];
 
+    // Reconstruct items_with_taxes from billSummary (assumes all items have same tax rates)
+    const items_with_taxes = billItems.map(item => {
+      const totalTaxRate = billSummary.taxes.reduce((sum: number, tax: any) => sum + tax.rate, 0);
+      const base_price = item.total_price / (1 + totalTaxRate / 100);
+      const item_taxes = billSummary.taxes.map((tax: any) => ({
+        name: tax.name,
+        rate: tax.rate,
+        amount: (base_price * tax.rate) / 100,
+      }));
+
+      return {
+        ...item,
+        base_price: Math.round(base_price * 100) / 100,
+        item_taxes: item_taxes.map((t: any) => ({
+          ...t,
+          amount: Math.round(t.amount * 100) / 100,
+        })),
+      };
+    });
+
     const htmlReceipt = generateHTMLReceipt({
       tableNumber: String(selectedTable.table.table_number),
       orderType: "dine-in",
       customerName: selectedTable.session.guest_users?.name || "Guest",
       customerPhone: selectedTable.session.customer_phone || undefined,
-      items: billItems,
       calculation: {
+        items_with_taxes,
         subtotal: billSummary.subtotal,
+        taxable_subtotal: billSummary.taxableAmount,
+        total_gst: billSummary.taxAmount,
+        subtotal_with_tax: billSummary.subtotal + billSummary.taxAmount,
         discount_amount: billSummary.discountAmount,
-        taxable_amount: billSummary.taxableAmount,
-        taxes: billSummary.taxes,
-        tax_amount: billSummary.taxAmount,
         final_amount: billSummary.finalAmount,
       },
       paymentMethod,

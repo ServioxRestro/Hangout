@@ -8,6 +8,7 @@ import { X, Receipt, Printer } from "lucide-react";
 import {
   generateHTMLReceipt,
   printHTMLReceipt,
+  calculateBill as calculateBillUtil,
   type BillItem,
 } from "@/lib/utils/billing";
 
@@ -40,6 +41,7 @@ export function TakeawayBillModal({
   onSuccess,
 }: TakeawayBillModalProps) {
   const [taxSettings, setTaxSettings] = useState<TaxSetting[]>([]);
+  const [taxInclusive, setTaxInclusive] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">(
     "cash"
   );
@@ -49,6 +51,7 @@ export function TakeawayBillModal({
 
   useEffect(() => {
     fetchTaxSettings();
+    fetchTaxMode();
   }, []);
 
   const fetchTaxSettings = async () => {
@@ -66,31 +69,43 @@ export function TakeawayBillModal({
     }
   };
 
+  const fetchTaxMode = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("restaurant_settings")
+        .select("setting_value")
+        .eq("setting_key", "tax_inclusive")
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error("Error fetching tax mode:", error);
+        return;
+      }
+
+      setTaxInclusive(data?.setting_value === 'true');
+    } catch (error) {
+      console.error("Error fetching tax mode:", error);
+    }
+  };
+
   const calculateBill = () => {
-    const subtotal = customer.orders.reduce(
-      (sum, order) => sum + order.total_amount,
-      0
+    // Prepare bill items from orders
+    const billItems: BillItem[] = customer.orders.flatMap((order) =>
+      order.order_items.map((item: any) => ({
+        name: item.menu_items?.name || "Unknown",
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+      }))
     );
 
-    const discountAmount = (subtotal * discountPercentage) / 100;
-    const taxableAmount = subtotal - discountAmount;
-
-    const taxes = taxSettings.map((tax) => ({
-      name: tax.name,
-      rate: tax.rate,
-      amount: (taxableAmount * tax.rate) / 100,
-    }));
-
-    const taxAmount = taxes.reduce((sum, tax) => sum + tax.amount, 0);
-    const finalAmount = taxableAmount + taxAmount;
-
-    return {
-      subtotal,
-      discountAmount,
-      taxes,
-      taxAmount,
-      finalAmount,
-    };
+    // Use the utility function with tax_inclusive parameter
+    return calculateBillUtil(
+      billItems,
+      discountPercentage,
+      taxSettings.map(tax => ({ name: tax.name, rate: tax.rate })),
+      taxInclusive
+    );
   };
 
   const bill = calculateBill();
@@ -114,6 +129,19 @@ export function TakeawayBillModal({
         Date.now()
       ).slice(-6)}`;
 
+      // Aggregate taxes from all items for bill table
+      const aggregatedTaxes = bill.items_with_taxes.reduce((acc, item) => {
+        item.item_taxes.forEach(tax => {
+          const existing = acc.find(t => t.name === tax.name);
+          if (existing) {
+            existing.amount += tax.amount;
+          } else {
+            acc.push({ name: tax.name, rate: tax.rate, amount: tax.amount });
+          }
+        });
+        return acc;
+      }, [] as Array<{ name: string; rate: number; amount: number }>);
+
       // Create bill with pending status (staff processed, awaiting manager confirmation)
       const { data: billData, error: billError } = await supabase
         .from("bills")
@@ -122,21 +150,21 @@ export function TakeawayBillModal({
           table_session_id: null, // Takeaway has no session
           subtotal: bill.subtotal,
           discount_percentage: discountPercentage,
-          discount_amount: bill.discountAmount,
+          discount_amount: bill.discount_amount,
           cgst_rate:
-            bill.taxes.find((t) => t.name.includes("CGST"))?.rate || 0,
+            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.rate || 0,
           cgst_amount:
-            bill.taxes.find((t) => t.name.includes("CGST"))?.amount || 0,
+            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.amount || 0,
           sgst_rate:
-            bill.taxes.find((t) => t.name.includes("SGST"))?.rate || 0,
+            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.rate || 0,
           sgst_amount:
-            bill.taxes.find((t) => t.name.includes("SGST"))?.amount || 0,
+            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.amount || 0,
           service_charge_rate:
-            bill.taxes.find((t) => t.name.includes("Service"))?.rate || 0,
+            aggregatedTaxes.find((t) => t.name.includes("Service"))?.rate || 0,
           service_charge_amount:
-            bill.taxes.find((t) => t.name.includes("Service"))?.amount || 0,
-          total_tax_amount: bill.taxAmount,
-          final_amount: bill.finalAmount,
+            aggregatedTaxes.find((t) => t.name.includes("Service"))?.amount || 0,
+          total_tax_amount: bill.total_gst,
+          final_amount: bill.final_amount,
           payment_status: "pending", // Staff processed, awaiting manager confirmation
           payment_method: paymentMethod,
           generated_by: user.id, // Staff member who generated the bill
@@ -186,28 +214,9 @@ export function TakeawayBillModal({
   };
 
   const handlePrint = () => {
-    // Prepare bill items for receipt
-    const billItems: BillItem[] = customer.orders.flatMap((order) =>
-      order.order_items.map((item: any) => ({
-        name: item.menu_items?.name || "Unknown",
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-        is_manual: false,
-      }))
-    );
-
     const htmlReceipt = generateHTMLReceipt({
       orderType: "takeaway",
-      items: billItems,
-      calculation: {
-        subtotal: bill.subtotal,
-        discount_amount: bill.discountAmount,
-        taxable_amount: bill.subtotal - bill.discountAmount,
-        taxes: bill.taxes,
-        tax_amount: bill.taxAmount,
-        final_amount: bill.finalAmount,
-      },
+      calculation: bill,
       paymentMethod,
       discountPercentage,
     });
@@ -272,30 +281,23 @@ export function TakeawayBillModal({
                   />
                   <span>%</span>
                   <span className="font-medium w-20 text-right">
-                    -{formatCurrency(bill.discountAmount)}
+                    -{formatCurrency(bill.discount_amount)}
                   </span>
                 </div>
               </div>
 
-              {/* Taxes */}
-              {bill.taxes.map((tax) => (
-                <div
-                  key={tax.name}
-                  className="flex justify-between text-sm text-gray-600"
-                >
-                  <span>
-                    {tax.name} ({tax.rate}%):
-                  </span>
-                  <span>{formatCurrency(tax.amount)}</span>
-                </div>
-              ))}
+              {/* Total GST */}
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Total GST:</span>
+                <span>{formatCurrency(bill.total_gst)}</span>
+              </div>
 
               {/* Final Total */}
               <div className="border-t pt-2 mt-2">
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total:</span>
                   <span className="text-green-600">
-                    {formatCurrency(bill.finalAmount)}
+                    {formatCurrency(bill.final_amount)}
                   </span>
                 </div>
               </div>

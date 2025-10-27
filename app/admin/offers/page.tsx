@@ -26,7 +26,6 @@ import {
   Copy,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
-import EditOfferModal from "@/components/admin/offers/EditOfferModal";
 
 type Offer = {
   id: string;
@@ -71,8 +70,7 @@ export default function OffersPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [filteredOffers, setFilteredOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
-  
+
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -596,7 +594,30 @@ export default function OffersPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setEditingOffer(offer)}
+                        onClick={() => {
+                          // Navigate to create form with offer data as query params for editing
+                          const queryParams = new URLSearchParams({
+                            edit: 'true',
+                            id: offer.id,
+                            name: offer.name || '',
+                            description: offer.description || '',
+                            is_active: offer.is_active.toString(),
+                            priority: (offer.priority || 0).toString(),
+                            start_date: offer.start_date || '',
+                            end_date: offer.end_date || '',
+                            usage_limit: (offer.usage_limit || 0).toString(),
+                            conditions: JSON.stringify(offer.conditions || {}),
+                            benefits: JSON.stringify(offer.benefits || {}),
+                            valid_days: JSON.stringify(offer.valid_days || []),
+                            valid_hours_start: offer.valid_hours_start || '',
+                            valid_hours_end: offer.valid_hours_end || '',
+                            target_customer_type: offer.target_customer_type || '',
+                            promo_code: offer.promo_code || '',
+                            image_url: offer.image_url || '',
+                            min_orders_count: (offer.min_orders_count || 0).toString(),
+                          });
+                          router.push(`/admin/offers/create/${offer.offer_type}?${queryParams.toString()}`);
+                        }}
                         leftIcon={<Edit className="w-4 h-4" />}
                       >
                         Edit
@@ -619,18 +640,6 @@ export default function OffersPage() {
           </div>
         )}
       </Card>
-
-      {/* Edit Offer Modal */}
-      {editingOffer && (
-        <EditOfferModal
-          offer={editingOffer}
-          onClose={() => setEditingOffer(null)}
-          onSuccess={() => {
-            setEditingOffer(null);
-            fetchOffers();
-          }}
-        />
-      )}
       </div>
     </RoleGuard>
   );

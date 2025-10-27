@@ -21,7 +21,7 @@ import { GuestLayout } from "@/components/guest/GuestLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import { formatDate } from "@/lib/utils";
-import { calculateBill, type BillItem } from "@/lib/utils/billing";
+import { calculateBill, type BillItem, type BillCalculation } from "@/lib/utils/billing";
 import { useGuestOrders } from "@/hooks/useGuestOrders";
 
 type Order = Tables<"orders"> & {
@@ -41,6 +41,7 @@ export default function OrdersPage() {
   const [billSummary, setBillSummary] = useState<any>(null);
   const [processingBill, setProcessingBill] = useState(false);
   const [taxSettings, setTaxSettings] = useState<any[]>([]);
+  const [taxInclusive, setTaxInclusive] = useState(false);
 
   // Use React Query hook for auto-refreshing orders
   const {
@@ -58,20 +59,34 @@ export default function OrdersPage() {
   const loading = isLoading;
   const error = queryError ? (queryError as any).message : "";
 
-  // Fetch tax settings once on mount
+  // Fetch tax settings and tax mode once on mount
   useEffect(() => {
-    const fetchTaxSettings = async () => {
+    const fetchSettings = async () => {
       try {
-        const { data, error } = await supabase
+        // Fetch tax settings
+        const { data: taxData, error: taxError } = await supabase
           .from("tax_settings")
           .select("*")
           .eq("is_active", true)
-          .order("name");
+          .order("display_order");
 
-        if (error) throw error;
-        setTaxSettings(data || []);
+        if (taxError) throw taxError;
+        setTaxSettings(taxData || []);
+
+        // Fetch tax mode
+        const { data: taxModeData, error: taxModeError } = await supabase
+          .from("restaurant_settings")
+          .select("setting_value")
+          .eq("setting_key", "tax_inclusive")
+          .single();
+
+        if (taxModeError && taxModeError.code !== "PGRST116") {
+          console.error("Error fetching tax mode:", taxModeError);
+        } else {
+          setTaxInclusive(taxModeData?.setting_value === "true");
+        }
       } catch (error) {
-        console.error("Error fetching tax settings:", error);
+        console.error("Error fetching settings:", error);
       }
     };
 
@@ -89,7 +104,7 @@ export default function OrdersPage() {
 
     if (tableCode) {
       checkUser();
-      fetchTaxSettings();
+      fetchSettings();
     }
   }, [tableCode]);
 
@@ -156,7 +171,7 @@ export default function OrdersPage() {
             }
           }
 
-          // Convert database bill to UI format
+          // Convert database bill to new BillCalculation format
           const billItems: BillItem[] = (existingBill.bill_items || []).map(item => ({
             name: item.item_name,
             quantity: item.quantity,
@@ -165,27 +180,51 @@ export default function OrdersPage() {
             is_manual: false,
           }));
 
-          const calculation = {
-            subtotal: existingBill.subtotal,
-            discount_amount: existingBill.discount_amount || 0,
-            taxes: [
-              ...(existingBill.cgst_rate && existingBill.cgst_rate > 0 ? [{
-                name: 'CGST',
+          // Reconstruct items_with_taxes for old bills
+          const totalTaxRate = (existingBill.cgst_rate || 0) + (existingBill.sgst_rate || 0) + (existingBill.service_charge_rate || 0);
+          const items_with_taxes = billItems.map(item => {
+            const base_price = item.total_price / (1 + totalTaxRate / 100);
+            const item_taxes = [];
+
+            if (existingBill.cgst_rate && existingBill.cgst_rate > 0) {
+              item_taxes.push({
+                name: "CGST",
                 rate: existingBill.cgst_rate,
-                amount: existingBill.cgst_amount || 0,
-              }] : []),
-              ...(existingBill.sgst_rate && existingBill.sgst_rate > 0 ? [{
-                name: 'SGST',
+                amount: (base_price * existingBill.cgst_rate) / 100,
+              });
+            }
+            if (existingBill.sgst_rate && existingBill.sgst_rate > 0) {
+              item_taxes.push({
+                name: "SGST",
                 rate: existingBill.sgst_rate,
-                amount: existingBill.sgst_amount || 0,
-              }] : []),
-              ...(existingBill.service_charge_rate && existingBill.service_charge_rate > 0 ? [{
-                name: 'Service Charge',
+                amount: (base_price * existingBill.sgst_rate) / 100,
+              });
+            }
+            if (existingBill.service_charge_rate && existingBill.service_charge_rate > 0) {
+              item_taxes.push({
+                name: "Service Charge",
                 rate: existingBill.service_charge_rate,
-                amount: existingBill.service_charge_amount || 0,
-              }] : []),
-            ],
-            tax_amount: existingBill.total_tax_amount || 0,
+                amount: (base_price * existingBill.service_charge_rate) / 100,
+              });
+            }
+
+            return {
+              ...item,
+              base_price: Math.round(base_price * 100) / 100,
+              item_taxes: item_taxes.map(t => ({
+                ...t,
+                amount: Math.round(t.amount * 100) / 100,
+              })),
+            };
+          });
+
+          const calculation: BillCalculation = {
+            items_with_taxes,
+            subtotal: existingBill.subtotal,
+            taxable_subtotal: existingBill.subtotal,
+            total_gst: existingBill.total_tax_amount || 0,
+            subtotal_with_tax: existingBill.subtotal + (existingBill.total_tax_amount || 0),
+            discount_amount: existingBill.discount_amount || 0,
             final_amount: existingBill.final_amount,
           };
 
@@ -252,11 +291,12 @@ export default function OrdersPage() {
         }
       }
 
-      // Calculate bill with discount
+      // Calculate bill with discount and tax mode
       const calculation = calculateBill(
         billItems,
         discountPercentage,
-        taxSettings
+        taxSettings.map(tax => ({ name: tax.name, rate: tax.rate })),
+        taxInclusive
       );
 
       setBillSummary({
@@ -574,33 +614,41 @@ export default function OrdersPage() {
               </div>
 
               <div className="border-t pt-3 space-y-2">
+                {/* Subtotal (Base Price) */}
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Subtotal</span>
+                  <span className="text-gray-600">Subtotal (Base Price)</span>
                   <span className="text-gray-900">{formatCurrency(billSummary.calculation.subtotal)}</span>
                 </div>
 
+                {/* Total GST */}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total GST</span>
+                  <span className="text-gray-900">{formatCurrency(billSummary.calculation.total_gst)}</span>
+                </div>
+
+                {/* Total Before Discount */}
+                <div className="flex justify-between text-sm border-t pt-2">
+                  <span className="text-gray-700 font-medium">Total Before Discount</span>
+                  <span className="text-gray-900 font-medium">{formatCurrency(billSummary.calculation.subtotal_with_tax)}</span>
+                </div>
+
+                {/* Discount (if applicable) */}
                 {billSummary.calculation.discount_amount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">
+                  <div className="flex justify-between text-sm bg-green-50 -mx-1 px-1 py-1 rounded">
+                    <span className="text-gray-700">
                       Discount
                       {billSummary.offerName && (
-                        <span className="text-xs text-green-600 ml-1">({billSummary.offerName})</span>
+                        <span className="text-xs text-green-600 ml-1 font-medium">({billSummary.offerName})</span>
                       )}
                     </span>
-                    <span className="text-green-600">-{formatCurrency(billSummary.calculation.discount_amount)}</span>
+                    <span className="text-green-600 font-medium">-{formatCurrency(billSummary.calculation.discount_amount)}</span>
                   </div>
                 )}
 
-                {billSummary.calculation.taxes.map((tax: any, idx: number) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{tax.name} ({tax.rate}%)</span>
-                    <span className="text-gray-900">{formatCurrency(tax.amount)}</span>
-                  </div>
-                ))}
-
+                {/* Grand Total */}
                 <div className="flex justify-between items-center pt-3 border-t">
-                  <span className="font-bold text-lg text-gray-900">Total</span>
-                  <span className="font-bold text-2xl text-gray-900">
+                  <span className="font-bold text-lg text-gray-900">Grand Total</span>
+                  <span className="font-bold text-2xl text-green-600">
                     {formatCurrency(billSummary.calculation.final_amount)}
                   </span>
                 </div>
