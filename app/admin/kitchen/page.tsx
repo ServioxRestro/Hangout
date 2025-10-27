@@ -1,117 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { KOT, KOTItem } from "@/types/kot.types";
-import { calculateKOTStatus } from "@/lib/utils/kot";
 import { printKOTReceipt } from "@/components/shared/KOTReceipt";
 import { KOTCard } from "@/components/shared/KOTCard";
 import Button from "@/components/admin/Button";
 import { Printer, CheckCircle, ChefHat } from "lucide-react";
+import { useAdminKOTs } from "@/hooks/useAdminKOTs";
 
 export default function KitchenDisplayPage() {
-  const [kots, setKots] = useState<KOT[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchKOTs();
-    const interval = setInterval(fetchKOTs, 5000); // Auto-refresh every 5 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchKOTs = async () => {
-    try {
-      // Fetch all order_items with active KOT statuses (Kitchen handles: placed → preparing → ready)
-      // Once marked "served" by waiters, KOT disappears from kitchen
-      const { data: orderItems, error } = await supabase
-        .from("order_items")
-        .select(`
-          id,
-          quantity,
-          unit_price,
-          total_price,
-          created_at,
-          status,
-          kot_number,
-          kot_batch_id,
-          menu_items (
-            name,
-            is_veg
-          ),
-          orders (
-            id,
-            order_type,
-            table_id,
-            customer_name,
-            restaurant_tables (
-              table_number,
-              veg_only
-            ),
-            takeaway_qr_codes (
-              is_veg_only
-            )
-          )
-        `)
-        .not("kot_number", "is", null)
-        .in("status", ["placed", "preparing", "ready"])
-        .order("kot_number", { ascending: true });
-
-      if (error) throw error;
-
-      // Group items by KOT batch
-      const kotMap = new Map<string, KOT>();
-
-      orderItems?.forEach((item: any) => {
-        const batchId = item.kot_batch_id;
-        if (!batchId) return;
-
-        if (!kotMap.has(batchId)) {
-          kotMap.set(batchId, {
-            kot_number: item.kot_number,
-            kot_batch_id: batchId,
-            table_number: item.orders?.restaurant_tables?.table_number || null,
-            table_veg_only: item.orders?.restaurant_tables?.veg_only || false,
-            customer_name: item.orders?.customer_name || null,
-            takeaway_qr_is_veg_only: item.orders?.takeaway_qr_codes?.is_veg_only || false,
-            order_id: item.orders?.id || "",
-            order_type: item.orders?.order_type || "dine-in",
-            kot_status: "placed",
-            created_at: item.created_at,
-            items: [],
-          });
-        }
-
-        const kot = kotMap.get(batchId)!;
-        kot.items.push({
-          id: item.id,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          total_price: item.total_price,
-          created_at: item.created_at,
-          status: item.status,
-          menu_item_name: item.menu_items?.name || "Unknown",
-          is_veg: item.menu_items?.is_veg || false,
-        });
-      });
-
-      // Calculate KOT status from items
-      kotMap.forEach((kot) => {
-        const itemStatuses = kot.items.map((i) => i.status);
-        kot.kot_status = calculateKOTStatus(itemStatuses);
-      });
-
-      // Convert to array and sort by KOT number
-      const kotsArray = Array.from(kotMap.values()).sort(
-        (a, b) => a.kot_number - b.kot_number
-      );
-
-      setKots(kotsArray);
-    } catch (error: any) {
-      console.error("Error fetching KOTs:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: kots = [], isLoading: loading } = useAdminKOTs();
 
   const updateKOTStatus = async (kotBatchId: string, newStatus: string) => {
     try {
@@ -133,8 +30,7 @@ export default function KitchenDisplayPage() {
 
       if (error) throw error;
 
-      // Trigger will auto-update order status
-      await fetchKOTs();
+      // React Query will auto-update KOTs in 5 seconds, or immediately on window focus
     } catch (error: any) {
       console.error("Error updating KOT status:", error);
       alert("Failed to update KOT status");

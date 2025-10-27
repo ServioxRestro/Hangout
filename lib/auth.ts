@@ -91,23 +91,34 @@ export function canAccessRoute(userRole: UserRole, route: string): boolean {
       '/admin/orders',
       '/admin/orders/create',
       '/admin/orders/history',
-      '/admin/tables',           // Can view table sessions (NOT table management)
-      '/admin/tables/sessions'   // Can process bills from tables
+      '/admin/tables',              // Can view table sessions (NOT table management)
+      '/admin/tables/sessions',     // Can process bills from tables
+      '/admin/takeaway/orders',     // Can view takeaway orders
+      '/admin/kitchen'              // Can view kitchen display
       // NOTE: Waiters CANNOT access /admin/billing (bills & payment - manager only)
       // NOTE: Waiters CANNOT access /admin/tables/management (table management - admin only)
+      // NOTE: Waiters CANNOT access /admin/takeaway/qr-management (QR management - admin only)
+      // NOTE: Waiters CANNOT access /admin/staff (staff management - admin only)
+      // NOTE: Waiters CANNOT access /admin/analytics/* (analytics - admin only)
     ],
     manager: [
       '/admin/dashboard',
       '/admin/orders',
       '/admin/orders/create',
       '/admin/orders/history',
-      '/admin/tables',            // Can view table sessions
-      '/admin/tables/sessions',   // Can view table sessions
+      '/admin/tables',                    // Can view table sessions
+      '/admin/tables/sessions',           // Can view table sessions
+      '/admin/tables/management',         // Can manage tables and QR codes
       '/admin/menu',
       '/admin/offers',
-      '/admin/billing',           // Can confirm payments and print bills
-      '/admin/settings'
-      // NOTE: Managers CANNOT access /admin/tables/management (admin only)
+      '/admin/offers/create',
+      '/admin/billing',                   // Can confirm payments and print bills
+      '/admin/settings',
+      '/admin/kitchen',                   // Can view kitchen display
+      '/admin/takeaway/orders',           // Can view takeaway orders
+      '/admin/takeaway/qr-management'     // Can manage takeaway QR codes
+      // NOTE: Managers CANNOT access /admin/staff (admin only)
+      // NOTE: Managers CANNOT access /admin/analytics/* (admin only)
     ]
   }
 

@@ -1118,9 +1118,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      cleanup_old_kot_counters: { Args: never; Returns: undefined }
-      get_next_kot_number: { Args: never; Returns: number }
+      cleanup_old_kot_counters: { Args: Record<PropertyKey, never>; Returns: undefined }
+      get_next_kot_number: { Args: Record<PropertyKey, never>; Returns: number }
       increment_offer_usage: { Args: { offer_id: string }; Returns: undefined }
+      place_order_optimized: {
+        Args: {
+          p_table_code: string
+          p_customer_phone: string
+          p_cart_items: Json
+          p_cart_total: number
+          p_guest_user_id?: string
+          p_order_type?: string
+          p_offer_id?: string
+          p_offer_discount?: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       offer_application_type: "order_level" | "session_level"

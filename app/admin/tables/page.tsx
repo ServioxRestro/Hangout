@@ -11,30 +11,19 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useTableSessions, type TableWithSession } from "@/hooks/useTableSessions";
+import { useTableSessions, useMarkItemsAsServed, type TableWithSession } from "@/hooks/useTableSessions";
 import { TableDetailPanel } from "@/components/admin/tables/TableDetailPanel";
 
 export default function TableSessionsPage() {
-  // Use custom hook for data management
-  const {
-    tablesData,
-    loading,
-    error,
-    fetchTablesWithSessions,
-    markItemsAsServed,
-  } = useTableSessions();
+  // Use custom hook for data management (React Query with auto-refresh)
+  const { data: tablesData = [], isLoading: loading, error: queryError, refetch } = useTableSessions();
+  const markServedMutation = useMarkItemsAsServed();
 
   const [selectedTable, setSelectedTable] = useState<TableWithSession | null>(null);
   const [showPanel, setShowPanel] = useState(false);
   const [changingOrderStatus, setChangingOrderStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchTablesWithSessions();
-
-    // Auto-refresh every 10 seconds for real-time updates
-    const interval = setInterval(fetchTablesWithSessions, 10000);
-    return () => clearInterval(interval);
-  }, [fetchTablesWithSessions]);
+  const error = queryError ? (queryError as any).message : "";
 
   // Sync selectedTable with fresh data after tablesData updates
   useEffect(() => {
@@ -46,7 +35,7 @@ export default function TableSessionsPage() {
         setSelectedTable(updatedTable);
       }
     }
-  }, [tablesData, showPanel]);
+  }, [tablesData, showPanel, selectedTable]);
 
   const getTableStatus = (
     tableData: TableWithSession
@@ -93,8 +82,8 @@ export default function TableSessionsPage() {
 
     setChangingOrderStatus("marking_served");
     try {
-      await markItemsAsServed(table.session.orders);
-      await fetchTablesWithSessions();
+      await markServedMutation.mutateAsync(table.session.orders);
+      // No need to manually refetch - mutation will auto-invalidate queries
     } catch (error: any) {
       console.error("Error marking items as served:", error);
       alert("Failed to mark items as served: " + error.message);
@@ -106,7 +95,7 @@ export default function TableSessionsPage() {
   const handlePaymentComplete = async () => {
     setShowPanel(false);
     setSelectedTable(null);
-    await fetchTablesWithSessions();
+    // No need to manually refetch - React Query will auto-update
   };
 
   const handleEndSession = async (sessionId: string) => {
@@ -123,7 +112,7 @@ export default function TableSessionsPage() {
 
       setShowPanel(false);
       setSelectedTable(null);
-      await fetchTablesWithSessions();
+      // React Query will auto-update the tables list
     } catch (error: any) {
       console.error("Error ending session:", error);
       alert("Failed to end session: " + error.message);
@@ -179,7 +168,7 @@ export default function TableSessionsPage() {
           </div>
           <Button
             variant="secondary"
-            onClick={fetchTablesWithSessions}
+            onClick={() => refetch()}
             leftIcon={<RefreshCw className="w-4 h-4" />}
           >
             Refresh

@@ -298,62 +298,73 @@ export default function TakeawayCartPage() {
           .eq("id", guestUser.id);
       }
 
-      const cartTotal = getTotalAmount();
+      // Calculate discount amount if offer selected
+      let discountAmount = 0;
+      if (selectedOffer) {
+        const cartTotal = getTotalAmount();
+        const benefits = selectedOffer.benefits as any;
 
-      // CREATE takeaway order (no table or session)
-      const { data: orderData, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          customer_phone: phone,
-          guest_user_id: guestUserId,
-          total_amount: cartTotal,
-          status: "placed",
-          order_type: "takeaway",
-          notes: `Takeaway order placed via QR code`,
-          session_offer_id: selectedOffer?.id || null, // Save selected offer
-        })
-        .select()
-        .single();
+        switch (selectedOffer.offer_type) {
+          case "cart_percentage":
+          case "promo_code":
+            const percentage = benefits?.discount_percentage || 0;
+            discountAmount = (cartTotal * percentage) / 100;
+            break;
 
-      if (orderError || !orderData) {
-        throw new Error(orderError?.message || "Failed to create order");
+          case "cart_flat_amount":
+            discountAmount = benefits?.discount_amount || 0;
+            break;
+
+          case "item_percentage":
+            const itemDiscount = benefits?.discount_percentage || 0;
+            discountAmount = (cartTotal * itemDiscount) / 100;
+            break;
+
+          default:
+            if (benefits?.discount_percentage) {
+              discountAmount = (cartTotal * benefits.discount_percentage) / 100;
+            } else if (benefits?.discount_amount) {
+              discountAmount = benefits.discount_amount;
+            }
+        }
       }
 
-      const orderId = orderData.id;
-
-      // Get next KOT number for this batch
-      const { data: kotData, error: kotError } = await supabase
-        .rpc('get_next_kot_number' as any);
-
-      if (kotError) {
-        throw new Error("Failed to generate KOT number");
-      }
-
-      const kotNumber = (kotData as unknown) as number;
-      const kotBatchId = crypto.randomUUID();
-
-      // Create order items with KOT info
-      const orderItems = cart.map(item => ({
-        order_id: orderId,
-        menu_item_id: item.id,
+      // Prepare cart items for the database function
+      const cartItems = cart.map(item => ({
+        id: item.id,
         quantity: item.quantity,
-        unit_price: item.price,
-        total_price: item.price * item.quantity,
-        kot_number: kotNumber,
-        kot_batch_id: kotBatchId
+        price: item.price
       }));
 
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(orderItems);
+      // Call optimized database function (reduces multiple queries to 1!)
+      const { data, error: rpcError } = await supabase
+        .rpc('place_order_optimized', {
+          p_table_code: '', // Not needed for takeaway
+          p_customer_phone: phone,
+          p_cart_items: cartItems,
+          p_cart_total: getTotalAmount(),
+          p_guest_user_id: guestUserId || undefined,
+          p_order_type: 'takeaway',
+          p_offer_id: selectedOffer?.id || undefined,
+          p_offer_discount: discountAmount
+        });
 
-      if (itemsError) {
-        throw new Error(itemsError.message || "Failed to add order items");
+      if (rpcError) {
+        throw new Error(rpcError.message || "Failed to place order");
       }
+
+      const result = data as any;
+
+      if (!result || !result.success) {
+        throw new Error("Order placement failed");
+      }
+
+      console.log("✅ Takeaway order placed successfully:", result);
+
+      setOrderId(result.order_id);
 
       // Clear cart
       updateCart([]);
-      setOrderId(orderId);
       setStep("success");
 
     } catch (error: any) {
