@@ -11,9 +11,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:offers": "node tests/offers-test.js",
+    "test:offers:db": "node tests/offers-database-test.js",
+    "test:offers:admin": "node tests/admin-offer-creation-test.js",
+    "test:offers:guest": "node tests/guest-offer-eligibility-test.js",
+    "test:offers:selection": "node tests/guest-offer-selection-test.js",
+    "setup:offers": "node scripts/setup-real-offers.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -50,7 +53,6 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
