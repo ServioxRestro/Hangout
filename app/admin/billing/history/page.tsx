@@ -12,7 +12,7 @@ import {
   CreditCard,
   Clock,
   CheckCircle,
-  DollarSign,
+  IndianRupee,
   Users,
   Calendar,
   RefreshCw,
@@ -641,69 +641,77 @@ export default function PaymentHistoryPage() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
         <Card>
-          <div className="p-6">
+          <div className="p-4 md:p-6">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <DollarSign className="w-6 h-6 text-green-600" />
+              <div className="p-2 md:p-3 bg-green-100 rounded-lg flex-shrink-0">
+                <IndianRupee className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
               </div>
-              <div>
-                <div className="text-2xl font-bold text-gray-900">
+              <div className="min-w-0 flex-1">
+                <div className="text-lg md:text-2xl font-bold text-gray-900 truncate">
                   {formatCurrency(totalRevenue)}
                 </div>
-                <div className="text-sm text-gray-600">Total Revenue</div>
+                <div className="text-xs md:text-sm text-gray-600">
+                  Total Revenue
+                </div>
               </div>
             </div>
           </div>
         </Card>
 
         <Card>
-          <div className="p-6">
+          <div className="p-4 md:p-6">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Receipt className="w-6 h-6 text-blue-600" />
+              <div className="p-2 md:p-3 bg-blue-100 rounded-lg flex-shrink-0">
+                <Receipt className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
               </div>
-              <div>
-                <div className="text-2xl font-bold text-gray-900">
+              <div className="min-w-0 flex-1">
+                <div className="text-lg md:text-2xl font-bold text-gray-900">
                   {filteredPayments.length}
                 </div>
-                <div className="text-sm text-gray-600">Total Bills</div>
+                <div className="text-xs md:text-sm text-gray-600">
+                  Total Bills
+                </div>
               </div>
             </div>
           </div>
         </Card>
 
         <Card>
-          <div className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <CreditCard className="w-6 h-6 text-purple-600" />
+          <div className="p-4 md:p-6">
+            <div className="flex items-start gap-3">
+              <div className="p-2 md:p-3 bg-purple-100 rounded-lg flex-shrink-0">
+                <CreditCard className="w-5 h-5 md:w-6 md:h-6 text-purple-600" />
               </div>
-              <div className="flex-1">
-                <div className="text-sm text-gray-600 mb-2 font-medium">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs md:text-sm text-gray-600 mb-2 font-medium">
                   Payment Distribution
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1 md:space-y-1.5">
                   {Object.entries(paymentMethodRevenue).length > 0 ? (
                     Object.entries(paymentMethodRevenue)
                       .sort(([, a], [, b]) => b - a)
                       .map(([method, amount]) => (
                         <div
                           key={method}
-                          className="flex justify-between items-center text-sm"
+                          className="flex justify-between items-center text-xs md:text-sm gap-2"
                         >
-                          <span className="flex items-center gap-1.5 text-gray-700">
-                            <span>{getPaymentMethodIcon(method)}</span>
-                            <span className="capitalize">{method}</span>
+                          <span className="flex items-center gap-1 md:gap-1.5 text-gray-700 min-w-0 flex-shrink">
+                            <span className="flex-shrink-0">
+                              {getPaymentMethodIcon(method)}
+                            </span>
+                            <span className="capitalize truncate">
+                              {method}
+                            </span>
                           </span>
-                          <span className="font-semibold text-gray-900">
+                          <span className="font-semibold text-gray-900 whitespace-nowrap">
                             {formatCurrency(amount)}
                           </span>
                         </div>
                       ))
                   ) : (
-                    <div className="text-sm text-gray-500 text-center py-2">
+                    <div className="text-xs md:text-sm text-gray-500 text-center py-2">
                       No payments yet
                     </div>
                   )}
@@ -714,16 +722,23 @@ export default function PaymentHistoryPage() {
         </Card>
 
         <Card>
-          <div className="p-6">
-            <div className="text-sm text-gray-600 mb-2">Payment Methods</div>
+          <div className="p-4 md:p-6">
+            <div className="text-xs md:text-sm text-gray-600 mb-2 font-medium">
+              Payment Methods
+            </div>
             <div className="space-y-1">
               {Object.entries(paymentMethodCounts).map(([method, count]) => (
-                <div key={method} className="flex justify-between text-sm">
-                  <span className="flex items-center gap-1">
-                    <span>{getPaymentMethodIcon(method)}</span>
-                    <span className="capitalize">{method}</span>
+                <div
+                  key={method}
+                  className="flex justify-between text-xs md:text-sm gap-2"
+                >
+                  <span className="flex items-center gap-1 min-w-0 flex-shrink">
+                    <span className="flex-shrink-0">
+                      {getPaymentMethodIcon(method)}
+                    </span>
+                    <span className="capitalize truncate">{method}</span>
                   </span>
-                  <span className="font-medium">{count}</span>
+                  <span className="font-medium whitespace-nowrap">{count}</span>
                 </div>
               ))}
             </div>
@@ -733,115 +748,128 @@ export default function PaymentHistoryPage() {
 
       {/* Payment History Table */}
       <Card>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Bill Details
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Table & Customer
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount & Payment
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Session Duration
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Paid At
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredPayments.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center">
-                    <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      No Payment History
-                    </h3>
-                    <p className="text-gray-600">
-                      No completed payments found for the selected filters.
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredPayments.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {payment.bill_number}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          Bill ID: {payment.id.slice(-8)}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {payment.table_sessions?.restaurant_tables
-                            ?.table_number
-                            ? `Table ${payment.table_sessions.restaurant_tables.table_number}`
-                            : "Takeaway"}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {payment.table_sessions?.customer_phone ||
-                            payment.table_sessions?.customer_email ||
-                            "N/A"}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {formatCurrency(payment.final_amount)}
-                        </div>
-                        <div className="text-sm text-gray-500 flex items-center gap-1">
-                          <span>
-                            {getPaymentMethodIcon(payment.payment_method)}
-                          </span>
-                          <span className="capitalize">
-                            {payment.payment_method}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {payment.table_sessions
-                        ? calculateSessionDuration(
-                            payment.table_sessions.session_started_at,
-                            payment.table_sessions.session_ended_at
-                          )
-                        : "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDateTime(payment.paid_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => printReceipt(payment)}
-                          leftIcon={<Printer className="w-3 h-3" />}
-                        >
-                          Print
-                        </Button>
-                      </div>
-                    </td>
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <div className="inline-block min-w-full align-middle">
+            <div className="overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Bill Details
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Table & Customer
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Amount & Payment
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Session Duration
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Paid At
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Actions
+                    </th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center">
+                        <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                          No Payment History
+                        </h3>
+                        <p className="text-gray-600">
+                          No completed payments found for the selected filters.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPayments.map((payment) => (
+                      <tr key={payment.id} className="hover:bg-gray-50">
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">
+                              {payment.bill_number}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              ID: {payment.id.slice(-8)}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">
+                              {payment.table_sessions?.restaurant_tables
+                                ?.table_number
+                                ? `Table ${payment.table_sessions.restaurant_tables.table_number}`
+                                : "Takeaway"}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate max-w-[150px]">
+                              {payment.table_sessions?.customer_phone ||
+                                payment.table_sessions?.customer_email ||
+                                "N/A"}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">
+                              {formatCurrency(payment.final_amount)}
+                            </div>
+                            <div className="text-xs text-gray-500 flex items-center gap-1">
+                              <span>
+                                {getPaymentMethodIcon(payment.payment_method)}
+                              </span>
+                              <span className="capitalize">
+                                {payment.payment_method}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {payment.table_sessions
+                            ? calculateSessionDuration(
+                                payment.table_sessions.session_started_at,
+                                payment.table_sessions.session_ended_at
+                              )
+                            : "N/A"}
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
+                          {formatDateTime(payment.paid_at)}
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => printReceipt(payment)}
+                              leftIcon={<Printer className="w-3 h-3" />}
+                            >
+                              <span className="hidden sm:inline">Print</span>
+                              <span className="sm:hidden">
+                                <Printer className="w-3 h-3" />
+                              </span>
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
+        {/* Scroll indicator for mobile */}
+        {filteredPayments.length > 0 && (
+          <div className="sm:hidden px-4 py-2 text-xs text-gray-500 text-center border-t border-gray-200 bg-gray-50">
+            ← Swipe to view all columns →
+          </div>
+        )}
       </Card>
     </div>
   );

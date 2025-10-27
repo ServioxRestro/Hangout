@@ -9,7 +9,7 @@ import {
   ArrowLeft,
   Download,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Award,
 } from "lucide-react";
 import Card from "@/components/admin/Card";
@@ -80,10 +80,10 @@ export default function CustomerAnalyticsPage() {
   const { customers, overview } = analytics;
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6 md:mb-8">
+        <div className="flex items-center gap-3 md:gap-4">
           <button
             onClick={() => router.push("/admin/analytics")}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -91,18 +91,18 @@ export default function CustomerAnalyticsPage() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Customer Insights
             </h1>
-            <p className="text-gray-600 mt-1">
+            <p className="text-sm md:text-base text-gray-600 mt-1">
               Understand customer behavior, retention, and top spenders
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Period Selector */}
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1">
+          <div className="flex items-center gap-1 sm:gap-2 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
             {[
               { value: "7d", label: "7 Days" },
               { value: "30d", label: "30 Days" },
@@ -113,7 +113,7 @@ export default function CustomerAnalyticsPage() {
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value as Period)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   period === p.value
                     ? "bg-purple-600 text-white"
                     : "text-gray-600 hover:bg-gray-100"
@@ -136,7 +136,7 @@ export default function CustomerAnalyticsPage() {
               link.download = `customer-analytics-${period}-${new Date().toISOString()}.json`;
               link.click();
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 text-sm"
           >
             <Download className="w-4 h-4" />
             <span>Export</span>
@@ -218,14 +218,14 @@ export default function CustomerAnalyticsPage() {
                 {formatCurrency(customers.averageSpend)}
               </p>
               <div className="flex items-center gap-1 mt-2">
-                <DollarSign className="w-4 h-4 text-amber-600" />
+                <IndianRupee className="w-4 h-4 text-amber-600" />
                 <span className="text-sm font-medium text-amber-600">
                   Per Customer
                 </span>
               </div>
             </div>
             <div className="p-3 bg-amber-50 rounded-lg">
-              <DollarSign className="w-6 h-6 text-amber-600" />
+              <IndianRupee className="w-6 h-6 text-amber-600" />
             </div>
           </div>
         </Card>
@@ -305,87 +305,99 @@ export default function CustomerAnalyticsPage() {
         </div>
 
         {customers.topCustomers && customers.topCustomers.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
-                    Rank
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
-                    Phone
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
-                    Total Spent
-                  </th>
-                  <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">
-                    Orders
-                  </th>
-                  <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">
-                    Visits
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
-                    Avg Order
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.topCustomers.map((customer: any, index: number) => (
-                  <tr
-                    key={index}
-                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                      index < 3 ? "bg-amber-50/30" : ""
-                    }`}
-                  >
-                    <td className="py-3 px-4">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
-                          index === 0
-                            ? "bg-yellow-500"
-                            : index === 1
-                            ? "bg-gray-400"
-                            : index === 2
-                            ? "bg-amber-600"
-                            : "bg-gray-300"
-                        }`}
-                      >
-                        {index + 1}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-gray-900">
-                        {customer.phone}
-                      </p>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <p className="font-bold text-green-600">
-                        {formatCurrency(customer.totalSpent)}
-                      </p>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {customer.totalOrders}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                        {customer.visitCount}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <p className="text-gray-700 font-medium">
-                        {formatCurrency(
-                          customer.totalOrders > 0
-                            ? customer.totalSpent / customer.totalOrders
-                            : 0
-                        )}
-                      </p>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <div className="inline-block min-w-full align-middle">
+                <div className="overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Rank
+                        </th>
+                        <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Phone
+                        </th>
+                        <th className="text-right py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Total Spent
+                        </th>
+                        <th className="text-center py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Orders
+                        </th>
+                        <th className="text-center py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Visits
+                        </th>
+                        <th className="text-right py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Avg Order
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customers.topCustomers.map(
+                        (customer: any, index: number) => (
+                          <tr
+                            key={index}
+                            className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                              index < 3 ? "bg-amber-50/30" : ""
+                            }`}
+                          >
+                            <td className="py-3 px-2 sm:px-4">
+                              <div
+                                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-white text-xs sm:text-sm ${
+                                  index === 0
+                                    ? "bg-yellow-500"
+                                    : index === 1
+                                    ? "bg-gray-400"
+                                    : index === 2
+                                    ? "bg-amber-600"
+                                    : "bg-gray-300"
+                                }`}
+                              >
+                                {index + 1}
+                              </div>
+                            </td>
+                            <td className="py-3 px-2 sm:px-4">
+                              <p className="font-medium text-gray-900 text-xs sm:text-sm">
+                                {customer.phone}
+                              </p>
+                            </td>
+                            <td className="py-3 px-2 sm:px-4 text-right">
+                              <p className="font-bold text-green-600 text-xs sm:text-sm">
+                                {formatCurrency(customer.totalSpent)}
+                              </p>
+                            </td>
+                            <td className="py-3 px-2 sm:px-4 text-center">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {customer.totalOrders}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 sm:px-4 text-center">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                {customer.visitCount}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 sm:px-4 text-right">
+                              <p className="text-gray-700 font-medium text-xs sm:text-sm">
+                                {formatCurrency(
+                                  customer.totalOrders > 0
+                                    ? customer.totalSpent / customer.totalOrders
+                                    : 0
+                                )}
+                              </p>
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            {/* Scroll indicator for mobile */}
+            <div className="sm:hidden px-4 py-2 text-xs text-gray-500 text-center border-t border-gray-200 bg-gray-50 -mx-4">
+              ← Swipe to view all columns →
+            </div>
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center h-40 text-gray-400">
             <Award className="w-12 h-12 mb-3" />
@@ -457,7 +469,7 @@ export default function CustomerAnalyticsPage() {
                 <span className="text-sm text-gray-600">
                   Average Spend Per Customer
                 </span>
-                <DollarSign className="w-5 h-5 text-purple-600" />
+                <IndianRupee className="w-5 h-5 text-purple-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
                 {formatCurrency(customers.averageSpend)}

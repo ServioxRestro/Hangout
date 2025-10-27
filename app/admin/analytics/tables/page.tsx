@@ -8,7 +8,7 @@ import {
   Clock,
   ArrowLeft,
   Download,
-  DollarSign,
+  IndianRupee,
   Award,
   Users,
   Activity,
@@ -74,10 +74,10 @@ export default function TablesAnalyticsPage() {
   const { tables } = analytics;
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6 md:mb-8">
+        <div className="flex items-center gap-3 md:gap-4">
           <button
             onClick={() => router.push("/admin/analytics")}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -85,18 +85,18 @@ export default function TablesAnalyticsPage() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Table Analytics
             </h1>
-            <p className="text-gray-600 mt-1">
+            <p className="text-sm md:text-base text-gray-600 mt-1">
               Analyze table utilization, session duration, and table performance
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Period Selector */}
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1">
+          <div className="flex items-center gap-1 sm:gap-2 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
             {[
               { value: "7d", label: "7 Days" },
               { value: "30d", label: "30 Days" },
@@ -107,7 +107,7 @@ export default function TablesAnalyticsPage() {
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value as Period)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   period === p.value
                     ? "bg-indigo-600 text-white"
                     : "text-gray-600 hover:bg-gray-100"
@@ -130,7 +130,7 @@ export default function TablesAnalyticsPage() {
               link.download = `tables-analytics-${period}-${new Date().toISOString()}.json`;
               link.click();
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 text-sm"
           >
             <Download className="w-4 h-4" />
             <span>Export</span>
@@ -351,92 +351,100 @@ export default function TablesAnalyticsPage() {
             </ResponsiveContainer>
 
             {/* Detailed Table Stats */}
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
-                      Rank
-                    </th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
-                      Table
-                    </th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
-                      Revenue
-                    </th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">
-                      Sessions
-                    </th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
-                      Avg/Session
-                    </th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">
-                      Type
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tables.topTables.map((table: any, index: number) => (
-                    <tr
-                      key={table.tableNumber}
-                      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                        index < 3 ? "bg-indigo-50/30" : ""
-                      }`}
-                    >
-                      <td className="py-3 px-4">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
-                            index === 0
-                              ? "bg-yellow-500"
-                              : index === 1
-                              ? "bg-gray-400"
-                              : index === 2
-                              ? "bg-amber-600"
-                              : "bg-gray-300"
+            <div className="mt-6 overflow-x-auto -mx-4 sm:mx-0">
+              <div className="inline-block min-w-full align-middle">
+                <div className="overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Rank
+                        </th>
+                        <th className="text-left py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Table
+                        </th>
+                        <th className="text-right py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Revenue
+                        </th>
+                        <th className="text-center py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Sessions
+                        </th>
+                        <th className="text-right py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Avg/Session
+                        </th>
+                        <th className="text-center py-3 px-2 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Type
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tables.topTables.map((table: any, index: number) => (
+                        <tr
+                          key={table.tableNumber}
+                          className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                            index < 3 ? "bg-indigo-50/30" : ""
                           }`}
                         >
-                          {index + 1}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <p className="font-medium text-gray-900">
-                          Table {table.tableNumber}
-                        </p>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <p className="font-bold text-green-600">
-                          {formatCurrency(table.revenue)}
-                        </p>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {table.sessions}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <p className="text-gray-700 font-medium">
-                          {formatCurrency(
-                            table.sessions > 0
-                              ? table.revenue / table.sessions
-                              : 0
-                          )}
-                        </p>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {table.isVegOnly ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            🟢 Veg
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            All
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          <td className="py-3 px-2 sm:px-4">
+                            <div
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-white text-xs sm:text-sm ${
+                                index === 0
+                                  ? "bg-yellow-500"
+                                  : index === 1
+                                  ? "bg-gray-400"
+                                  : index === 2
+                                  ? "bg-amber-600"
+                                  : "bg-gray-300"
+                              }`}
+                            >
+                              {index + 1}
+                            </div>
+                          </td>
+                          <td className="py-3 px-2 sm:px-4">
+                            <p className="font-medium text-gray-900 text-xs sm:text-sm">
+                              Table {table.tableNumber}
+                            </p>
+                          </td>
+                          <td className="py-3 px-2 sm:px-4 text-right">
+                            <p className="font-bold text-green-600 text-xs sm:text-sm">
+                              {formatCurrency(table.revenue)}
+                            </p>
+                          </td>
+                          <td className="py-3 px-2 sm:px-4 text-center">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {table.sessions}
+                            </span>
+                          </td>
+                          <td className="py-3 px-2 sm:px-4 text-right">
+                            <p className="text-gray-700 font-medium text-xs sm:text-sm">
+                              {formatCurrency(
+                                table.sessions > 0
+                                  ? table.revenue / table.sessions
+                                  : 0
+                              )}
+                            </p>
+                          </td>
+                          <td className="py-3 px-2 sm:px-4 text-center">
+                            {table.isVegOnly ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                🟢 Veg
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                All
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            {/* Scroll indicator for mobile */}
+            <div className="sm:hidden px-4 py-2 text-xs text-gray-500 text-center border-t border-gray-200 bg-gray-50 -mx-4 mt-4">
+              ← Swipe to view all columns →
             </div>
           </>
         ) : (

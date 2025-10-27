@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Receipt,
   CreditCard,
   ArrowLeft,
@@ -83,10 +83,10 @@ export default function RevenueAnalyticsPage() {
   );
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6 md:mb-8">
+        <div className="flex items-center gap-3 md:gap-4">
           <button
             onClick={() => router.push("/admin/analytics")}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -94,18 +94,18 @@ export default function RevenueAnalyticsPage() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Revenue Analytics
             </h1>
-            <p className="text-gray-600 mt-1">
+            <p className="text-sm md:text-base text-gray-600 mt-1">
               Track revenue trends, payment methods, and financial performance
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Period Selector */}
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1">
+          <div className="flex items-center gap-1 sm:gap-2 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
             {[
               { value: "7d", label: "7 Days" },
               { value: "30d", label: "30 Days" },
@@ -116,7 +116,7 @@ export default function RevenueAnalyticsPage() {
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value as Period)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   period === p.value
                     ? "bg-green-600 text-white"
                     : "text-gray-600 hover:bg-gray-100"
@@ -139,7 +139,7 @@ export default function RevenueAnalyticsPage() {
               link.download = `revenue-analytics-${period}-${new Date().toISOString()}.json`;
               link.click();
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 text-sm"
           >
             <Download className="w-4 h-4" />
             <span>Export</span>
@@ -168,7 +168,7 @@ export default function RevenueAnalyticsPage() {
               </div>
             </div>
             <div className="p-3 bg-green-50 rounded-lg">
-              <DollarSign className="w-6 h-6 text-green-600" />
+              <IndianRupee className="w-6 h-6 text-green-600" />
             </div>
           </div>
         </Card>

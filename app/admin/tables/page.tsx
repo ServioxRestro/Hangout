@@ -6,22 +6,35 @@ import Button from "@/components/admin/Button";
 import { formatCurrency } from "@/lib/constants";
 import {
   Clock,
-  DollarSign,
+  IndianRupee,
   ShoppingCart,
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useTableSessions, useMarkItemsAsServed, type TableWithSession } from "@/hooks/useTableSessions";
+import {
+  useTableSessions,
+  useMarkItemsAsServed,
+  type TableWithSession,
+} from "@/hooks/useTableSessions";
 import { TableDetailPanel } from "@/components/admin/tables/TableDetailPanel";
 
 export default function TableSessionsPage() {
   // Use custom hook for data management (React Query with auto-refresh)
-  const { data: tablesData = [], isLoading: loading, error: queryError, refetch } = useTableSessions();
+  const {
+    data: tablesData = [],
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useTableSessions();
   const markServedMutation = useMarkItemsAsServed();
 
-  const [selectedTable, setSelectedTable] = useState<TableWithSession | null>(null);
+  const [selectedTable, setSelectedTable] = useState<TableWithSession | null>(
+    null
+  );
   const [showPanel, setShowPanel] = useState(false);
-  const [changingOrderStatus, setChangingOrderStatus] = useState<string | null>(null);
+  const [changingOrderStatus, setChangingOrderStatus] = useState<string | null>(
+    null
+  );
 
   const error = queryError ? (queryError as any).message : "";
 
@@ -157,7 +170,11 @@ export default function TableSessionsPage() {
   return (
     <div className="flex gap-6">
       {/* Left Section - Tables Grid */}
-      <div className={`flex-1 transition-all duration-300 ${showPanel ? 'lg:mr-0' : ''}`}>
+      <div
+        className={`flex-1 transition-all duration-300 ${
+          showPanel ? "lg:mr-0" : ""
+        }`}
+      >
         {/* Page Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -209,16 +226,20 @@ export default function TableSessionsPage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-                <h2 className="text-lg font-semibold text-gray-900">Regular Tables</h2>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Regular Tables
+                </h2>
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                   {regularTables.length}
                 </span>
               </div>
-              <div className={`grid gap-4 ${
-                showPanel
-                  ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4'
-                  : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
-              }`}>
+              <div
+                className={`grid gap-4 ${
+                  showPanel
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4"
+                    : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+                }`}
+              >
                 {regularTables.map((tableData) => {
                   const status = getTableStatus(tableData);
                   const colors = getTableColor(status);
@@ -261,9 +282,11 @@ export default function TableSessionsPage() {
                             </span>
                           </div>
                           <div className="flex items-center justify-center gap-1">
-                            <DollarSign className="w-3 h-3" />
+                            <IndianRupee className="w-3 h-3" />
                             <span>
-                              {formatCurrency(tableData.session.total_amount || 0)}
+                              {formatCurrency(
+                                tableData.session.total_amount || 0
+                              )}
                             </span>
                           </div>
                           {tableData.session.orders &&
@@ -272,7 +295,9 @@ export default function TableSessionsPage() {
                                 <ShoppingCart className="w-3 h-3" />
                                 <span>
                                   {tableData.session.orders.length} order
-                                  {tableData.session.orders.length > 1 ? "s" : ""}
+                                  {tableData.session.orders.length > 1
+                                    ? "s"
+                                    : ""}
                                 </span>
                               </div>
                             )}
@@ -300,16 +325,20 @@ export default function TableSessionsPage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                <h2 className="text-lg font-semibold text-gray-900">Veg-Only Tables</h2>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Veg-Only Tables
+                </h2>
                 <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
                   {vegOnlyTables.length}
                 </span>
               </div>
-              <div className={`grid gap-4 ${
-                showPanel
-                  ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4'
-                  : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
-              }`}>
+              <div
+                className={`grid gap-4 ${
+                  showPanel
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4"
+                    : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+                }`}
+              >
                 {vegOnlyTables.map((tableData) => {
                   const status = getTableStatus(tableData);
                   const colors = getTableColor(status);
@@ -357,9 +386,11 @@ export default function TableSessionsPage() {
                             </span>
                           </div>
                           <div className="flex items-center justify-center gap-1">
-                            <DollarSign className="w-3 h-3" />
+                            <IndianRupee className="w-3 h-3" />
                             <span>
-                              {formatCurrency(tableData.session.total_amount || 0)}
+                              {formatCurrency(
+                                tableData.session.total_amount || 0
+                              )}
                             </span>
                           </div>
                           {tableData.session.orders &&
@@ -368,7 +399,9 @@ export default function TableSessionsPage() {
                                 <ShoppingCart className="w-3 h-3" />
                                 <span>
                                   {tableData.session.orders.length} order
-                                  {tableData.session.orders.length > 1 ? "s" : ""}
+                                  {tableData.session.orders.length > 1
+                                    ? "s"
+                                    : ""}
                                 </span>
                               </div>
                             )}

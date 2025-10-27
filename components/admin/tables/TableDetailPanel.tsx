@@ -4,7 +4,7 @@ import { useState } from "react";
 import Button from "../Button";
 import {
   Clock,
-  DollarSign,
+  IndianRupee,
   Utensils,
   Plus,
   X,
@@ -112,7 +112,8 @@ export function TableDetailPanel({
                 table.session.session_started_at ||
                   table.session.created_at ||
                   ""
-              )} • {formatCurrency(table.session.total_amount || 0)}
+              )}{" "}
+              • {formatCurrency(table.session.total_amount || 0)}
             </p>
           </div>
           <button
@@ -161,51 +162,74 @@ export function TableDetailPanel({
           </div>
 
           {/* Session Offer */}
-          {table.session.orders && table.session.orders.length > 0 && table.session.orders[0].session_offer && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <div className="p-1.5 bg-white rounded shadow-sm flex-shrink-0">
-                  {table.session.orders[0].session_offer.offer_type === "cart_percentage" ||
-                   table.session.orders[0].session_offer.offer_type === "min_order_discount" ? (
-                    <Percent className="w-4 h-4 text-green-600" />
-                  ) : table.session.orders[0].session_offer.offer_type === "promo_code" ? (
-                    <Tag className="w-4 h-4 text-green-600" />
-                  ) : (
-                    <Gift className="w-4 h-4 text-green-600" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-semibold text-green-900">
-                      OFFER APPLIED
-                    </span>
+          {table.session.orders &&
+            table.session.orders.length > 0 &&
+            table.session.orders[0].session_offer && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <div className="p-1.5 bg-white rounded shadow-sm flex-shrink-0">
+                    {table.session.orders[0].session_offer.offer_type ===
+                      "cart_percentage" ||
+                    table.session.orders[0].session_offer.offer_type ===
+                      "min_order_discount" ? (
+                      <Percent className="w-4 h-4 text-green-600" />
+                    ) : table.session.orders[0].session_offer.offer_type ===
+                      "promo_code" ? (
+                      <Tag className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Gift className="w-4 h-4 text-green-600" />
+                    )}
                   </div>
-                  <div className="font-medium text-sm text-green-800 truncate">
-                    {table.session.orders[0].session_offer.name}
-                  </div>
-                  <div className="text-xs text-green-700 mt-0.5">
-                    {(() => {
-                      const benefits = table.session.orders[0].session_offer?.benefits as any;
-                      const offerType = table.session.orders[0].session_offer?.offer_type;
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-xs font-semibold text-green-900">
+                        OFFER APPLIED
+                      </span>
+                    </div>
+                    <div className="font-medium text-sm text-green-800 truncate">
+                      {table.session.orders[0].session_offer.name}
+                    </div>
+                    <div className="text-xs text-green-700 mt-0.5">
+                      {(() => {
+                        const benefits = table.session.orders[0].session_offer
+                          ?.benefits as any;
+                        const offerType =
+                          table.session.orders[0].session_offer?.offer_type;
 
-                      if (offerType === "cart_percentage") {
-                        return `${benefits?.discount_percentage || 0}% off${benefits?.max_discount_amount ? ` (max ${formatCurrency(benefits.max_discount_amount)})` : ''}`;
-                      } else if (offerType === "cart_flat_amount") {
-                        return `${formatCurrency(benefits?.discount_amount || 0)} off`;
-                      } else if (offerType === "promo_code") {
-                        if (benefits?.discount_percentage) {
-                          return `${benefits.discount_percentage}% off${benefits?.max_discount_amount ? ` (max ${formatCurrency(benefits.max_discount_amount)})` : ''}`;
-                        } else {
-                          return `${formatCurrency(benefits?.discount_amount || 0)} off`;
+                        if (offerType === "cart_percentage") {
+                          return `${benefits?.discount_percentage || 0}% off${
+                            benefits?.max_discount_amount
+                              ? ` (max ${formatCurrency(
+                                  benefits.max_discount_amount
+                                )})`
+                              : ""
+                          }`;
+                        } else if (offerType === "cart_flat_amount") {
+                          return `${formatCurrency(
+                            benefits?.discount_amount || 0
+                          )} off`;
+                        } else if (offerType === "promo_code") {
+                          if (benefits?.discount_percentage) {
+                            return `${benefits.discount_percentage}% off${
+                              benefits?.max_discount_amount
+                                ? ` (max ${formatCurrency(
+                                    benefits.max_discount_amount
+                                  )})`
+                                : ""
+                            }`;
+                          } else {
+                            return `${formatCurrency(
+                              benefits?.discount_amount || 0
+                            )} off`;
+                          }
                         }
-                      }
-                      return "Special discount applied";
-                    })()}
+                        return "Special discount applied";
+                      })()}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* Order Items */}
           {table.session.orders && table.session.orders.length > 0 && (
@@ -350,7 +374,7 @@ export function TableDetailPanel({
                 onClick={() => setShowBillingModal(true)}
                 className="flex-1"
                 size="sm"
-                leftIcon={<DollarSign className="w-4 h-4" />}
+                leftIcon={<IndianRupee className="w-4 h-4" />}
               >
                 Process Bill
               </Button>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   ShoppingCart,
   Users,
   UtensilsCrossed,
@@ -106,7 +106,7 @@ export default function AnalyticsOverviewPage() {
       title: "Revenue Analytics",
       description:
         "Track revenue trends, payment methods, and financial performance",
-      icon: <DollarSign className="w-8 h-8" />,
+      icon: <IndianRupee className="w-8 h-8" />,
       color: "green",
       value: formatCurrency(analytics.overview.totalRevenue),
       label: "Total Revenue",
@@ -266,21 +266,21 @@ export default function AnalyticsOverviewPage() {
         </div>
       }
     >
-      <div className="p-6 max-w-[1600px] mx-auto">
+      <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6 md:mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               Analytics Dashboard
             </h1>
-            <p className="text-gray-600 mt-1">
+            <p className="text-sm md:text-base text-gray-600 mt-1">
               Bird's eye view of your restaurant performance
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             {/* Period Selector */}
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1">
+            <div className="flex items-center gap-1 sm:gap-2 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
               {[
                 { value: "7d", label: "7 Days" },
                 { value: "30d", label: "30 Days" },
@@ -291,7 +291,7 @@ export default function AnalyticsOverviewPage() {
                 <button
                   key={p.value}
                   onClick={() => setPeriod(p.value as Period)}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                     period === p.value
                       ? "bg-green-600 text-white"
                       : "text-gray-600 hover:bg-gray-100"
@@ -314,7 +314,7 @@ export default function AnalyticsOverviewPage() {
                 link.download = `analytics-overview-${period}-${new Date().toISOString()}.json`;
                 link.click();
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 text-sm"
             >
               <Download className="w-4 h-4" />
               <span>Export</span>
@@ -345,7 +345,7 @@ export default function AnalyticsOverviewPage() {
                 </div>
               </div>
               <div className="p-3 bg-green-50 rounded-lg">
-                <DollarSign className="w-6 h-6 text-green-600" />
+                <IndianRupee className="w-6 h-6 text-green-600" />
               </div>
             </div>
           </Card>
@@ -474,13 +474,13 @@ export default function AnalyticsOverviewPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-6 border border-green-100">
-          <div className="flex items-center justify-between">
+        <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-4 md:p-6 border border-green-100">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h3 className="text-lg font-bold text-gray-900">
+              <h3 className="text-base md:text-lg font-bold text-gray-900">
                 Need Custom Reports?
               </h3>
-              <p className="text-gray-600 mt-1">
+              <p className="text-sm text-gray-600 mt-1">
                 Export detailed analytics data for further analysis
               </p>
             </div>
@@ -496,7 +496,7 @@ export default function AnalyticsOverviewPage() {
                 link.download = `analytics-complete-${period}-${new Date().toISOString()}.json`;
                 link.click();
               }}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center justify-center gap-2"
             >
               <Download className="w-5 h-5" />
               Export All Data
