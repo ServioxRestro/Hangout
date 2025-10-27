@@ -34,13 +34,13 @@ async function fetchBadgeCounts(userRole?: string): Promise<BadgeCounts> {
         .not("kot_number", "is", null)
         .in("status", ["placed", "preparing", "ready"]),
 
-      // 3. Pending Bills (orders that are served and ready for billing)
-      // Count served orders that haven't been paid yet
+      // 3. Pending Bills (bills awaiting payment confirmation)
+      // Count bills with payment_status = 'pending' that need manager confirmation
       userRole === "manager" || userRole === "super_admin"
         ? supabase
-            .from("orders")
+            .from("bills")
             .select("*", { count: "exact", head: true })
-            .eq("status", "served")
+            .eq("payment_status", "pending")
         : Promise.resolve({ count: 0 }),
 
       // 4. Takeaway Orders (active - not served/paid/cancelled)

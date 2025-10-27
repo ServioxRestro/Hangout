@@ -144,24 +144,49 @@ async function testAdminBadges() {
     // Step 4: Test Badge Counts - Pending Bills
     console.log('\n🔍 Step 4: Testing Pending Bills badge...');
 
-    // Order should now show as "served" and ready for billing
-    const { data: orderStatus } = await supabase
-      .from('orders')
-      .select('status')
-      .eq('id', orderId)
+    // Create a pending bill to test badge logic
+    const { data: billData, error: billError } = await supabase
+      .from('bills')
+      .insert({
+        table_session_id: sessionId,
+        bill_number: `TEST-${Date.now()}`,
+        subtotal: 100,
+        discount_amount: 0,
+        discount_percentage: 0,
+        cgst_rate: 2.5,
+        cgst_amount: 2.5,
+        sgst_rate: 2.5,
+        sgst_amount: 2.5,
+        service_charge_rate: 10,
+        service_charge_amount: 10,
+        total_tax_amount: 15,
+        final_amount: 115,
+        payment_status: 'pending',
+        payment_method: null
+      })
+      .select()
       .single();
 
-    console.log(`   Order status: ${orderStatus.status}`);
+    if (billError) {
+      console.error('Failed to create test bill:', billError);
+      throw billError;
+    }
+
+    const testBillId = billData.id;
+    console.log(`   ✅ Created test bill ${billData.bill_number}`);
 
     startTime = Date.now();
     const { count: pendingBillsCount } = await supabase
-      .from('orders')
+      .from('bills')
       .select('*', { count: 'exact', head: true })
-      .eq('status', 'served');
+      .eq('payment_status', 'pending');
 
     measureTime('Pending bills query', startTime);
     logTestResult('Pending Bills Count', pendingBillsCount > 0,
-      `Found ${pendingBillsCount} order(s) ready for billing`);
+      `Found ${pendingBillsCount} bill(s) awaiting payment confirmation`);
+
+    // Clean up test bill
+    await supabase.from('bills').delete().eq('id', testBillId);
 
     // Step 5: Test Takeaway Orders Badge
     console.log('\n🔍 Step 5: Testing Takeaway Orders badge...');
@@ -180,6 +205,29 @@ async function testAdminBadges() {
     // Step 6: Test Parallel Queries (how useAdminBadges works)
     console.log('\n🔍 Step 6: Testing parallel badge queries (useAdminBadges simulation)...');
 
+    // Create another test bill for parallel query test
+    const { data: testBill2 } = await supabase
+      .from('bills')
+      .insert({
+        table_session_id: sessionId,
+        bill_number: `TEST-PARALLEL-${Date.now()}`,
+        subtotal: 50,
+        discount_amount: 0,
+        discount_percentage: 0,
+        cgst_rate: 2.5,
+        cgst_amount: 1.25,
+        sgst_rate: 2.5,
+        sgst_amount: 1.25,
+        service_charge_rate: 10,
+        service_charge_amount: 5,
+        total_tax_amount: 7.5,
+        final_amount: 57.5,
+        payment_status: 'pending',
+        payment_method: null
+      })
+      .select()
+      .single();
+
     startTime = Date.now();
     const [ordersResult, kitchenItemsResult, billsResult, takeawayResult] = await Promise.all([
       supabase
@@ -195,9 +243,9 @@ async function testAdminBadges() {
         .in('status', ['placed', 'preparing', 'ready']),
 
       supabase
-        .from('orders')
+        .from('bills')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'served'),
+        .eq('payment_status', 'pending'),
 
       supabase
         .from('orders')
@@ -220,6 +268,11 @@ async function testAdminBadges() {
 
     logTestResult('Parallel Query Performance', duration < 1000,
       `Completed in ${duration}ms (Target: < 1000ms)`);
+
+    // Clean up second test bill
+    if (testBill2) {
+      await supabase.from('bills').delete().eq('id', testBill2.id);
+    }
 
     console.log('\n' + '='.repeat(60));
     console.log('✅ ALL BADGE TESTS PASSED!');
