@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { cookies } from "next/headers";
 
 // Mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -23,10 +22,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Session expired" }, { status: 401 });
       }
 
-      // Allow super_admin, waiter, and manager roles
-      const allowedRoles = ['super_admin', 'waiter', 'manager'];
-      if (!allowedRoles.includes(sessionData.role)) {
-        return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+      // Only super_admin can access analytics
+      if (sessionData.role !== 'super_admin') {
+        return NextResponse.json({ error: "Insufficient permissions - Analytics requires Super Admin role" }, { status: 403 });
       }
     } catch (err) {
       return NextResponse.json({ error: "Invalid session" }, { status: 401 });
@@ -38,34 +36,42 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get("period") || "30d"; // 7d, 30d, 90d, 1y, all
 
     // Calculate date range
-    let startDateObj: Date | null = null;
-    let endDateObj: Date | null = null;
+    let startDateStr: string | null = null;
+    let endDateStr: string | null = null;
     const now = new Date();
 
     if (startDate && endDate) {
-      startDateObj = new Date(startDate);
-      endDateObj = new Date(endDate);
+      startDateStr = startDate;
+      endDateStr = endDate;
     } else {
+      let daysBack = 30;
       switch (period) {
         case "7d":
-          startDateObj = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          daysBack = 7;
           break;
         case "30d":
-          startDateObj = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          daysBack = 30;
           break;
         case "90d":
-          startDateObj = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+          daysBack = 90;
           break;
         case "1y":
-          startDateObj = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+          daysBack = 365;
           break;
         case "all":
-          startDateObj = null; // No filter for "all"
+          daysBack = 0; // No filter
           break;
+      }
+
+      if (daysBack > 0) {
+        const startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - daysBack);
+        startDateStr = startDate.toISOString();
+        endDateStr = now.toISOString();
       }
     }
 
-    // Fetch overview metrics
+    // Fetch all analytics data in parallel using optimized queries
     const [
       revenueData,
       ordersData,
@@ -74,18 +80,18 @@ export async function GET(request: NextRequest) {
       offersData,
       tablesData,
     ] = await Promise.all([
-      fetchRevenueMetrics(startDateObj, endDateObj),
-      fetchOrdersMetrics(startDateObj, endDateObj),
-      fetchCustomersMetrics(startDateObj, endDateObj),
-      fetchMenuMetrics(startDateObj, endDateObj),
-      fetchOffersMetrics(startDateObj, endDateObj),
-      fetchTablesMetrics(startDateObj, endDateObj),
+      fetchRevenueMetrics(startDateStr, endDateStr),
+      fetchOrdersMetrics(startDateStr, endDateStr),
+      fetchCustomersMetrics(startDateStr, endDateStr),
+      fetchMenuMetrics(startDateStr, endDateStr),
+      fetchOffersMetrics(startDateStr, endDateStr),
+      fetchTablesMetrics(startDateStr, endDateStr),
     ]);
 
     return NextResponse.json({
       period,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
+      startDate: startDateStr || undefined,
+      endDate: endDateStr || undefined,
       overview: {
         totalRevenue: revenueData.total,
         totalOrders: ordersData.total,
@@ -108,47 +114,41 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Revenue Analytics
-async function fetchRevenueMetrics(startDate: Date | null, endDate: Date | null) {
-  // Total revenue from paid bills
-  const { data: bills, error } = await supabase
+// Revenue Analytics - Optimized with Supabase filtering
+async function fetchRevenueMetrics(startDate: string | null, endDate: string | null) {
+  let query = supabase
     .from("bills")
     .select("final_amount, payment_method, created_at, payment_status")
     .eq("payment_status", "paid");
 
+  // Apply date filtering at database level
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { data: bills, error } = await query;
+
   if (error) throw error;
 
-  const filteredBills = bills?.filter((bill) => {
-    if (!bill.created_at) return false;
-
-    // If no date filter, include all
-    if (!startDate && !endDate) return true;
-
-    const billDate = new Date(bill.created_at);
-
-    // Check if within date range
-    if (startDate && billDate < startDate) return false;
-    if (endDate && billDate > endDate) return false;
-
-    return true;
-  }) || [];
-
-  const total = filteredBills.reduce((sum, bill) => sum + Number(bill.final_amount), 0);
+  const total = bills?.reduce((sum, bill) => sum + Number(bill.final_amount), 0) || 0;
 
   // Group by payment method
-  const byPaymentMethod = filteredBills.reduce((acc: any, bill) => {
+  const byPaymentMethod = bills?.reduce((acc: any, bill) => {
     const method = bill.payment_method || "unknown";
     acc[method] = (acc[method] || 0) + Number(bill.final_amount);
     return acc;
-  }, {});
+  }, {}) || {};
 
   // Revenue trend (daily)
-  const revenueByDate = filteredBills.reduce((acc: any, bill) => {
+  const revenueByDate = bills?.reduce((acc: any, bill) => {
     if (!bill.created_at) return acc;
     const date = new Date(bill.created_at).toISOString().split("T")[0];
     acc[date] = (acc[date] || 0) + Number(bill.final_amount);
     return acc;
-  }, {});
+  }, {}) || {};
 
   const trend = Object.entries(revenueByDate)
     .map(([date, amount]) => ({ date, amount }))
@@ -158,60 +158,55 @@ async function fetchRevenueMetrics(startDate: Date | null, endDate: Date | null)
     total,
     byPaymentMethod,
     trend,
-    count: filteredBills.length,
+    count: bills?.length || 0,
   };
 }
 
-// Orders Analytics
-async function fetchOrdersMetrics(startDate: Date | null, endDate: Date | null) {
-  const { data: orders, error } = await supabase
+// Orders Analytics - Optimized with Supabase filtering
+async function fetchOrdersMetrics(startDate: string | null, endDate: string | null) {
+  let query = supabase
     .from("orders")
     .select("id, status, order_type, created_at, total_amount");
 
+  // Apply date filtering at database level
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { data: orders, error } = await query;
+
   if (error) throw error;
 
-  const filteredOrders = orders?.filter((order) => {
-    if (!order.created_at) return false;
-
-    // If no date filter, include all
-    if (!startDate && !endDate) return true;
-
-    const orderDate = new Date(order.created_at);
-
-    // Check if within date range
-    if (startDate && orderDate < startDate) return false;
-    if (endDate && orderDate > endDate) return false;
-
-    return true;
-  }) || [];
-
   // Group by status
-  const byStatus = filteredOrders.reduce((acc: any, order) => {
+  const byStatus = orders?.reduce((acc: any, order) => {
     const status = order.status || "unknown";
     acc[status] = (acc[status] || 0) + 1;
     return acc;
-  }, {});
+  }, {}) || {};
 
   // Group by type
-  const byType = filteredOrders.reduce((acc: any, order) => {
+  const byType = orders?.reduce((acc: any, order) => {
     acc[order.order_type] = (acc[order.order_type] || 0) + 1;
     return acc;
-  }, {});
+  }, {}) || {};
 
   // Orders trend (daily)
-  const ordersByDate = filteredOrders.reduce((acc: any, order) => {
+  const ordersByDate = orders?.reduce((acc: any, order) => {
     if (!order.created_at) return acc;
     const date = new Date(order.created_at).toISOString().split("T")[0];
     acc[date] = (acc[date] || 0) + 1;
     return acc;
-  }, {});
+  }, {}) || {};
 
   const trend = Object.entries(ordersByDate)
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return {
-    total: filteredOrders.length,
+    total: orders?.length || 0,
     byStatus,
     byType,
     trend,
@@ -220,73 +215,71 @@ async function fetchOrdersMetrics(startDate: Date | null, endDate: Date | null) 
   };
 }
 
-// Customers Analytics
-async function fetchCustomersMetrics(startDate: Date | null, endDate: Date | null) {
-  const { data: customers, error } = await supabase
+// Customers Analytics - Optimized with Supabase filtering
+async function fetchCustomersMetrics(startDate: string | null, endDate: string | null) {
+  let query = supabase
     .from("guest_users")
     .select("id, phone, total_orders, total_spent, visit_count, created_at, first_visit_at");
 
+  // Apply date filtering at database level
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { data: customers, error } = await query;
+
   if (error) throw error;
 
-  const filteredCustomers = customers?.filter((customer) => {
-    if (!customer.created_at) return false;
-
-    // If no date filter, include all
-    if (!startDate && !endDate) return true;
-
-    const customerDate = new Date(customer.created_at);
-
-    // Check if within date range
-    if (startDate && customerDate < startDate) return false;
-    if (endDate && customerDate > endDate) return false;
-
-    return true;
-  }) || [];
-
   // New vs returning
-  const newCustomers = filteredCustomers.filter((c) => (c.visit_count || 0) === 1).length;
-  const returningCustomers = filteredCustomers.filter((c) => (c.visit_count || 0) > 1).length;
+  const newCustomers = customers?.filter((c) => (c.visit_count || 0) === 1).length || 0;
+  const returningCustomers = customers?.filter((c) => (c.visit_count || 0) > 1).length || 0;
 
-  // Top customers by spend
-  const topCustomers = [...(customers || [])]
-    .sort((a, b) => Number(b.total_spent) - Number(a.total_spent))
-    .slice(0, 10)
-    .map((c) => ({
-      phone: c.phone,
-      totalSpent: Number(c.total_spent),
-      totalOrders: c.total_orders,
-      visitCount: c.visit_count,
-    }));
+  // Top customers by spend (from all customers, not just filtered)
+  const { data: allCustomers } = await supabase
+    .from("guest_users")
+    .select("phone, total_spent, total_orders, visit_count")
+    .order("total_spent", { ascending: false })
+    .limit(10);
+
+  const topCustomers = allCustomers?.map((c) => ({
+    phone: c.phone,
+    totalSpent: Number(c.total_spent),
+    totalOrders: c.total_orders || 0,
+    visitCount: c.visit_count || 0,
+  })) || [];
 
   // Customer acquisition trend
-  const customersByDate = filteredCustomers.reduce((acc: any, customer) => {
+  const customersByDate = customers?.reduce((acc: any, customer) => {
     const visitDate = customer.first_visit_at || customer.created_at;
     if (!visitDate) return acc;
     const date = new Date(visitDate).toISOString().split("T")[0];
     acc[date] = (acc[date] || 0) + 1;
     return acc;
-  }, {});
+  }, {}) || {};
 
   const trend = Object.entries(customersByDate)
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  const totalSpent = customers?.reduce((sum, c) => sum + Number(c.total_spent || 0), 0) || 0;
+  const averageSpend = customers && customers.length > 0 ? totalSpent / customers.length : 0;
+
   return {
-    total: filteredCustomers.length,
+    total: customers?.length || 0,
     new: newCustomers,
     returning: returningCustomers,
     topCustomers,
     trend,
-    averageSpend: filteredCustomers.length > 0
-      ? filteredCustomers.reduce((sum, c) => sum + Number(c.total_spent), 0) / filteredCustomers.length
-      : 0,
+    averageSpend,
   };
 }
 
-// Menu Analytics
-async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
-  // Get order items with menu item details
-  const { data: orderItems, error } = await supabase
+// Menu Analytics - Optimized with Supabase filtering
+async function fetchMenuMetrics(startDate: string | null, endDate: string | null) {
+  let query = supabase
     .from("order_items")
     .select(`
       id,
@@ -294,7 +287,7 @@ async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
       total_price,
       menu_item_id,
       created_at,
-      menu_items (
+      menu_items!inner (
         id,
         name,
         category_id,
@@ -306,31 +299,27 @@ async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
       )
     `);
 
+  // Apply date filtering at database level
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { data: orderItems, error } = await query;
+
   if (error) throw error;
 
-  const filteredItems = orderItems?.filter((item) => {
-    if (!item.created_at) return false;
-
-    // If no date filter, include all
-    if (!startDate && !endDate) return true;
-
-    const itemDate = new Date(item.created_at);
-
-    // Check if within date range
-    if (startDate && itemDate < startDate) return false;
-    if (endDate && itemDate > endDate) return false;
-
-    return true;
-  }) || [];
-
   // Top selling items
-  const itemSales = filteredItems.reduce((acc: any, item) => {
+  const itemSales = orderItems?.reduce((acc: any, item) => {
     const menuItem = item.menu_items as any;
     if (!menuItem) return acc;
 
     const itemId = menuItem.id;
     if (!acc[itemId]) {
       acc[itemId] = {
+        id: itemId,
         name: menuItem.name,
         category: menuItem.menu_categories?.name || "Uncategorized",
         quantity: 0,
@@ -341,14 +330,14 @@ async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
     acc[itemId].quantity += item.quantity;
     acc[itemId].revenue += Number(item.total_price);
     return acc;
-  }, {});
+  }, {}) || {};
 
   const topItems = Object.values(itemSales)
     .sort((a: any, b: any) => b.quantity - a.quantity)
     .slice(0, 10);
 
   // Sales by category
-  const categorySales = filteredItems.reduce((acc: any, item) => {
+  const categorySales = orderItems?.reduce((acc: any, item) => {
     const menuItem = item.menu_items as any;
     if (!menuItem?.menu_categories) return acc;
 
@@ -359,10 +348,10 @@ async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
     acc[category].quantity += item.quantity;
     acc[category].revenue += Number(item.total_price);
     return acc;
-  }, {});
+  }, {}) || {};
 
   // Veg vs Non-veg
-  const vegNonVeg = filteredItems.reduce(
+  const vegNonVeg = orderItems?.reduce(
     (acc: any, item) => {
       const menuItem = item.menu_items as any;
       if (!menuItem) return acc;
@@ -377,49 +366,48 @@ async function fetchMenuMetrics(startDate: Date | null, endDate: Date | null) {
       return acc;
     },
     { veg: { quantity: 0, revenue: 0 }, nonVeg: { quantity: 0, revenue: 0 } }
-  );
+  ) || { veg: { quantity: 0, revenue: 0 }, nonVeg: { quantity: 0, revenue: 0 } };
+
+  const totalItemsSold = orderItems?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+  const totalRevenue = orderItems?.reduce((sum, item) => sum + Number(item.total_price), 0) || 0;
 
   return {
     topItems,
     byCategory: categorySales,
     vegNonVeg,
-    totalItemsSold: filteredItems.reduce((sum, item) => sum + item.quantity, 0),
+    totalItemsSold,
+    totalRevenue,
   };
 }
 
-// Offers Analytics
-async function fetchOffersMetrics(startDate: Date | null, endDate: Date | null) {
+// Offers Analytics - Optimized with Supabase filtering
+async function fetchOffersMetrics(startDate: string | null, endDate: string | null) {
+  // Get all offers
   const { data: offers, error } = await supabase
     .from("offers")
     .select("id, name, offer_type, usage_count, is_active, created_at");
 
   if (error) throw error;
 
-  // Get offer usage
-  const { data: offerUsage, error: usageError } = await supabase
+  // Get offer usage with date filtering
+  let usageQuery = supabase
     .from("offer_usage")
-    .select("offer_id, discount_amount, used_at");
+    .select("offer_id, discount_amount, used_at, offers!inner(name)");
+
+  if (startDate) {
+    usageQuery = usageQuery.gte("used_at", startDate);
+  }
+  if (endDate) {
+    usageQuery = usageQuery.lte("used_at", endDate);
+  }
+
+  const { data: offerUsage, error: usageError } = await usageQuery;
 
   if (usageError) throw usageError;
 
-  const filteredUsage = offerUsage?.filter((usage) => {
-    if (!usage.used_at) return false;
-
-    // If no date filter, include all
-    if (!startDate && !endDate) return true;
-
-    const usageDate = new Date(usage.used_at);
-
-    // Check if within date range
-    if (startDate && usageDate < startDate) return false;
-    if (endDate && usageDate > endDate) return false;
-
-    return true;
-  }) || [];
-
   // Calculate metrics per offer
   const offerMetrics = offers?.map((offer) => {
-    const usages = filteredUsage.filter((u) => u.offer_id === offer.id);
+    const usages = offerUsage?.filter((u) => u.offer_id === offer.id) || [];
     const totalDiscount = usages.reduce((sum, u) => sum + Number(u.discount_amount), 0);
 
     return {
@@ -430,31 +418,31 @@ async function fetchOffersMetrics(startDate: Date | null, endDate: Date | null) 
       totalDiscount,
       isActive: offer.is_active,
     };
-  });
+  }) || [];
 
   // Sort by usage
-  const topOffers = offerMetrics
-    ?.sort((a, b) => b.usageCount - a.usageCount)
-    .slice(0, 10) || [];
+  const byOffer = offerMetrics
+    .sort((a, b) => b.usageCount - a.usageCount)
+    .slice(0, 10);
 
   // Total discount given
-  const totalDiscount = filteredUsage.reduce(
+  const totalDiscount = offerUsage?.reduce(
     (sum, usage) => sum + Number(usage.discount_amount),
     0
-  );
+  ) || 0;
 
   return {
     totalOffers: offers?.length || 0,
     activeOffers: offers?.filter((o) => o.is_active).length || 0,
-    totalUsage: filteredUsage.length,
+    totalUsage: offerUsage?.length || 0,
     totalDiscount,
-    topOffers,
+    byOffer,
   };
 }
 
-// Tables Analytics
-async function fetchTablesMetrics(startDate: Date | null, endDate: Date | null) {
-  const { data: sessions, error } = await supabase
+// Tables Analytics - Optimized with Supabase filtering
+async function fetchTablesMetrics(startDate: string | null, endDate: string | null) {
+  let query = supabase
     .from("table_sessions")
     .select(`
       id,
@@ -463,70 +451,105 @@ async function fetchTablesMetrics(startDate: Date | null, endDate: Date | null) 
       total_amount,
       created_at,
       session_ended_at,
-      restaurant_tables (
+      session_started_at,
+      restaurant_tables!inner (
+        id,
         table_number,
+        table_code,
         veg_only
       )
     `);
 
+  // Apply date filtering at database level
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { data: sessions, error } = await query;
+
   if (error) throw error;
 
-  const filteredSessions = sessions?.filter((session) => {
-    if (!session.created_at) return false;
-
-    // If no date filter, include all
-    if (!startDate && !endDate) return true;
-
-    const sessionDate = new Date(session.created_at);
-
-    // Check if within date range
-    if (startDate && sessionDate < startDate) return false;
-    if (endDate && sessionDate > endDate) return false;
-
-    return true;
-  }) || [];
-
   // Revenue per table
-  const tableRevenue = filteredSessions.reduce((acc: any, session) => {
+  const tableMetrics = sessions?.reduce((acc: any, session) => {
     const table = session.restaurant_tables as any;
     if (!table) return acc;
 
     const tableNum = table.table_number;
+    const tableCode = table.table_code;
+    
     if (!acc[tableNum]) {
       acc[tableNum] = {
         tableNumber: tableNum,
+        tableCode: tableCode,
         sessions: 0,
         revenue: 0,
+        totalDuration: 0,
+        completedSessions: 0,
         isVegOnly: table.veg_only,
       };
     }
+    
     acc[tableNum].sessions += 1;
     acc[tableNum].revenue += Number(session.total_amount || 0);
-    return acc;
-  }, {});
 
-  const topTables = Object.values(tableRevenue)
+    // Calculate duration for completed sessions
+    if (session.status === "completed" && session.session_ended_at && session.session_started_at) {
+      const start = new Date(session.session_started_at).getTime();
+      const end = new Date(session.session_ended_at).getTime();
+      acc[tableNum].totalDuration += (end - start) / (1000 * 60); // in minutes
+      acc[tableNum].completedSessions += 1;
+    }
+    
+    return acc;
+  }, {}) || {};
+
+  // Calculate average duration and prepare top tables
+  const topTables = Object.values(tableMetrics)
+    .map((t: any) => ({
+      tableNumber: t.tableNumber,
+      tableCode: t.tableCode,
+      sessions: t.sessions,
+      revenue: t.revenue,
+      averageSessionDuration: t.completedSessions > 0 
+        ? Math.round(t.totalDuration / t.completedSessions)
+        : 0,
+    }))
     .sort((a: any, b: any) => b.revenue - a.revenue)
     .slice(0, 10);
 
-  // Average session duration
-  const completedSessions = filteredSessions.filter(
-    (s) => s.status === "completed" && s.session_ended_at
-  );
+  // Prepare data for byTable (all tables with metrics)
+  const byTable = Object.values(tableMetrics).map((t: any) => ({
+    tableNumber: t.tableNumber,
+    sessions: t.sessions,
+    revenue: t.revenue,
+  }));
+
+  // Calculate overall average session duration
+  const completedSessions = sessions?.filter(
+    (s) => s.status === "completed" && s.session_ended_at && s.session_started_at
+  ) || [];
 
   const avgDuration = completedSessions.length > 0
     ? completedSessions.reduce((sum, s) => {
-        if (!s.created_at) return sum;
-        const start = new Date(s.created_at).getTime();
+        const start = new Date(s.session_started_at!).getTime();
         const end = new Date(s.session_ended_at!).getTime();
         return sum + (end - start);
       }, 0) / completedSessions.length / (1000 * 60) // in minutes
     : 0;
 
+  const totalRevenue = sessions?.reduce((sum, s) => sum + Number(s.total_amount || 0), 0) || 0;
+
   return {
-    totalSessions: filteredSessions.length,
-    activeSessions: filteredSessions.filter((s) => s.status === "active").length,
+    totalSessions: sessions?.length || 0,
+    activeSessions: sessions?.filter((s) => s.status === "active").length || 0,
+    completedSessions: completedSessions.length,
     topTables,
+    byTable,
     averageSessionDuration: Math.round(avgDuration),
+    totalRevenue,
   };
 }
+

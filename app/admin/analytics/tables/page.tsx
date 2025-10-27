@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   Table2,
@@ -25,29 +24,13 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
-type Period = "7d" | "30d" | "90d" | "1y" | "all";
+import { useTablesAnalytics, type Period } from "@/hooks/useAnalytics";
 
 export default function TablesAnalyticsPage() {
   const router = useRouter();
   const [period, setPeriod] = useState<Period>("30d");
 
-  const { data: analytics, isLoading, error } = useQuery({
-    queryKey: ["analytics", period],
-    queryFn: async () => {
-      const res = await fetch(`/api/admin/analytics?period=${period}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        if (res.status === 401) {
-          throw new Error("Unauthorized - Please log in as admin");
-        }
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to fetch analytics");
-      }
-      return res.json();
-    },
-  });
+  const { data: analytics, isLoading, error } = useTablesAnalytics({ period });
 
   if (isLoading || !analytics) {
     return (
@@ -65,11 +48,23 @@ export default function TablesAnalyticsPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center max-w-md">
           <div className="text-red-600 mb-4">
-            <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg
+              className="w-16 h-16 mx-auto"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Failed to load analytics</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Failed to load analytics
+          </h3>
           <p className="mt-2 text-gray-600">{(error as Error).message}</p>
         </div>
       </div>
@@ -90,8 +85,12 @@ export default function TablesAnalyticsPage() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Table Analytics</h1>
-            <p className="text-gray-600 mt-1">Analyze table utilization, session duration, and table performance</p>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Table Analytics
+            </h1>
+            <p className="text-gray-600 mt-1">
+              Analyze table utilization, session duration, and table performance
+            </p>
           </div>
         </div>
 
@@ -122,7 +121,9 @@ export default function TablesAnalyticsPage() {
           <button
             onClick={() => {
               const dataStr = JSON.stringify(analytics.tables, null, 2);
-              const dataBlob = new Blob([dataStr], { type: "application/json" });
+              const dataBlob = new Blob([dataStr], {
+                type: "application/json",
+              });
               const url = URL.createObjectURL(dataBlob);
               const link = document.createElement("a");
               link.href = url;
@@ -142,7 +143,9 @@ export default function TablesAnalyticsPage() {
         <Card className="p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-600 font-medium">Total Sessions</p>
+              <p className="text-sm text-gray-600 font-medium">
+                Total Sessions
+              </p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
                 {tables.totalSessions.toLocaleString()}
               </p>
@@ -162,7 +165,9 @@ export default function TablesAnalyticsPage() {
         <Card className="p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-600 font-medium">Active Sessions</p>
+              <p className="text-sm text-gray-600 font-medium">
+                Active Sessions
+              </p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
                 {tables.activeSessions}
               </p>
@@ -204,7 +209,13 @@ export default function TablesAnalyticsPage() {
             <div>
               <p className="text-sm text-gray-600 font-medium">Utilization</p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
-                {tables.totalSessions > 0 ? ((tables.activeSessions / tables.totalSessions) * 100).toFixed(1) : 0}%
+                {tables.totalSessions > 0
+                  ? (
+                      (tables.activeSessions / tables.totalSessions) *
+                      100
+                    ).toFixed(1)
+                  : 0}
+                %
               </p>
               <div className="flex items-center gap-1 mt-2">
                 <TrendingUp className="w-4 h-4 text-purple-600" />
@@ -224,8 +235,12 @@ export default function TablesAnalyticsPage() {
       <Card className="p-6 mb-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-bold text-gray-900">Top Performing Tables</h3>
-            <p className="text-sm text-gray-600">Tables by revenue and session count</p>
+            <h3 className="text-lg font-bold text-gray-900">
+              Top Performing Tables
+            </h3>
+            <p className="text-sm text-gray-600">
+              Tables by revenue and session count
+            </p>
           </div>
           <Award className="w-5 h-5 text-gray-400" />
         </div>
@@ -248,9 +263,17 @@ export default function TablesAnalyticsPage() {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
-                      index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : index === 2 ? "bg-amber-600" : "bg-gray-300"
-                    }`}>
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
+                        index === 0
+                          ? "bg-yellow-500"
+                          : index === 1
+                          ? "bg-gray-400"
+                          : index === 2
+                          ? "bg-amber-600"
+                          : "bg-gray-300"
+                      }`}
+                    >
                       {index + 1}
                     </div>
                     {table.isVegOnly && (
@@ -282,13 +305,21 @@ export default function TablesAnalyticsPage() {
                   dataKey="tableNumber"
                   stroke="#9ca3af"
                   tick={{ fontSize: 12 }}
-                  label={{ value: "Table Number", position: "insideBottom", offset: -5 }}
+                  label={{
+                    value: "Table Number",
+                    position: "insideBottom",
+                    offset: -5,
+                  }}
                 />
                 <YAxis
                   stroke="#9ca3af"
                   tick={{ fontSize: 12 }}
                   tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
-                  label={{ value: "Revenue", angle: -90, position: "insideLeft" }}
+                  label={{
+                    value: "Revenue",
+                    angle: -90,
+                    position: "insideLeft",
+                  }}
                 />
                 <Tooltip
                   content={({ active, payload }) => {
@@ -324,12 +355,24 @@ export default function TablesAnalyticsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Rank</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Table</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Revenue</th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">Sessions</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Avg/Session</th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">Type</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                      Rank
+                    </th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                      Table
+                    </th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
+                      Revenue
+                    </th>
+                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">
+                      Sessions
+                    </th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
+                      Avg/Session
+                    </th>
+                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">
+                      Type
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -341,17 +384,29 @@ export default function TablesAnalyticsPage() {
                       }`}
                     >
                       <td className="py-3 px-4">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
-                          index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : index === 2 ? "bg-amber-600" : "bg-gray-300"
-                        }`}>
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
+                            index === 0
+                              ? "bg-yellow-500"
+                              : index === 1
+                              ? "bg-gray-400"
+                              : index === 2
+                              ? "bg-amber-600"
+                              : "bg-gray-300"
+                          }`}
+                        >
                           {index + 1}
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <p className="font-medium text-gray-900">Table {table.tableNumber}</p>
+                        <p className="font-medium text-gray-900">
+                          Table {table.tableNumber}
+                        </p>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <p className="font-bold text-green-600">{formatCurrency(table.revenue)}</p>
+                        <p className="font-bold text-green-600">
+                          {formatCurrency(table.revenue)}
+                        </p>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -360,7 +415,11 @@ export default function TablesAnalyticsPage() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <p className="text-gray-700 font-medium">
-                          {formatCurrency(table.sessions > 0 ? table.revenue / table.sessions : 0)}
+                          {formatCurrency(
+                            table.sessions > 0
+                              ? table.revenue / table.sessions
+                              : 0
+                          )}
                         </p>
                       </td>
                       <td className="py-3 px-4 text-center">
@@ -392,28 +451,40 @@ export default function TablesAnalyticsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="p-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-600">Total Sessions</h3>
+            <h3 className="text-sm font-medium text-gray-600">
+              Total Sessions
+            </h3>
             <Users className="w-5 h-5 text-indigo-600" />
           </div>
-          <p className="text-3xl font-bold text-gray-900 mb-2">{tables.totalSessions}</p>
+          <p className="text-3xl font-bold text-gray-900 mb-2">
+            {tables.totalSessions}
+          </p>
           <p className="text-xs text-gray-500">All table sessions combined</p>
         </Card>
 
         <Card className="p-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-600">Avg Session Duration</h3>
+            <h3 className="text-sm font-medium text-gray-600">
+              Avg Session Duration
+            </h3>
             <Clock className="w-5 h-5 text-blue-600" />
           </div>
-          <p className="text-3xl font-bold text-gray-900 mb-2">{tables.averageSessionDuration} min</p>
+          <p className="text-3xl font-bold text-gray-900 mb-2">
+            {tables.averageSessionDuration} min
+          </p>
           <p className="text-xs text-gray-500">Average time per session</p>
         </Card>
 
         <Card className="p-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-600">Active Sessions</h3>
+            <h3 className="text-sm font-medium text-gray-600">
+              Active Sessions
+            </h3>
             <Activity className="w-5 h-5 text-green-600" />
           </div>
-          <p className="text-3xl font-bold text-gray-900 mb-2">{tables.activeSessions}</p>
+          <p className="text-3xl font-bold text-gray-900 mb-2">
+            {tables.activeSessions}
+          </p>
           <p className="text-xs text-gray-500">Currently occupied tables</p>
         </Card>
       </div>

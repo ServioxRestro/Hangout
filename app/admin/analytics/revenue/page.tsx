@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
@@ -26,29 +25,13 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-
-type Period = "7d" | "30d" | "90d" | "1y" | "all";
+import { useRevenueAnalytics, type Period } from "@/hooks/useAnalytics";
 
 export default function RevenueAnalyticsPage() {
   const router = useRouter();
   const [period, setPeriod] = useState<Period>("30d");
 
-  const { data: analytics, isLoading, error } = useQuery({
-    queryKey: ["analytics", period],
-    queryFn: async () => {
-      const res = await fetch(`/api/admin/analytics?period=${period}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        if (res.status === 401) {
-          throw new Error("Unauthorized - Please log in as admin");
-        }
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to fetch analytics");
-      }
-      return res.json();
-    },
-  });
+  const { data: analytics, isLoading, error } = useRevenueAnalytics({ period });
 
   if (isLoading || !analytics) {
     return (
@@ -66,11 +49,23 @@ export default function RevenueAnalyticsPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center max-w-md">
           <div className="text-red-600 mb-4">
-            <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg
+              className="w-16 h-16 mx-auto"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Failed to load analytics</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Failed to load analytics
+          </h3>
           <p className="mt-2 text-gray-600">{(error as Error).message}</p>
         </div>
       </div>
@@ -99,8 +94,12 @@ export default function RevenueAnalyticsPage() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Revenue Analytics</h1>
-            <p className="text-gray-600 mt-1">Track revenue trends, payment methods, and financial performance</p>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Revenue Analytics
+            </h1>
+            <p className="text-gray-600 mt-1">
+              Track revenue trends, payment methods, and financial performance
+            </p>
           </div>
         </div>
 
@@ -131,7 +130,9 @@ export default function RevenueAnalyticsPage() {
           <button
             onClick={() => {
               const dataStr = JSON.stringify(analytics.revenue, null, 2);
-              const dataBlob = new Blob([dataStr], { type: "application/json" });
+              const dataBlob = new Blob([dataStr], {
+                type: "application/json",
+              });
               const url = URL.createObjectURL(dataBlob);
               const link = document.createElement("a");
               link.href = url;
@@ -158,7 +159,11 @@ export default function RevenueAnalyticsPage() {
               <div className="flex items-center gap-1 mt-2">
                 <TrendingUp className="w-4 h-4 text-green-600" />
                 <span className="text-sm font-medium text-green-600">
-                  {period === "7d" ? "This Week" : period === "30d" ? "This Month" : "Selected Period"}
+                  {period === "7d"
+                    ? "This Week"
+                    : period === "30d"
+                    ? "This Month"
+                    : "Selected Period"}
                 </span>
               </div>
             </div>
@@ -193,7 +198,9 @@ export default function RevenueAnalyticsPage() {
             <div>
               <p className="text-sm text-gray-600 font-medium">Average Bill</p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
-                {formatCurrency(revenue.count > 0 ? overview.totalRevenue / revenue.count : 0)}
+                {formatCurrency(
+                  revenue.count > 0 ? overview.totalRevenue / revenue.count : 0
+                )}
               </p>
               <div className="flex items-center gap-1 mt-2">
                 <TrendingUp className="w-4 h-4 text-purple-600" />
@@ -214,7 +221,9 @@ export default function RevenueAnalyticsPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Revenue Trend</h3>
-            <p className="text-sm text-gray-600">Daily revenue over selected period</p>
+            <p className="text-sm text-gray-600">
+              Daily revenue over selected period
+            </p>
           </div>
           <Calendar className="w-5 h-5 text-gray-400" />
         </div>
@@ -222,16 +231,12 @@ export default function RevenueAnalyticsPage() {
           <AreaChart data={revenue.trend}>
             <defs>
               <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis
-              dataKey="date"
-              stroke="#9ca3af"
-              tick={{ fontSize: 12 }}
-            />
+            <XAxis dataKey="date" stroke="#9ca3af" tick={{ fontSize: 12 }} />
             <YAxis
               stroke="#9ca3af"
               tick={{ fontSize: 12 }}
@@ -270,8 +275,12 @@ export default function RevenueAnalyticsPage() {
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-bold text-gray-900">Revenue by Payment Method</h3>
-            <p className="text-sm text-gray-600">Distribution across payment types</p>
+            <h3 className="text-lg font-bold text-gray-900">
+              Revenue by Payment Method
+            </h3>
+            <p className="text-sm text-gray-600">
+              Distribution across payment types
+            </p>
           </div>
           <CreditCard className="w-5 h-5 text-gray-400" />
         </div>
@@ -323,7 +332,9 @@ export default function RevenueAnalyticsPage() {
             {paymentMethodData.map((item) => (
               <div key={item.method} className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">{item.method}</span>
+                  <span className="text-sm font-medium text-gray-600">
+                    {item.method}
+                  </span>
                   <span className="text-sm font-bold text-gray-900">
                     {formatCurrency(item.amount)}
                   </span>
@@ -333,12 +344,15 @@ export default function RevenueAnalyticsPage() {
                     <div
                       className="bg-blue-600 h-2 rounded-full"
                       style={{
-                        width: `${(item.amount / overview.totalRevenue) * 100}%`,
+                        width: `${
+                          (item.amount / overview.totalRevenue) * 100
+                        }%`,
                       }}
                     ></div>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {((item.amount / overview.totalRevenue) * 100).toFixed(1)}% of total
+                    {((item.amount / overview.totalRevenue) * 100).toFixed(1)}%
+                    of total
                   </p>
                 </div>
               </div>
