@@ -6,6 +6,7 @@ import type { Tables } from "@/types/database.types";
 import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import { formatCurrency } from "@/lib/constants";
+import { getCurrentAuthUser, type UserRole } from "@/lib/auth";
 import {
   Receipt,
   CreditCard,
@@ -46,10 +47,19 @@ export default function PaymentHistoryPage() {
   const [dateFilter, setDateFilter] = useState('today');
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     fetchPaymentHistory();
+    fetchUserRole();
   }, [dateFilter, paymentMethodFilter]);
+
+  const fetchUserRole = async () => {
+    const user = await getCurrentAuthUser();
+    if (user) {
+      setUserRole(user.role);
+    }
+  };
 
   const fetchPaymentHistory = async () => {
     try {
@@ -79,6 +89,10 @@ export default function PaymentHistoryPage() {
       if (dateFilter === 'today') {
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         query = query.gte('paid_at', today.toISOString());
+      } else if (dateFilter === 'yesterday') {
+        const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        query = query.gte('paid_at', yesterday.toISOString()).lt('paid_at', today.toISOString());
       } else if (dateFilter === 'week') {
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         query = query.gte('paid_at', weekAgo.toISOString());
@@ -476,9 +490,14 @@ export default function PaymentHistoryPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="today">Today</option>
-            <option value="week">Last 7 Days</option>
-            <option value="month">Last 30 Days</option>
-            <option value="all">All Time</option>
+            <option value="yesterday">Yesterday</option>
+            {userRole !== 'manager' && (
+              <>
+                <option value="week">Last 7 Days</option>
+                <option value="month">Last 30 Days</option>
+                <option value="all">All Time</option>
+              </>
+            )}
           </select>
         </div>
 

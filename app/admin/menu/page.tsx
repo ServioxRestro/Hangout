@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
 import ImageUpload from "@/components/admin/ImageUpload";
+import { getCurrentAuthUser, type UserRole } from "@/lib/auth";
 
 type MenuCategory = Tables<"menu_categories">;
 type MenuItem = Tables<"menu_items"> & {
@@ -36,6 +37,7 @@ export default function MenuManagement() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   // Modals
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -70,7 +72,15 @@ export default function MenuManagement() {
 
   useEffect(() => {
     fetchData();
+    fetchUserRole();
   }, []);
+
+  const fetchUserRole = async () => {
+    const user = await getCurrentAuthUser();
+    if (user) {
+      setUserRole(user.role);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -543,17 +553,19 @@ export default function MenuManagement() {
             { name: "Menu" },
           ]}
         >
-          <Button
-            variant="primary"
-            onClick={() => {
-              setCategoryForm({ name: "", description: "" });
-              setEditingCategory(null);
-              setShowCategoryModal(true);
-            }}
-            leftIcon={<Plus className="w-4 h-4" />}
-          >
-            Add Category
-          </Button>
+          {userRole === 'super_admin' && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setCategoryForm({ name: "", description: "" });
+                setEditingCategory(null);
+                setShowCategoryModal(true);
+              }}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Add Category
+            </Button>
+          )}
         </PageHeader>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -592,6 +604,7 @@ export default function MenuManagement() {
               onDeleteItem={deleteItem}
               onToggleItemAvailability={toggleItemAvailability}
               onReorderItems={handleItemReorder}
+              isManager={userRole === 'manager'}
             />
           )}
         </Card>

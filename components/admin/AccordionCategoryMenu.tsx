@@ -46,6 +46,7 @@ interface SortableMenuItemProps {
   onEdit: (item: MenuItem) => void;
   onDelete: (itemId: string, itemName: string) => void;
   onToggleAvailability: (itemId: string, isAvailable: boolean) => void;
+  isManager?: boolean;
 }
 
 function SortableMenuItem({
@@ -53,6 +54,7 @@ function SortableMenuItem({
   onEdit,
   onDelete,
   onToggleAvailability,
+  isManager = false,
 }: SortableMenuItemProps) {
   const {
     attributes,
@@ -80,14 +82,16 @@ function SortableMenuItem({
       }`}
     >
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Drag Handle */}
-        <div
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 touch-none flex-shrink-0"
-        >
-          <GripVertical className="w-4 h-4 sm:w-5 sm:h-5" />
-        </div>
+        {/* Drag Handle - Hidden for managers */}
+        {!isManager && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 touch-none flex-shrink-0"
+          >
+            <GripVertical className="w-4 h-4 sm:w-5 sm:h-5" />
+          </div>
+        )}
 
         {/* Item Info */}
         <div className="flex-1 min-w-0">
@@ -139,36 +143,54 @@ function SortableMenuItem({
           >
             {item.is_available ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
-          <button
-            onClick={() => onEdit(item)}
-            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => onDelete(item.id, item.name)}
-            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isManager && (
+            <>
+              <button
+                onClick={() => onEdit(item)}
+                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                title="Edit"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onDelete(item.id, item.name)}
+                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                title="Delete"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Actions - Mobile */}
         <div className="flex sm:hidden items-center gap-1">
           <button
-            onClick={() => onEdit(item)}
-            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+            onClick={() => onToggleAvailability(item.id, item.is_available || false)}
+            className={`p-1.5 rounded transition-colors ${
+              item.is_available
+                ? "text-yellow-600 hover:bg-yellow-50"
+                : "text-green-600 hover:bg-green-50"
+            }`}
           >
-            <Edit className="w-4 h-4" />
+            {item.is_available ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
-          <button
-            onClick={() => onDelete(item.id, item.name)}
-            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isManager && (
+            <>
+              <button
+                onClick={() => onEdit(item)}
+                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onDelete(item.id, item.name)}
+                className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -184,6 +206,7 @@ interface ItemsListProps {
   onDeleteItem: (itemId: string, itemName: string) => void;
   onToggleItemAvailability: (itemId: string, isAvailable: boolean) => void;
   onReorderItems: (categoryId: string, newOrder: MenuItem[]) => void;
+  isManager?: boolean;
 }
 
 function ItemsList({
@@ -194,6 +217,7 @@ function ItemsList({
   onDeleteItem,
   onToggleItemAvailability,
   onReorderItems,
+  isManager = false,
 }: ItemsListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -234,24 +258,28 @@ function ItemsList({
     return (
       <div className="text-center py-8">
         <p className="text-gray-500 text-sm mb-3">No items in this category</p>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={() => onAddItem(categoryId)}
-          leftIcon={<Plus className="w-3 h-3" />}
-        >
-          Add First Item
-        </Button>
+        {!isManager && (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => onAddItem(categoryId)}
+            leftIcon={<Plus className="w-3 h-3" />}
+          >
+            Add First Item
+          </Button>
+        )}
       </div>
     );
   }
 
   return (
     <div>
-      <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-        <GripVertical className="w-3 h-3" />
-        Drag items to reorder within this category
-      </p>
+      {!isManager && (
+        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+          <GripVertical className="w-3 h-3" />
+          Drag items to reorder within this category
+        </p>
+      )}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -269,6 +297,7 @@ function ItemsList({
                 onEdit={onEditItem}
                 onDelete={onDeleteItem}
                 onToggleAvailability={onToggleItemAvailability}
+                isManager={isManager}
               />
             ))}
           </div>
@@ -292,6 +321,7 @@ interface SortableCategoryProps {
   onDeleteItem: (itemId: string, itemName: string) => void;
   onToggleItemAvailability: (itemId: string, isAvailable: boolean) => void;
   onReorderItems: (categoryId: string, newOrder: MenuItem[]) => void;
+  isManager?: boolean;
 }
 
 function SortableCategory({
@@ -307,6 +337,7 @@ function SortableCategory({
   onDeleteItem,
   onToggleItemAvailability,
   onReorderItems,
+  isManager = false,
 }: SortableCategoryProps) {
   const {
     attributes,
@@ -372,48 +403,52 @@ function SortableCategory({
           </span>
 
           {/* Actions - Desktop */}
-          <div className="hidden lg:flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => onAddItem(category.id)}
-              leftIcon={<Plus className="w-3 h-3" />}
-            >
-              Add Item
-            </Button>
-            <button
-              onClick={() => onEditCategory(category)}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-              title="Edit Category"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => onDeleteCategory(category.id, category.name)}
-              className="p-2 text-red-600 hover:bg-red-50 rounded"
-              title="Delete Category"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
+          {!isManager && (
+            <div className="hidden lg:flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => onAddItem(category.id)}
+                leftIcon={<Plus className="w-3 h-3" />}
+              >
+                Add Item
+              </Button>
+              <button
+                onClick={() => onEditCategory(category)}
+                className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                title="Edit Category"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onDeleteCategory(category.id, category.name)}
+                className="p-2 text-red-600 hover:bg-red-50 rounded"
+                title="Delete Category"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* Actions - Mobile */}
-          <div className="flex lg:hidden items-center gap-1">
-            <button
-              onClick={() => onAddItem(category.id)}
-              className="p-2 text-purple-600 hover:bg-purple-50 rounded"
-              title="Add Item"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => onEditCategory(category)}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-              title="Edit"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-          </div>
+          {!isManager && (
+            <div className="flex lg:hidden items-center gap-1">
+              <button
+                onClick={() => onAddItem(category.id)}
+                className="p-2 text-purple-600 hover:bg-purple-50 rounded"
+                title="Add Item"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onEditCategory(category)}
+                className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                title="Edit"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -428,6 +463,7 @@ function SortableCategory({
             onDeleteItem={onDeleteItem}
             onToggleItemAvailability={onToggleItemAvailability}
             onReorderItems={onReorderItems}
+            isManager={isManager}
           />
         </div>
       )}
@@ -447,6 +483,7 @@ interface AccordionCategoryMenuProps {
   onDeleteItem: (itemId: string, itemName: string) => void;
   onToggleItemAvailability: (itemId: string, isAvailable: boolean) => void;
   onReorderItems: (categoryId: string, newOrder: MenuItem[]) => void;
+  isManager?: boolean;
 }
 
 export default function AccordionCategoryMenu({
@@ -460,6 +497,7 @@ export default function AccordionCategoryMenu({
   onDeleteItem,
   onToggleItemAvailability,
   onReorderItems,
+  isManager = false,
 }: AccordionCategoryMenuProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(categories.map((c) => c.id))
@@ -539,6 +577,7 @@ export default function AccordionCategoryMenu({
                 onDeleteItem={onDeleteItem}
                 onToggleItemAvailability={onToggleItemAvailability}
                 onReorderItems={onReorderItems}
+                isManager={isManager}
               />
             );
           })}
