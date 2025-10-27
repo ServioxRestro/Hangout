@@ -7,6 +7,8 @@ import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
 import DynamicNavbar from "./DynamicNavbar";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import NotificationPanel from "./NotificationPanel";
+import { AdminToastContainer } from "./AdminToast";
+import { useAdminNotifications } from "@/hooks/useAdminNotifications";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -19,6 +21,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
+
+  // Real-time notifications with toast
+  const { notifications, removeNotification } = useAdminNotifications({
+    enabled: !!currentUser,
+    userId: currentUser?.id,
+    userRole: currentUser?.role,
+  });
 
   // Navigation is now handled by DynamicNavbar component
 
@@ -122,6 +131,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   return (
     <NotificationProvider enabled={true}>
+      {/* Toast Notifications Container */}
+      <AdminToastContainer
+        notifications={notifications}
+        onClose={removeNotification}
+      />
+
       <div className="h-screen flex bg-gray-50">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (

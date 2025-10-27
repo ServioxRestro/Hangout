@@ -12,9 +12,11 @@ import {
   Table2,
   ArrowRight,
   Download,
+  BarChart3,
 } from "lucide-react";
 import Card from "@/components/admin/Card";
 import { formatCurrency } from "@/lib/constants";
+import RoleGuard from "@/components/admin/RoleGuard";
 
 type Period = "7d" | "30d" | "90d" | "1y" | "all";
 
@@ -242,9 +244,33 @@ export default function AnalyticsOverviewPage() {
   };
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <RoleGuard
+      requiredRoute="/admin/analytics"
+      fallback={
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4">
+              <BarChart3 className="h-6 w-6 text-yellow-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Admin Access Required
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Only the main administrator can view analytics data.
+            </p>
+            <button
+              onClick={() => (window.location.href = "/admin/dashboard")}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      }
+    >
+      <div className="p-6 max-w-[1600px] mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
           <p className="text-gray-600 mt-1">Bird's eye view of your restaurant performance</p>
@@ -440,6 +466,7 @@ export default function AnalyticsOverviewPage() {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </RoleGuard>
   );
 }

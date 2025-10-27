@@ -269,18 +269,6 @@ export default function CartPage() {
     setError("");
 
     try {
-      // Check for existing active table session
-      const { data: existingSession, error: sessionCheckError } = await supabase
-        .from("table_sessions")
-        .select("*")
-        .eq("table_id", table.id)
-        .eq("status", "active")
-        .maybeSingle();
-
-      if (sessionCheckError) {
-        throw new Error("Failed to check table session");
-      }
-
       // Get guest user to link with order
       const guestUser = await getGuestUserByPhone(phone);
       const guestUserId = guestUser?.id || null;
@@ -290,182 +278,83 @@ export default function CartPage() {
         await updateLastVisitedTable(phone, tableCode);
       }
 
-      let sessionId: string;
+      // Calculate discount amount if offer selected
+      let discountAmount = 0;
+      if (selectedOffer) {
+        const cartTotal = getTotalAmount();
+        const benefits = selectedOffer.benefits as any;
 
-      if (existingSession) {
-        // Check if session belongs to different customer
-        if (existingSession.customer_phone !== phone) {
-          throw new Error("This table is currently occupied by another customer. Please wait until their session is completed.");
-        }
-        sessionId = existingSession.id;
+        switch (selectedOffer.offer_type) {
+          case "cart_percentage":
+          case "promo_code":
+            const percentage = benefits?.discount_percentage || 0;
+            discountAmount = (cartTotal * percentage) / 100;
+            break;
 
-        // Update session with guest_user_id if not set
-        if (!existingSession.guest_user_id && guestUserId) {
-          await supabase
-            .from("table_sessions")
-            .update({ guest_user_id: guestUserId })
-            .eq("id", sessionId);
-        }
-      } else {
-        // Create new table session
-        const { data: newSession, error: sessionError} = await supabase
-          .from("table_sessions")
-          .insert({
-            table_id: table.id,
-            customer_phone: phone,
-            guest_user_id: guestUserId,
-            status: "active",
-            session_started_at: new Date().toISOString(),
-            total_orders: 0,
-            total_amount: 0
-          })
-          .select()
-          .single();
+          case "cart_flat_amount":
+            discountAmount = benefits?.discount_amount || 0;
+            break;
 
-        if (sessionError || !newSession) {
-          throw new Error(sessionError?.message || "Failed to create table session");
+          case "item_percentage":
+            const itemDiscount = benefits?.discount_percentage || 0;
+            discountAmount = (cartTotal * itemDiscount) / 100;
+            break;
+
+          default:
+            if (benefits?.discount_percentage) {
+              discountAmount = (cartTotal * benefits.discount_percentage) / 100;
+            } else if (benefits?.discount_amount) {
+              discountAmount = benefits.discount_amount;
+            }
         }
-        sessionId = newSession.id;
+
+        console.log("💰 Offer applied:", {
+          offerName: selectedOffer.name,
+          offerType: selectedOffer.offer_type,
+          cartTotal,
+          discountAmount,
+          benefits
+        });
       }
 
-      // Check if there's already an active order in this session
-      const { data: existingOrder, error: orderCheckError } = await supabase
-        .from("orders")
-        .select("id, total_amount")
-        .eq("table_session_id", sessionId)
-        .not("status", "in", "(completed,paid,cancelled)")
-        .maybeSingle();
+      // Prepare cart items for the database function
+      const cartItems = cart.map(item => ({
+        id: item.id,
+        quantity: item.quantity,
+        price: item.price
+      }));
 
-      if (orderCheckError) {
-        throw new Error("Failed to check existing order");
+      // Call optimized database function (reduces 11 queries to 1!)
+      const { data, error: rpcError } = await supabase
+        .rpc('place_order_optimized', {
+          p_table_code: tableCode,
+          p_customer_phone: phone,
+          p_cart_items: cartItems,
+          p_cart_total: getTotalAmount(),
+          p_guest_user_id: guestUserId || undefined,
+          p_order_type: 'dine-in',
+          p_offer_id: selectedOffer?.id || undefined,
+          p_offer_discount: discountAmount
+        });
+
+      if (rpcError) {
+        throw new Error(rpcError.message || "Failed to place order");
       }
 
-      let orderId: string;
-      const cartTotal = getTotalAmount();
+      const result = data as any;
 
-      if (existingOrder) {
-        // ADD items to existing order
-        orderId = existingOrder.id;
-        setIsAddingToExisting(true);
-
-        // Get next KOT number for this batch
-        const { data: kotData, error: kotError } = await supabase
-          .rpc('get_next_kot_number' as any);
-
-        if (kotError) {
-          throw new Error("Failed to generate KOT number");
-        }
-
-        const kotNumber = (kotData as unknown) as number;
-        const kotBatchId = crypto.randomUUID();
-
-        // Create order items for the new cart items with KOT info
-        const orderItems = cart.map(item => ({
-          order_id: orderId,
-          menu_item_id: item.id,
-          quantity: item.quantity,
-          unit_price: item.price,
-          total_price: item.price * item.quantity,
-          kot_number: kotNumber,
-          kot_batch_id: kotBatchId
-        }));
-
-        const { error: itemsError } = await supabase
-          .from("order_items")
-          .insert(orderItems);
-
-        if (itemsError) {
-          throw new Error(itemsError.message || "Failed to add items to order");
-        }
-
-        // Update order total amount and timestamp
-        const { error: orderUpdateError } = await supabase
-          .from("orders")
-          .update({
-            total_amount: existingOrder.total_amount + cartTotal,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", orderId);
-
-        if (orderUpdateError) {
-          throw new Error(orderUpdateError.message || "Failed to update order total");
-        }
-
-      } else {
-        // CREATE new order (first order in session)
-        setIsAddingToExisting(false);
-        const { data: orderData, error: orderError } = await supabase
-          .from("orders")
-          .insert({
-            table_id: table.id,
-            table_session_id: sessionId,
-            customer_phone: phone,
-            guest_user_id: guestUserId,
-            total_amount: cartTotal,
-            status: "placed",
-            order_type: "dine-in",
-            notes: `Order placed via QR code for table ${table.table_number}`,
-            session_offer_id: selectedOffer?.id || null, // Save selected offer
-          })
-          .select()
-          .single();
-
-        if (orderError || !orderData) {
-          throw new Error(orderError?.message || "Failed to create order");
-        }
-
-        orderId = orderData.id;
-
-        // Get next KOT number for this batch
-        const { data: kotData, error: kotError } = await supabase
-          .rpc('get_next_kot_number' as any);
-
-        if (kotError) {
-          throw new Error("Failed to generate KOT number");
-        }
-
-        const kotNumber = (kotData as unknown) as number;
-        const kotBatchId = crypto.randomUUID();
-
-        // Create order items with KOT info
-        const orderItems = cart.map(item => ({
-          order_id: orderId,
-          menu_item_id: item.id,
-          quantity: item.quantity,
-          unit_price: item.price,
-          total_price: item.price * item.quantity,
-          kot_number: kotNumber,
-          kot_batch_id: kotBatchId
-        }));
-
-        const { error: itemsError } = await supabase
-          .from("order_items")
-          .insert(orderItems);
-
-        if (itemsError) {
-          throw new Error(itemsError.message || "Failed to add order items");
-        }
+      if (!result || !result.success) {
+        throw new Error("Order placement failed");
       }
 
-      // Update session totals
-      const { error: updateSessionError } = await supabase
-        .from("table_sessions")
-        .update({
-          // Only increment total_orders if we CREATED a new order (not when adding to existing)
-          total_orders: existingOrder ? (existingSession?.total_orders || 1) : (existingSession?.total_orders || 0) + 1,
-          total_amount: (existingSession?.total_amount || 0) + cartTotal,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", sessionId);
+      console.log("✅ Order placed successfully:", result);
 
-      if (updateSessionError) {
-        console.error("Failed to update session totals:", updateSessionError);
-        // Don't throw error as order is already placed successfully
-      }
+      // Set state based on result
+      setIsAddingToExisting(!result.is_new_order);
+      setOrderId(result.order_id);
 
       // Clear cart
       updateCart([]);
-      setOrderId(orderId);
       setStep("success");
 
     } catch (error: any) {

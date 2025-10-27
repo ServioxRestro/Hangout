@@ -22,6 +22,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { canAccessRoute, UserRole, AuthUser } from "@/lib/auth";
+import { useAdminBadges } from "@/hooks/useAdminBadges";
 
 interface NavigationItem {
   name: string;
@@ -29,6 +30,8 @@ interface NavigationItem {
   icon: React.ComponentType<{ className?: string }>;
   current?: boolean;
   subItems?: SubNavigationItem[];
+  badge?: number; // Badge count for notifications
+  badgeColor?: "red" | "blue" | "green" | "orange"; // Badge color
 }
 
 interface SubNavigationItem {
@@ -51,6 +54,12 @@ export default function DynamicNavbar({
 }: DynamicNavbarProps) {
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+
+  // Fetch real-time badge counts
+  const badgeCounts = useAdminBadges({
+    enabled: !!currentUser,
+    userRole: currentUser?.role,
+  });
 
   // Define all navigation items with their sub-items
   const allNavigation: NavigationItem[] = [
@@ -81,11 +90,15 @@ export default function DynamicNavbar({
       name: "Kitchen",
       href: "/admin/kitchen",
       icon: ChefHat,
+      badge: badgeCounts.kitchenKOTs,
+      badgeColor: "orange",
     },
     {
       name: "Takeaway",
       href: "/admin/takeaway/orders",
       icon: Package,
+      badge: badgeCounts.takeawayOrders,
+      badgeColor: "blue",
       subItems: [
         {
           name: "Takeaway Orders",
@@ -103,11 +116,15 @@ export default function DynamicNavbar({
       name: "Bills & Payments",
       href: "/admin/billing",
       icon: Receipt,
+      badge: badgeCounts.pendingBills,
+      badgeColor: "red",
     },
     {
       name: "Orders",
       href: "/admin/orders",
       icon: ClipboardList,
+      badge: badgeCounts.activeOrders,
+      badgeColor: "green",
       subItems: [
         {
           name: "Active Orders",
@@ -240,6 +257,21 @@ export default function DynamicNavbar({
 
   const isExpanded = (itemName: string) => expandedItems.includes(itemName);
 
+  const getBadgeColorClass = (color?: "red" | "blue" | "green" | "orange") => {
+    switch (color) {
+      case "red":
+        return "bg-red-500 text-white";
+      case "blue":
+        return "bg-blue-500 text-white";
+      case "green":
+        return "bg-green-500 text-white";
+      case "orange":
+        return "bg-orange-500 text-white";
+      default:
+        return "bg-gray-500 text-white";
+    }
+  };
+
   return (
     <nav className="flex-1 px-2 space-y-1">
       {navigation.map((item) => {
@@ -253,7 +285,7 @@ export default function DynamicNavbar({
               <a
                 href={item.href}
                 onClick={onMobileNavigate}
-                className={`flex-1 group flex items-center px-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`flex-1 group flex items-center px-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 relative ${
                   item.current
                     ? "bg-blue-50 text-blue-600 border-r-2 border-blue-600"
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
@@ -269,7 +301,25 @@ export default function DynamicNavbar({
                 {!collapsed && (
                   <>
                     <span className="ml-3 flex-1">{item.name}</span>
+                    {item.badge && item.badge > 0 && (
+                      <span
+                        className={`ml-auto px-2 py-0.5 text-xs font-bold rounded-full ${getBadgeColorClass(
+                          item.badgeColor
+                        )}`}
+                      >
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </span>
+                    )}
                   </>
+                )}
+                {collapsed && item.badge && item.badge > 0 && (
+                  <span
+                    className={`absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center text-xs font-bold rounded-full ${getBadgeColorClass(
+                      item.badgeColor
+                    )}`}
+                  >
+                    {item.badge > 9 ? "9+" : item.badge}
+                  </span>
                 )}
               </a>
 

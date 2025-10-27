@@ -33,19 +33,13 @@ export default function BillingPage() {
     takeawayBills,
     loading,
     error,
-    fetchOrders,
+    refetch,
   } = useBilling();
 
   const [selectedBill, setSelectedBill] = useState<BillWithDetails | null>(null);
   const [processing, setProcessing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastConfirmedBill, setLastConfirmedBill] = useState<BillWithDetails | null>(null);
-
-  useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
-  }, [fetchOrders]);
 
   const confirmPayment = async (bill: BillWithDetails) => {
     setProcessing(true);
@@ -101,7 +95,7 @@ export default function BillingPage() {
 
       setLastConfirmedBill(bill);
       setShowSuccessModal(true);
-      await fetchOrders();
+      await refetch();
     } catch (error: any) {
       console.error("Error confirming payment:", error);
       alert("Error confirming payment: " + error.message);
@@ -229,7 +223,7 @@ export default function BillingPage() {
               </div>
               <Button
                 variant="secondary"
-                onClick={fetchOrders}
+                onClick={() => refetch()}
                 leftIcon={<RefreshCw className="w-4 h-4" />}
               >
                 Refresh

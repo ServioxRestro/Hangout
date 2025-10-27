@@ -1,119 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { KOT, KOTItem } from "@/types/kot.types";
-import { calculateKOTStatus } from "@/lib/utils/kot";
 import { printKOTReceipt } from "@/components/shared/KOTReceipt";
 import { KOTCard } from "@/components/shared/KOTCard";
 import Button from "@/components/admin/Button";
-import { Printer, CheckCircle, ChefHat } from "lucide-react";
+import { Printer, CheckCircle, ChefHat, Loader2 } from "lucide-react";
+import { useAdminKOTs } from "@/hooks/useAdminKOTs";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function KitchenDisplayPage() {
-  const [kots, setKots] = useState<KOT[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchKOTs();
-    const interval = setInterval(fetchKOTs, 5000); // Auto-refresh every 5 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchKOTs = async () => {
-    try {
-      // Fetch all order_items with active KOT statuses (Kitchen handles: placed → preparing → ready)
-      // Once marked "served" by waiters, KOT disappears from kitchen
-      const { data: orderItems, error } = await supabase
-        .from("order_items")
-        .select(`
-          id,
-          quantity,
-          unit_price,
-          total_price,
-          created_at,
-          status,
-          kot_number,
-          kot_batch_id,
-          menu_items (
-            name,
-            is_veg
-          ),
-          orders (
-            id,
-            order_type,
-            table_id,
-            customer_name,
-            restaurant_tables (
-              table_number,
-              veg_only
-            ),
-            takeaway_qr_codes (
-              is_veg_only
-            )
-          )
-        `)
-        .not("kot_number", "is", null)
-        .in("status", ["placed", "preparing", "ready"])
-        .order("kot_number", { ascending: true });
-
-      if (error) throw error;
-
-      // Group items by KOT batch
-      const kotMap = new Map<string, KOT>();
-
-      orderItems?.forEach((item: any) => {
-        const batchId = item.kot_batch_id;
-        if (!batchId) return;
-
-        if (!kotMap.has(batchId)) {
-          kotMap.set(batchId, {
-            kot_number: item.kot_number,
-            kot_batch_id: batchId,
-            table_number: item.orders?.restaurant_tables?.table_number || null,
-            table_veg_only: item.orders?.restaurant_tables?.veg_only || false,
-            customer_name: item.orders?.customer_name || null,
-            takeaway_qr_is_veg_only: item.orders?.takeaway_qr_codes?.is_veg_only || false,
-            order_id: item.orders?.id || "",
-            order_type: item.orders?.order_type || "dine-in",
-            kot_status: "placed",
-            created_at: item.created_at,
-            items: [],
-          });
-        }
-
-        const kot = kotMap.get(batchId)!;
-        kot.items.push({
-          id: item.id,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          total_price: item.total_price,
-          created_at: item.created_at,
-          status: item.status,
-          menu_item_name: item.menu_items?.name || "Unknown",
-          is_veg: item.menu_items?.is_veg || false,
-        });
-      });
-
-      // Calculate KOT status from items
-      kotMap.forEach((kot) => {
-        const itemStatuses = kot.items.map((i) => i.status);
-        kot.kot_status = calculateKOTStatus(itemStatuses);
-      });
-
-      // Convert to array and sort by KOT number
-      const kotsArray = Array.from(kotMap.values()).sort(
-        (a, b) => a.kot_number - b.kot_number
-      );
-
-      setKots(kotsArray);
-    } catch (error: any) {
-      console.error("Error fetching KOTs:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: kots = [], isLoading: loading } = useAdminKOTs();
+  const queryClient = useQueryClient();
+  const [updatingKOTs, setUpdatingKOTs] = useState<Set<string>>(new Set());
 
   const updateKOTStatus = async (kotBatchId: string, newStatus: string) => {
+    // Add to updating set for loading state
+    setUpdatingKOTs((prev) => new Set(prev).add(kotBatchId));
+
     try {
       // Get the KOT to check if it's a takeaway order
       const kot = kots.find((k) => k.kot_batch_id === kotBatchId);
@@ -125,6 +29,23 @@ export default function KitchenDisplayPage() {
           ? "served"
           : newStatus;
 
+      // Optimistic update: Update UI immediately
+      queryClient.setQueryData(["adminKOTs"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return oldData.map((k: any) =>
+          k.kot_batch_id === kotBatchId
+            ? {
+                ...k,
+                kot_status: finalStatus,
+                items: k.items.map((item: any) => ({
+                  ...item,
+                  status: finalStatus,
+                })),
+              }
+            : k
+        );
+      });
+
       // Update ALL items in this KOT batch
       const { error } = await supabase
         .from("order_items")
@@ -133,11 +54,21 @@ export default function KitchenDisplayPage() {
 
       if (error) throw error;
 
-      // Trigger will auto-update order status
-      await fetchKOTs();
+      // Invalidate and refetch to ensure consistency
+      await queryClient.invalidateQueries({ queryKey: ["adminKOTs"] });
+      await queryClient.invalidateQueries({ queryKey: ["adminBadges"] });
     } catch (error: any) {
       console.error("Error updating KOT status:", error);
       alert("Failed to update KOT status");
+      // Revert optimistic update on error
+      await queryClient.invalidateQueries({ queryKey: ["adminKOTs"] });
+    } finally {
+      // Remove from updating set
+      setUpdatingKOTs((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(kotBatchId);
+        return newSet;
+      });
     }
   };
 
@@ -166,60 +97,85 @@ export default function KitchenDisplayPage() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {kots.map((kot) => (
-        <KOTCard
-          key={kot.kot_batch_id}
-          kot={kot}
-          showActions
-          actions={
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => printKOTReceipt(kot)}
-                leftIcon={<Printer className="w-4 h-4" />}
-                className="flex-1"
-              >
-                Print
-              </Button>
+      {kots.map((kot) => {
+        const isUpdating = updatingKOTs.has(kot.kot_batch_id);
 
-              {kot.kot_status === "placed" && (
+        return (
+          <KOTCard
+            key={kot.kot_batch_id}
+            kot={kot}
+            showActions
+            actions={
+              <>
                 <Button
-                  variant="primary"
+                  variant="secondary"
                   size="sm"
-                  onClick={() => updateKOTStatus(kot.kot_batch_id, "preparing")}
-                  leftIcon={<ChefHat className="w-4 h-4" />}
+                  onClick={() => printKOTReceipt(kot)}
+                  leftIcon={<Printer className="w-4 h-4" />}
                   className="flex-1"
+                  disabled={isUpdating}
                 >
-                  Start
+                  Print
                 </Button>
-              )}
 
-              {kot.kot_status === "preparing" && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => updateKOTStatus(kot.kot_batch_id, "ready")}
-                  leftIcon={<CheckCircle className="w-4 h-4" />}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  {kot.order_type === "takeaway" ? "Ready (Pickup)" : "Ready"}
-                </Button>
-              )}
+                {kot.kot_status === "placed" && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() =>
+                      updateKOTStatus(kot.kot_batch_id, "preparing")
+                    }
+                    leftIcon={
+                      isUpdating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ChefHat className="w-4 h-4" />
+                      )
+                    }
+                    className="flex-1"
+                    disabled={isUpdating}
+                  >
+                    {isUpdating ? "Starting..." : "Start"}
+                  </Button>
+                )}
 
-              {kot.kot_status === "ready" && (
-                <div className="flex-1 px-3 py-2 bg-green-100 border border-green-300 rounded-lg text-center">
-                  <span className="text-green-800 font-medium text-sm">
-                    ✓ Ready - Awaiting Waiter
-                  </span>
-                </div>
-              )}
+                {kot.kot_status === "preparing" && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => updateKOTStatus(kot.kot_batch_id, "ready")}
+                    leftIcon={
+                      isUpdating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle className="w-4 h-4" />
+                      )
+                    }
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    disabled={isUpdating}
+                  >
+                    {isUpdating
+                      ? "Processing..."
+                      : kot.order_type === "takeaway"
+                        ? "Ready (Pickup)"
+                        : "Ready"}
+                  </Button>
+                )}
 
-              {/* Ready KOTs stay visible until waiter marks as served from table sessions */}
-            </>
-          }
-        />
-      ))}
+                {kot.kot_status === "ready" && (
+                  <div className="flex-1 px-3 py-2 bg-green-100 border border-green-300 rounded-lg text-center">
+                    <span className="text-green-800 font-medium text-sm">
+                      ✓ Ready - Awaiting Waiter
+                    </span>
+                  </div>
+                )}
+
+                {/* Ready KOTs stay visible until waiter marks as served from table sessions */}
+              </>
+            }
+          />
+        );
+      })}
     </div>
   );
 }

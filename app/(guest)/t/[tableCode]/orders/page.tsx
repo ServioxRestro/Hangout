@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentUser } from "@/lib/auth/msg91-widget";
 import { formatCurrency } from "@/lib/utils";
@@ -23,6 +22,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import { formatDate } from "@/lib/utils";
 import { calculateBill, type BillItem } from "@/lib/utils/billing";
+import { useGuestOrders } from "@/hooks/useGuestOrders";
 
 type Order = Tables<"orders"> & {
   order_items: Array<
@@ -36,156 +36,62 @@ export default function OrdersPage() {
   const params = useParams();
   const tableCode = params?.tableCode as string;
 
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [showBill, setShowBill] = useState(false);
   const [billSummary, setBillSummary] = useState<any>(null);
   const [processingBill, setProcessingBill] = useState(false);
   const [taxSettings, setTaxSettings] = useState<any[]>([]);
 
-  // Define fetchOrders first with useCallback
-  const fetchOrders = useCallback(async (userPhone: string) => {
-    try {
-      // Get table info first
-      const { data: tableData, error: tableError } = await supabase
-        .from("restaurant_tables")
-        .select("id")
-        .eq("table_code", tableCode)
-        .single();
+  // Use React Query hook for auto-refreshing orders
+  const {
+    data: ordersData,
+    isLoading,
+    error: queryError
+  } = useGuestOrders({
+    tableCode,
+    userPhone: currentUser?.phone || "",
+    enabled: !!currentUser?.phone && !showBill
+  });
 
-      if (tableError || !tableData) {
-        setError("Table not found");
-        return;
-      }
+  const orders = ordersData?.orders || [];
+  const sessionOffer = ordersData?.sessionOffer || null;
+  const loading = isLoading;
+  const error = queryError ? (queryError as any).message : "";
 
-      // Fetch orders for this user at this table
-      // Note: We need to handle both phone formats (with and without country code)
-      // Normalize phone to 10 digits for comparison
-      const normalizedPhone = userPhone.replace(/\D/g, '');
-      const phoneWithoutCode = normalizedPhone.length === 12 && normalizedPhone.startsWith('91')
-        ? normalizedPhone.substring(2)
-        : normalizedPhone;
-      const phoneWithCode = normalizedPhone.length === 10
-        ? `91${normalizedPhone}`
-        : normalizedPhone;
-
-      // First, get the current active session for this table (try both phone formats)
-      const { data: sessionData, error: sessionError } = await supabase
-        .from("table_sessions")
-        .select("id")
-        .eq("table_id", tableData.id)
-        .in("customer_phone", [phoneWithoutCode, phoneWithCode])
-        .eq("status", "active")
-        .maybeSingle();
-
-      if (sessionError) {
-        throw new Error(sessionError.message);
-      }
-
-      // If there's an active session, fetch all orders from that session
-      if (sessionData) {
-        const { data: sessionOrders, error: sessionOrdersError } = await supabase
-          .from("orders")
-          .select(`
-            *,
-            order_items (
-              *,
-              menu_items (*)
-            )
-          `)
-          .eq("table_session_id", sessionData.id)
-          .order("created_at", { ascending: false });
-
-        if (sessionOrdersError) {
-          throw new Error(sessionOrdersError.message);
-        }
-
-        setOrders((sessionOrders as Order[]) || []);
-        return;
-      }
-
-      // If no active session, fetch all historical orders for this user at this table
-      // Try both phone formats
-      const { data: ordersData, error: ordersError } = await supabase
-        .from("orders")
-        .select(`
-          *,
-          order_items (
-            *,
-            menu_items (*)
-          )
-        `)
-        .eq("table_id", tableData.id)
-        .in("customer_phone", [phoneWithoutCode, phoneWithCode])
-        .order("created_at", { ascending: false });
-
-      if (ordersError) {
-        throw new Error(ordersError.message);
-      }
-
-      setOrders((ordersData as Order[]) || []);
-    } catch (error: any) {
-      console.error("Error fetching orders:", error);
-      setError(error.message || "Failed to load orders");
-    }
-  }, [tableCode]);
-
-  const fetchTaxSettings = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("tax_settings")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-
-      if (error) throw error;
-      setTaxSettings(data || []);
-    } catch (error) {
-      console.error("Error fetching tax settings:", error);
-    }
-  };
-
-  const checkUserAndFetchOrders = async () => {
-    try {
-      const user = await getCurrentUser();
-      if (!user) {
-        setError("Please sign in to view your orders");
-        setLoading(false);
-        return;
-      }
-
-      setCurrentUser(user);
-      if (user.phone) {
-        await fetchOrders(user.phone);
-      }
-    } catch (error) {
-      console.error("Error checking user:", error);
-      setError("Failed to load user session");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Initial data fetch
+  // Fetch tax settings once on mount
   useEffect(() => {
+    const fetchTaxSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("tax_settings")
+          .select("*")
+          .eq("is_active", true)
+          .order("name");
+
+        if (error) throw error;
+        setTaxSettings(data || []);
+      } catch (error) {
+        console.error("Error fetching tax settings:", error);
+      }
+    };
+
+    const checkUser = async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!user) {
+          return;
+        }
+        setCurrentUser(user);
+      } catch (error) {
+        console.error("Error checking user:", error);
+      }
+    };
+
     if (tableCode) {
-      checkUserAndFetchOrders();
+      checkUser();
       fetchTaxSettings();
     }
-  }, [tableCode, fetchOrders]);
-
-  // Separate effect for auto-refresh
-  useEffect(() => {
-    if (!currentUser?.phone || showBill) return;
-
-    const interval = setInterval(() => {
-      fetchOrders(currentUser.phone);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [currentUser?.phone, showBill, fetchOrders]);
+  }, [tableCode]);
 
   const handleGetBill = async () => {
     // If bill already generated in UI, just show it
@@ -229,7 +135,8 @@ export default function OrdersPage() {
           // Fetch offer information if this bill has a discount
           let offerName = null;
           if (existingBill.discount_amount && existingBill.discount_amount > 0) {
-            const { data: offerUsageData } = await supabase
+            console.log("🔍 Fetching offer for session:", sessionId);
+            const { data: offerUsageData, error: offerError } = await supabase
               .from("offer_usage")
               .select(`
                 offers (
@@ -237,10 +144,15 @@ export default function OrdersPage() {
                 )
               `)
               .eq("table_session_id", sessionId)
-              .single();
+              .maybeSingle();
 
-            if (offerUsageData && offerUsageData.offers) {
+            if (offerError) {
+              console.error("❌ Error fetching offer:", offerError);
+            } else if (offerUsageData && offerUsageData.offers) {
               offerName = (offerUsageData.offers as any).name;
+              console.log("✅ Offer found:", offerName);
+            } else {
+              console.log("⚠️ No offer found for this session");
             }
           }
 
@@ -328,10 +240,22 @@ export default function OrdersPage() {
         is_manual: false,
       }));
 
-      // Calculate bill
+      // Calculate discount percentage from session offer if available
+      let discountPercentage = 0;
+      let offerName = null;
+
+      if (sessionOffer && sessionOffer.discount > 0) {
+        const subtotal = billItems.reduce((sum, item) => sum + item.total_price, 0);
+        if (subtotal > 0) {
+          discountPercentage = (sessionOffer.discount / subtotal) * 100;
+          offerName = sessionOffer.name;
+        }
+      }
+
+      // Calculate bill with discount
       const calculation = calculateBill(
         billItems,
-        0, // No discount for guest orders
+        discountPercentage,
         taxSettings
       );
 
@@ -340,10 +264,32 @@ export default function OrdersPage() {
         calculation,
         orderIds: activeOrdersList.map(o => o.id),
         existingBill: false, // UI-generated preview
+        offerName: offerName, // Include offer name
       });
 
-      // DON'T mark items as served - that's done by waiters from table sessions
-      // Just show the bill preview
+      // Mark items as served if they're ready (guest is ready to pay)
+      // Only mark items that are not already served
+      const itemsToMarkServed = allItems.filter(item =>
+        (item as any).status === 'ready'
+      );
+
+      if (itemsToMarkServed.length > 0) {
+        const itemIds = itemsToMarkServed.map(item => item.id);
+
+        const { error: updateError } = await supabase
+          .from('order_items')
+          .update({ status: 'served' })
+          .in('id', itemIds);
+
+        if (updateError) {
+          console.error('Failed to mark items as served:', updateError);
+          // Don't block showing the bill even if update fails
+        } else {
+          console.log('✅ Marked', itemIds.length, 'items as served');
+        }
+      }
+
+      // Show the bill preview
       setShowBill(true);
     } catch (error) {
       console.error("Error generating bill:", error);
@@ -353,13 +299,16 @@ export default function OrdersPage() {
     }
   };
 
-  // Check if all items are ready
+  // Check if all items are ready or served
   const activeOrders = orders.filter(o =>
     o.status !== 'completed' && o.status !== 'paid'
   );
   const allItems = activeOrders.flatMap(order => order.order_items);
   const allItemsReady = allItems.length > 0 && allItems.every(item =>
     (item as any).status === 'ready' || (item as any).status === 'served'
+  );
+  const allItemsServed = allItems.length > 0 && allItems.every(item =>
+    (item as any).status === 'served'
   );
   const hasActiveOrders = activeOrders.length > 0;
 
@@ -495,11 +444,34 @@ export default function OrdersPage() {
               </div>
 
               {/* Total */}
-              <div className="border-t pt-3 mt-3 flex justify-between items-center">
-                <span className="font-semibold text-gray-900">Total</span>
-                <span className="font-bold text-xl text-gray-900">
-                  {formatCurrency(activeOrders.reduce((sum, order) => sum + order.total_amount, 0))}
-                </span>
+              <div className="border-t pt-3 mt-3 space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="text-gray-900">
+                    {formatCurrency(activeOrders.reduce((sum, order) => sum + order.total_amount, 0))}
+                  </span>
+                </div>
+
+                {sessionOffer && sessionOffer.discount > 0 && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-green-600">
+                      Discount
+                      <span className="text-xs ml-1">({sessionOffer.name})</span>
+                    </span>
+                    <span className="text-green-600">
+                      -{formatCurrency(sessionOffer.discount)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="font-semibold text-gray-900">Total</span>
+                  <span className="font-bold text-xl text-gray-900">
+                    {formatCurrency(
+                      activeOrders.reduce((sum, order) => sum + order.total_amount, 0) - (sessionOffer?.discount || 0)
+                    )}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -535,9 +507,11 @@ export default function OrdersPage() {
               ? "Processing..."
               : billSummary
                 ? "View Bill"
-                : allItemsReady
-                  ? "Get Bill"
-                  : "Waiting for food to be ready..."}
+                : allItemsServed
+                  ? "View Bill" // Waiter already marked as served
+                  : allItemsReady
+                    ? "Get Bill" // Guest can mark as served
+                    : "Waiting for food to be ready..."}
           </Button>
         </div>
       )}
