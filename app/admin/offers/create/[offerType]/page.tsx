@@ -54,7 +54,12 @@ const offerTypeConfigs: Record<string, any> = {
     application_type: "session_level",
     icon: "Package",
     benefitsSchema: {
-      discount_percentage: { type: "number", required: false, min: 1, max: 100 },
+      discount_percentage: {
+        type: "number",
+        required: false,
+        min: 1,
+        max: 100,
+      },
       discount_amount: { type: "number", required: false, min: 1 },
       max_discount_amount: { type: "number", required: false, min: 0 },
     },
@@ -136,7 +141,12 @@ const offerTypeConfigs: Record<string, any> = {
     application_type: "session_level",
     icon: "Clock",
     benefitsSchema: {
-      discount_percentage: { type: "number", required: false, min: 1, max: 100 },
+      discount_percentage: {
+        type: "number",
+        required: false,
+        min: 1,
+        max: 100,
+      },
       discount_amount: { type: "number", required: false, min: 1 },
       max_discount_amount: { type: "number", required: false, min: 0 },
     },
@@ -146,11 +156,17 @@ const offerTypeConfigs: Record<string, any> = {
   },
   customer_based: {
     name: "Customer Segment Offer",
-    description: "Offers for specific customer types (first-time, returning, loyalty)",
+    description:
+      "Offers for specific customer types (first-time, returning, loyalty)",
     application_type: "session_level",
     icon: "Users",
     benefitsSchema: {
-      discount_percentage: { type: "number", required: false, min: 1, max: 100 },
+      discount_percentage: {
+        type: "number",
+        required: false,
+        min: 1,
+        max: 100,
+      },
       discount_amount: { type: "number", required: false, min: 1 },
       max_discount_amount: { type: "number", required: false, min: 0 },
     },
@@ -165,7 +181,12 @@ const offerTypeConfigs: Record<string, any> = {
     application_type: "session_level",
     icon: "Tag",
     benefitsSchema: {
-      discount_percentage: { type: "number", required: false, min: 1, max: 100 },
+      discount_percentage: {
+        type: "number",
+        required: false,
+        min: 1,
+        max: 100,
+      },
       discount_amount: { type: "number", required: false, min: 1 },
       max_discount_amount: { type: "number", required: false, min: 0 },
     },
@@ -192,22 +213,34 @@ export default function CreateOfferFormPage() {
   const offerType = params?.offerType as string;
 
   // Check if we're in edit mode
-  const isEditMode = searchParams.get('edit') === 'true';
-  const editOfferId = searchParams.get('id');
+  const isEditMode = searchParams.get("edit") === "true";
+  const editOfferId = searchParams.get("id");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menuCategories, setMenuCategories] = useState<any[]>([]);
   const [menuItems, setMenuItems] = useState<any[]>([]);
-  const [selectedItems, setSelectedItems] = useState<Array<{
-    type: 'item' | 'category';
-    id: string;
-    name: string;
-    item_type?: 'buy' | 'get' | 'combo';
-    quantity?: number;
-    is_required?: boolean;
-    is_selectable?: boolean;
-  }>>([]);
+  const [selectedItems, setSelectedItems] = useState<
+    Array<{
+      type: "item" | "category";
+      id: string;
+      name: string;
+      item_type?: "buy" | "get" | "combo";
+      quantity?: number;
+      is_required?: boolean;
+      is_selectable?: boolean;
+    }>
+  >([]);
+
+  // NEW: Separate state for free add-on items (for item_free_addon offer type)
+  const [selectedFreeAddonItems, setSelectedFreeAddonItems] = useState<
+    Array<{
+      type: "item" | "category";
+      id: string;
+      name: string;
+      price?: number;
+    }>
+  >([]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -258,43 +291,53 @@ export default function CreateOfferFormPage() {
   useEffect(() => {
     if (isEditMode && searchParams) {
       try {
-        const conditions = searchParams.get('conditions') ? JSON.parse(searchParams.get('conditions') || '{}') : {};
-        const benefits = searchParams.get('benefits') ? JSON.parse(searchParams.get('benefits') || '{}') : {};
-        const validDays = searchParams.get('valid_days') ? JSON.parse(searchParams.get('valid_days') || '[]') : [];
+        const conditions = searchParams.get("conditions")
+          ? JSON.parse(searchParams.get("conditions") || "{}")
+          : {};
+        const benefits = searchParams.get("benefits")
+          ? JSON.parse(searchParams.get("benefits") || "{}")
+          : {};
+        const validDays = searchParams.get("valid_days")
+          ? JSON.parse(searchParams.get("valid_days") || "[]")
+          : [];
 
         setFormData({
-          name: searchParams.get('name') || '',
-          description: searchParams.get('description') || '',
-          image_url: searchParams.get('image_url') || '',
-          is_active: searchParams.get('is_active') === 'true',
-          priority: Number(searchParams.get('priority') || 5),
-          start_date: searchParams.get('start_date') || '',
-          end_date: searchParams.get('end_date') || '',
-          usage_limit: searchParams.get('usage_limit') || '',
-          promo_code: searchParams.get('promo_code') || '',
+          name: searchParams.get("name") || "",
+          description: searchParams.get("description") || "",
+          image_url: searchParams.get("image_url") || "",
+          is_active: searchParams.get("is_active") === "true",
+          priority: Number(searchParams.get("priority") || 5),
+          start_date: searchParams.get("start_date") || "",
+          end_date: searchParams.get("end_date") || "",
+          usage_limit: searchParams.get("usage_limit") || "",
+          promo_code: searchParams.get("promo_code") || "",
           valid_days: validDays,
-          valid_hours_start: searchParams.get('valid_hours_start') || '',
-          valid_hours_end: searchParams.get('valid_hours_end') || '',
-          target_customer_type: searchParams.get('target_customer_type') || 'all',
+          valid_hours_start: searchParams.get("valid_hours_start") || "",
+          valid_hours_end: searchParams.get("valid_hours_end") || "",
+          target_customer_type:
+            searchParams.get("target_customer_type") || "all",
           // Benefits
-          discount_percentage: benefits.discount_percentage?.toString() || '',
-          discount_amount: benefits.discount_amount?.toString() || '',
-          max_discount_amount: benefits.max_discount_amount?.toString() || '',
-          max_price: benefits.max_price?.toString() || '',
-          buy_quantity: benefits.buy_quantity?.toString() || '',
-          get_quantity: benefits.get_quantity?.toString() || '',
+          discount_percentage: benefits.discount_percentage?.toString() || "",
+          discount_amount: benefits.discount_amount?.toString() || "",
+          max_discount_amount: benefits.max_discount_amount?.toString() || "",
+          max_price: benefits.max_price?.toString() || "",
+          buy_quantity: benefits.buy_quantity?.toString() || "",
+          get_quantity: benefits.get_quantity?.toString() || "",
           get_same_item: benefits.get_same_item || false,
-          free_category: benefits.free_category || '',
-          combo_price: benefits.combo_price?.toString() || '',
+          free_category: benefits.free_category || "",
+          combo_price: benefits.combo_price?.toString() || "",
           is_customizable: benefits.is_customizable || false,
           // Conditions
-          min_amount: conditions.min_amount?.toString() || '',
-          threshold_amount: conditions.threshold_amount?.toString() || '',
-          min_quantity: conditions.min_quantity?.toString() || '',
-          min_orders_count: searchParams.get('min_orders_count') || conditions.min_orders_count?.toString() || '',
+          min_amount: conditions.min_amount?.toString() || "",
+          threshold_amount: conditions.threshold_amount?.toString() || "",
+          min_quantity: conditions.min_quantity?.toString() || "",
+          min_orders_count:
+            searchParams.get("min_orders_count") ||
+            conditions.min_orders_count?.toString() ||
+            "",
         });
       } catch (error) {
-        console.error('Error parsing edit data:', error);
+        console.error("Error parsing edit data:", error);
       }
     }
   }, [isEditMode, searchParams]);
@@ -333,37 +376,63 @@ export default function CreateOfferFormPage() {
     try {
       // Validate item selection for offers that require it
       const needsItemSelection = [
-        'item_buy_get_free',
-        'cart_threshold_item',
-        'item_free_addon',
-        'item_percentage',
-        'combo_meal'
+        "item_buy_get_free",
+        "cart_threshold_item",
+        "item_free_addon",
+        "item_percentage",
+        "combo_meal",
       ].includes(offerType);
 
       if (needsItemSelection && selectedItems.length === 0) {
-        throw new Error('Please select at least one menu item or category for this offer type');
+        throw new Error(
+          "Please select at least one menu item or category for this offer type"
+        );
+      }
+
+      // Validate item_free_addon has both qualifying items and free addon items
+      if (offerType === "item_free_addon") {
+        if (selectedItems.length === 0) {
+          throw new Error(
+            "Please select qualifying items (main items that customer must purchase)"
+          );
+        }
+        if (selectedFreeAddonItems.length === 0) {
+          throw new Error(
+            "Please select free add-on items (items that customer can choose for free)"
+          );
+        }
       }
 
       // Validate BOGO has both buy and get items
-      if (offerType === 'item_buy_get_free') {
-        const hasBuyItem = selectedItems.some(item => item.item_type === 'buy');
-        const hasGetItem = selectedItems.some(item => item.item_type === 'get');
+      if (offerType === "item_buy_get_free") {
+        const hasBuyItem = selectedItems.some(
+          (item) => item.item_type === "buy"
+        );
+        const hasGetItem = selectedItems.some(
+          (item) => item.item_type === "get"
+        );
         if (!hasBuyItem || !hasGetItem) {
-          throw new Error('BOGO offers must have at least one "Buy" item and one "Get Free" item');
+          throw new Error(
+            'BOGO offers must have at least one "Buy" item and one "Get Free" item'
+          );
         }
       }
 
       // Validate promo code offers
-      if (offerType === 'promo_code') {
+      if (offerType === "promo_code") {
         if (!formData.discount_percentage && !formData.discount_amount) {
-          throw new Error('Promo code offers must have either a discount percentage or flat discount amount');
+          throw new Error(
+            "Promo code offers must have either a discount percentage or flat discount amount"
+          );
         }
       }
 
       // Validate min_order_discount
-      if (offerType === 'min_order_discount') {
+      if (offerType === "min_order_discount") {
         if (!formData.discount_percentage && !formData.discount_amount) {
-          throw new Error('This offer type must have either a discount percentage or flat discount amount');
+          throw new Error(
+            "This offer type must have either a discount percentage or flat discount amount"
+          );
         }
       }
 
@@ -400,6 +469,18 @@ export default function CreateOfferFormPage() {
         benefits.is_customizable = true;
       }
 
+      // For item_free_addon, add the free_addon_items to benefits
+      if (
+        offerType === "item_free_addon" &&
+        selectedFreeAddonItems.length > 0
+      ) {
+        benefits.free_addon_items = selectedFreeAddonItems.map((item) => ({
+          type: item.type,
+          id: item.id,
+          name: item.name,
+        }));
+      }
+
       // Build conditions
       if (formData.min_amount) {
         conditions.min_amount = Number(formData.min_amount);
@@ -433,9 +514,7 @@ export default function CreateOfferFormPage() {
         priority: Number(formData.priority),
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
-        usage_limit: formData.usage_limit
-          ? Number(formData.usage_limit)
-          : null,
+        usage_limit: formData.usage_limit ? Number(formData.usage_limit) : null,
         promo_code: formData.promo_code || null,
         valid_days: formData.valid_days.length > 0 ? formData.valid_days : null,
         valid_hours_start: formData.valid_hours_start || null,
@@ -471,18 +550,18 @@ export default function CreateOfferFormPage() {
 
       // Insert offer_items for item-based offers
       const hasItemBasedOffer = [
-        'item_buy_get_free',
-        'cart_threshold_item',
-        'item_free_addon',
-        'item_percentage'
+        "item_buy_get_free",
+        "cart_threshold_item",
+        "item_free_addon",
+        "item_percentage",
       ].includes(offerType);
 
       if (hasItemBasedOffer && selectedItems.length > 0) {
-        const offerItems = selectedItems.map(item => ({
+        const offerItems = selectedItems.map((item) => ({
           offer_id: offer.id,
           item_type: item.item_type || null,
-          menu_item_id: item.type === 'item' ? item.id : null,
-          menu_category_id: item.type === 'category' ? item.id : null,
+          menu_item_id: item.type === "item" ? item.id : null,
+          menu_category_id: item.type === "category" ? item.id : null,
           quantity: item.quantity || null,
         }));
 
@@ -494,7 +573,7 @@ export default function CreateOfferFormPage() {
       }
 
       // Insert combo_meals for combo offers
-      if (offerType === 'combo_meal' && selectedItems.length > 0) {
+      if (offerType === "combo_meal" && selectedItems.length > 0) {
         const { data: comboMeal, error: comboError } = await supabase
           .from("combo_meals")
           .insert({
@@ -509,10 +588,10 @@ export default function CreateOfferFormPage() {
 
         if (comboError) throw comboError;
 
-        const comboItems = selectedItems.map(item => ({
+        const comboItems = selectedItems.map((item) => ({
           combo_meal_id: comboMeal.id,
-          menu_item_id: item.type === 'item' ? item.id : null,
-          menu_category_id: item.type === 'category' ? item.id : null,
+          menu_item_id: item.type === "item" ? item.id : null,
+          menu_category_id: item.type === "category" ? item.id : null,
           quantity: item.quantity || 1,
           is_required: item.is_required ?? true,
           is_selectable: item.is_selectable ?? false,
@@ -709,7 +788,9 @@ export default function CreateOfferFormPage() {
                       </label>
                       <input
                         type="number"
-                        required={config.benefitsSchema.discount_percentage.required}
+                        required={
+                          config.benefitsSchema.discount_percentage.required
+                        }
                         min={config.benefitsSchema.discount_percentage.min}
                         max={config.benefitsSchema.discount_percentage.max}
                         value={formData.discount_percentage}
@@ -747,7 +828,8 @@ export default function CreateOfferFormPage() {
                           placeholder="e.g., 120"
                         />
                         <p className="text-xs text-blue-700 mt-1">
-                          <strong>Example:</strong> 10% off with max cap ₹120 means a ₹2000 bill gets ₹120 off (not ₹200)
+                          <strong>Example:</strong> 10% off with max cap ₹120
+                          means a ₹2000 bill gets ₹120 off (not ₹200)
                         </p>
                       </div>
                     )}
@@ -755,36 +837,40 @@ export default function CreateOfferFormPage() {
                 )}
 
                 {/* Discount Amount (Flat) */}
-                {config.benefitsSchema?.discount_amount && !config.benefitsSchema?.discount_percentage && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Discount Amount (₹) *
-                    </label>
-                    <input
-                      type="number"
-                      required={config.benefitsSchema.discount_amount.required}
-                      min={config.benefitsSchema.discount_amount.min}
-                      value={formData.discount_amount}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          discount_amount: e.target.value,
-                        }))
-                      }
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., 100"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Fixed rupee amount to discount from the bill
-                    </p>
-                  </div>
-                )}
+                {config.benefitsSchema?.discount_amount &&
+                  !config.benefitsSchema?.discount_percentage && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Discount Amount (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        required={
+                          config.benefitsSchema.discount_amount.required
+                        }
+                        min={config.benefitsSchema.discount_amount.min}
+                        value={formData.discount_amount}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            discount_amount: e.target.value,
+                          }))
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., 100"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Fixed rupee amount to discount from the bill
+                      </p>
+                    </div>
+                  )}
 
                 {/* Minimum Amount */}
                 {config.conditionsSchema?.min_amount !== undefined && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Minimum Order Amount (₹) {config.conditionsSchema.min_amount.required && "*"}
+                      Minimum Order Amount (₹){" "}
+                      {config.conditionsSchema.min_amount.required && "*"}
                     </label>
                     <input
                       type="number"
@@ -798,7 +884,11 @@ export default function CreateOfferFormPage() {
                         }))
                       }
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder={config.conditionsSchema.min_amount.required ? "e.g., 300" : "e.g., 500 (optional)"}
+                      placeholder={
+                        config.conditionsSchema.min_amount.required
+                          ? "e.g., 300"
+                          : "e.g., 500 (optional)"
+                      }
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       {config.conditionsSchema.min_amount.required
@@ -875,8 +965,12 @@ export default function CreateOfferFormPage() {
                       }
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
-                    <label htmlFor="get_same_item" className="text-sm font-medium text-gray-700 cursor-pointer">
-                      Customer gets the same item free (e.g., Buy 2 Pizzas, Get 1 Pizza Free)
+                    <label
+                      htmlFor="get_same_item"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Customer gets the same item free (e.g., Buy 2 Pizzas, Get
+                      1 Pizza Free)
                     </label>
                   </div>
                 )}
@@ -925,7 +1019,8 @@ export default function CreateOfferFormPage() {
                       placeholder="e.g., Desserts, Beverages"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Restrict free item to specific category (leave empty for any item)
+                      Restrict free item to specific category (leave empty for
+                      any item)
                     </p>
                   </div>
                 )}
@@ -950,7 +1045,8 @@ export default function CreateOfferFormPage() {
                       placeholder="e.g., 150"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Maximum price of item customer can choose for free (leave empty for no limit)
+                      Maximum price of item customer can choose for free (leave
+                      empty for no limit)
                     </p>
                   </div>
                 )}
@@ -1021,8 +1117,12 @@ export default function CreateOfferFormPage() {
                       }
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
-                    <label htmlFor="is_customizable" className="text-sm font-medium text-gray-700 cursor-pointer">
-                      Allow customers to customize combo items (swap items, add/remove)
+                    <label
+                      htmlFor="is_customizable"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Allow customers to customize combo items (swap items,
+                      add/remove)
                     </label>
                   </div>
                 )}
@@ -1073,7 +1173,9 @@ export default function CreateOfferFormPage() {
                       <option value="all">All Customers</option>
                       <option value="new">First-time Customers (New)</option>
                       <option value="returning">Returning Customers</option>
-                      <option value="loyalty">Loyalty Members (5+ orders)</option>
+                      <option value="loyalty">
+                        Loyalty Members (5+ orders)
+                      </option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
                       Which customer type can use this offer
@@ -1085,22 +1187,29 @@ export default function CreateOfferFormPage() {
           </Card>
 
           {/* Menu Item/Category Selection */}
-          {(offerType === 'item_buy_get_free' ||
-            offerType === 'cart_threshold_item' ||
-            offerType === 'item_free_addon' ||
-            offerType === 'item_percentage' ||
-            offerType === 'combo_meal') && (
+          {(offerType === "item_buy_get_free" ||
+            offerType === "cart_threshold_item" ||
+            offerType === "item_free_addon" ||
+            offerType === "item_percentage" ||
+            offerType === "combo_meal") && (
             <Card>
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {offerType === 'combo_meal' ? 'Combo Items Selection' : 'Applicable Menu Items'}
+                  {offerType === "combo_meal"
+                    ? "Combo Items Selection"
+                    : "Applicable Menu Items"}
                 </h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  {offerType === 'item_buy_get_free' && 'Select items that customers must buy to get the offer (Buy items)'}
-                  {offerType === 'cart_threshold_item' && 'Select items or categories that customers can choose as free items'}
-                  {offerType === 'item_free_addon' && 'Select the main items that qualify for free add-on'}
-                  {offerType === 'item_percentage' && 'Select items or categories this discount applies to'}
-                  {offerType === 'combo_meal' && 'Select all items included in this combo meal'}
+                  {offerType === "item_buy_get_free" &&
+                    "Select items that customers must buy to get the offer (Buy items)"}
+                  {offerType === "cart_threshold_item" &&
+                    "Select items or categories that customers can choose as free items"}
+                  {offerType === "item_free_addon" &&
+                    "Select the main items that qualify for free add-on"}
+                  {offerType === "item_percentage" &&
+                    "Select items or categories this discount applies to"}
+                  {offerType === "combo_meal" &&
+                    "Select all items included in this combo meal"}
                 </p>
 
                 {/* Item Selection Interface */}
@@ -1110,36 +1219,39 @@ export default function CreateOfferFormPage() {
                     <select
                       className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       onChange={(e) => {
-                        const [type, id] = e.target.value.split(':');
+                        const [type, id] = e.target.value.split(":");
                         if (!id) return;
 
-                        let name = '';
-                        if (type === 'item') {
-                          const item = menuItems.find(i => i.id === id);
-                          name = item?.name || '';
+                        let name = "";
+                        if (type === "item") {
+                          const item = menuItems.find((i) => i.id === id);
+                          name = item?.name || "";
                         } else {
-                          const category = menuCategories.find(c => c.id === id);
-                          name = category?.name || '';
+                          const category = menuCategories.find(
+                            (c) => c.id === id
+                          );
+                          name = category?.name || "";
                         }
 
-                        setSelectedItems(prev => {
+                        setSelectedItems((prev) => {
                           // Check if already added
-                          if (prev.some(item => item.id === id)) return prev;
+                          if (prev.some((item) => item.id === id)) return prev;
 
                           const newItem: any = {
-                            type: type as 'item' | 'category',
+                            type: type as "item" | "category",
                             id,
                             name,
                             quantity: 1,
                           };
 
                           // For BOGO offers, mark first item as 'buy'
-                          if (offerType === 'item_buy_get_free') {
-                            newItem.item_type = prev.length === 0 ? 'buy' : 'get';
+                          if (offerType === "item_buy_get_free") {
+                            newItem.item_type =
+                              prev.length === 0 ? "buy" : "get";
                           }
 
                           // For combo meals, mark as required by default
-                          if (offerType === 'combo_meal') {
+                          if (offerType === "combo_meal") {
                             newItem.is_required = true;
                             newItem.is_selectable = false;
                           }
@@ -1147,21 +1259,23 @@ export default function CreateOfferFormPage() {
                           return [...prev, newItem];
                         });
 
-                        e.target.value = '';
+                        e.target.value = "";
                       }}
                     >
-                      <option value="">-- Select Menu Item or Category --</option>
+                      <option value="">
+                        -- Select Menu Item or Category --
+                      </option>
                       <optgroup label="Categories">
-                        {menuCategories.map(cat => (
+                        {menuCategories.map((cat) => (
                           <option key={cat.id} value={`category:${cat.id}`}>
                             📁 {cat.name} (Category)
                           </option>
                         ))}
                       </optgroup>
                       <optgroup label="Menu Items">
-                        {menuItems.map(item => (
+                        {menuItems.map((item) => (
                           <option key={item.id} value={`item:${item.id}`}>
-                            {item.is_veg ? '🟢' : '🔴'} {item.name}
+                            {item.is_veg ? "🟢" : "🔴"} {item.name}
                           </option>
                         ))}
                       </optgroup>
@@ -1172,38 +1286,52 @@ export default function CreateOfferFormPage() {
                   {selectedItems.length > 0 ? (
                     <div className="border border-gray-200 rounded-lg divide-y">
                       {selectedItems.map((item, index) => (
-                        <div key={item.id} className="p-4 flex items-center gap-4">
+                        <div
+                          key={item.id}
+                          className="p-4 flex items-center gap-4"
+                        >
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-900">
-                                {item.type === 'category' ? '📁' : '🍽️'} {item.name}
+                                {item.type === "category" ? "📁" : "🍽️"}{" "}
+                                {item.name}
                               </span>
                               {item.item_type && (
-                                <span className={`text-xs px-2 py-1 rounded-full ${
-                                  item.item_type === 'buy'
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-green-100 text-green-800'
-                                }`}>
-                                  {item.item_type === 'buy' ? 'Customer Buys' : 'Customer Gets Free'}
+                                <span
+                                  className={`text-xs px-2 py-1 rounded-full ${
+                                    item.item_type === "buy"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-green-100 text-green-800"
+                                  }`}
+                                >
+                                  {item.item_type === "buy"
+                                    ? "Customer Buys"
+                                    : "Customer Gets Free"}
                                 </span>
                               )}
                             </div>
                             <div className="text-sm text-gray-600 mt-1">
-                              {item.type === 'category' ? 'All items in category' : 'Specific menu item'}
+                              {item.type === "category"
+                                ? "All items in category"
+                                : "Specific menu item"}
                             </div>
                           </div>
 
                           {/* Quantity for combo meals */}
-                          {offerType === 'combo_meal' && (
+                          {offerType === "combo_meal" && (
                             <div className="flex items-center gap-2">
-                              <label className="text-sm text-gray-700">Qty:</label>
+                              <label className="text-sm text-gray-700">
+                                Qty:
+                              </label>
                               <input
                                 type="number"
                                 min="1"
                                 value={item.quantity || 1}
                                 onChange={(e) => {
                                   const newItems = [...selectedItems];
-                                  newItems[index].quantity = Number(e.target.value);
+                                  newItems[index].quantity = Number(
+                                    e.target.value
+                                  );
                                   setSelectedItems(newItems);
                                 }}
                                 className="w-20 border border-gray-300 rounded px-2 py-1 text-center"
@@ -1212,7 +1340,7 @@ export default function CreateOfferFormPage() {
                           )}
 
                           {/* Required/Selectable for combo meals */}
-                          {offerType === 'combo_meal' && (
+                          {offerType === "combo_meal" && (
                             <div className="flex flex-col gap-1">
                               <label className="flex items-center gap-2 text-sm">
                                 <input
@@ -1220,7 +1348,8 @@ export default function CreateOfferFormPage() {
                                   checked={item.is_required ?? true}
                                   onChange={(e) => {
                                     const newItems = [...selectedItems];
-                                    newItems[index].is_required = e.target.checked;
+                                    newItems[index].is_required =
+                                      e.target.checked;
                                     setSelectedItems(newItems);
                                   }}
                                   className="rounded"
@@ -1233,23 +1362,28 @@ export default function CreateOfferFormPage() {
                                   checked={item.is_selectable ?? false}
                                   onChange={(e) => {
                                     const newItems = [...selectedItems];
-                                    newItems[index].is_selectable = e.target.checked;
+                                    newItems[index].is_selectable =
+                                      e.target.checked;
                                     setSelectedItems(newItems);
                                   }}
                                   className="rounded"
                                 />
-                                <span className="text-gray-700">Customer can swap</span>
+                                <span className="text-gray-700">
+                                  Customer can swap
+                                </span>
                               </label>
                             </div>
                           )}
 
                           {/* Change item type for BOGO */}
-                          {offerType === 'item_buy_get_free' && (
+                          {offerType === "item_buy_get_free" && (
                             <select
-                              value={item.item_type || 'buy'}
+                              value={item.item_type || "buy"}
                               onChange={(e) => {
                                 const newItems = [...selectedItems];
-                                newItems[index].item_type = e.target.value as 'buy' | 'get';
+                                newItems[index].item_type = e.target.value as
+                                  | "buy"
+                                  | "get";
                                 setSelectedItems(newItems);
                               }}
                               className="border border-gray-300 rounded px-3 py-1 text-sm"
@@ -1262,7 +1396,9 @@ export default function CreateOfferFormPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setSelectedItems(prev => prev.filter((_, i) => i !== index));
+                              setSelectedItems((prev) =>
+                                prev.filter((_, i) => i !== index)
+                              );
                             }}
                             className="text-red-600 hover:text-red-700 p-2"
                           >
@@ -1274,26 +1410,201 @@ export default function CreateOfferFormPage() {
                   ) : (
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                       <p className="text-gray-500">
-                        No items selected. Add items or categories from the dropdown above.
+                        No items selected. Add items or categories from the
+                        dropdown above.
                       </p>
                     </div>
                   )}
 
                   {/* Helper Text */}
-                  {offerType === 'item_buy_get_free' && selectedItems.length > 0 && (
+                  {offerType === "item_buy_get_free" &&
+                    selectedItems.length > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-sm text-blue-800">
+                          <strong>Tip:</strong> Mark items customers must "Buy"
+                          vs items they "Get Free". The buy/get quantities are
+                          set above in Offer Configuration.
+                        </p>
+                      </div>
+                    )}
+
+                  {offerType === "combo_meal" && selectedItems.length > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                       <p className="text-sm text-blue-800">
-                        <strong>Tip:</strong> Mark items customers must "Buy" vs items they "Get Free".
-                        The buy/get quantities are set above in Offer Configuration.
+                        <strong>Required:</strong> Item must be included in
+                        combo
+                        <br />
+                        <strong>Customer can swap:</strong> Customer can choose
+                        alternative items from category
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Free Add-on Items Selection (Only for item_free_addon) */}
+          {offerType === "item_free_addon" && (
+            <Card>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Free Add-on Items Selection
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Select which items customers can choose as free add-ons (e.g.,
+                  beverages, sides, desserts)
+                </p>
+
+                {/* Info Banner */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                  <div className="flex gap-2">
+                    <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-800">
+                      <p className="font-medium mb-1">
+                        How Free Add-on Offers Work:
+                      </p>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>
+                          <strong>Main Items (above):</strong> Items customer
+                          must purchase (e.g., burgers)
+                        </li>
+                        <li>
+                          <strong>Free Add-ons (below):</strong> Items customer
+                          can choose for free (e.g., drinks)
+                        </li>
+                        <li>
+                          Customer selects from the free add-on list when
+                          ordering qualifying items
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Free Add-on Item Selection Interface */}
+                <div className="space-y-4">
+                  {/* Add Free Add-on Item/Category Dropdown */}
+                  <div className="flex gap-2">
+                    <select
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      onChange={(e) => {
+                        const [type, id] = e.target.value.split(":");
+                        if (!id) return;
+
+                        let name = "";
+                        let price = 0;
+                        if (type === "item") {
+                          const item = menuItems.find((i) => i.id === id);
+                          name = item?.name || "";
+                          price = Number(item?.price || 0);
+                        } else {
+                          const category = menuCategories.find(
+                            (c) => c.id === id
+                          );
+                          name = category?.name || "";
+                        }
+
+                        setSelectedFreeAddonItems((prev) => {
+                          // Check if already added
+                          if (prev.some((item) => item.id === id)) return prev;
+
+                          return [
+                            ...prev,
+                            {
+                              type: type as "item" | "category",
+                              id,
+                              name,
+                              price,
+                            },
+                          ];
+                        });
+
+                        e.target.value = "";
+                      }}
+                    >
+                      <option value="">
+                        -- Select Free Add-on Item or Category --
+                      </option>
+                      <optgroup label="Categories">
+                        {menuCategories.map((cat) => (
+                          <option key={cat.id} value={`category:${cat.id}`}>
+                            📁 {cat.name} (All items)
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Menu Items">
+                        {menuItems.map((item) => (
+                          <option key={item.id} value={`item:${item.id}`}>
+                            {item.is_veg ? "🟢" : "🔴"} {item.name} - ₹
+                            {item.price}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  {/* Selected Free Add-on Items List */}
+                  {selectedFreeAddonItems.length > 0 ? (
+                    <div className="border border-gray-200 rounded-lg divide-y">
+                      {selectedFreeAddonItems.map((item, index) => (
+                        <div
+                          key={item.id}
+                          className="p-4 flex items-center gap-4"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">
+                                {item.type === "category" ? "📁" : "🍽️"}{" "}
+                                {item.name}
+                              </span>
+                              <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800">
+                                Free Add-on
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              {item.type === "category"
+                                ? "All items in this category can be chosen as free add-on"
+                                : `Customer can choose this item for free (worth ₹${item.price})`}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedFreeAddonItems((prev) =>
+                                prev.filter((_, i) => i !== index)
+                              );
+                            }}
+                            className="text-red-600 hover:text-red-700 p-2"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                      <p className="text-gray-500">
+                        No free add-on items selected. Add items or categories
+                        from the dropdown above.
+                      </p>
+                      <p className="text-sm text-gray-400 mt-2">
+                        These are the items customers can choose for free when
+                        they order qualifying items.
                       </p>
                     </div>
                   )}
 
-                  {offerType === 'combo_meal' && selectedItems.length > 0 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-sm text-blue-800">
-                        <strong>Required:</strong> Item must be included in combo<br />
-                        <strong>Customer can swap:</strong> Customer can choose alternative items from category
+                  {/* Example Helper */}
+                  {selectedFreeAddonItems.length > 0 && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-sm text-green-800">
+                        <strong>Example:</strong> If customer orders a burger
+                        (qualifying item), they can choose any of the selected
+                        items above as a free add-on.
+                        {formData.max_price &&
+                          ` Items up to ₹${formData.max_price} will be free.`}
                       </p>
                     </div>
                   )}
@@ -1519,7 +1830,7 @@ export default function CreateOfferFormPage() {
               loading={loading}
               leftIcon={<Save className="w-4 h-4" />}
             >
-              {isEditMode ? 'Update Offer' : 'Create Offer'}
+              {isEditMode ? "Update Offer" : "Create Offer"}
             </Button>
           </div>
         </form>
