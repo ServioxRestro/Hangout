@@ -113,6 +113,46 @@ export default function TableSessionsPage() {
 
   const handleEndSession = async (sessionId: string) => {
     try {
+      // Find the session to get all associated orders
+      const sessionTable = tablesData.find((t) => t.session?.id === sessionId);
+
+      if (!sessionTable?.session) {
+        throw new Error("Session not found");
+      }
+
+      // Get all order IDs from this session
+      const orderIds = sessionTable.session.orders?.map((o) => o.id) || [];
+
+      // Mark all pending order items as 'cancelled' to remove from KOT
+      // (order_items supports: placed, preparing, ready, served, cancelled)
+      if (orderIds.length > 0) {
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .update({ status: "cancelled" })
+          .in("order_id", orderIds)
+          .not("status", "in", '("served","cancelled")'); // Only update items not already served/cancelled
+
+        if (itemsError) {
+          console.error("Error updating order items:", itemsError);
+          // Continue anyway - we still want to end the session
+        }
+      }
+
+      // Update all orders to 'cancelled' status
+      if (orderIds.length > 0) {
+        const { error: ordersError } = await supabase
+          .from("orders")
+          .update({ status: "cancelled" })
+          .in("id", orderIds)
+          .in("status", ["placed", "preparing", "ready", "pending_payment"]); // Only cancel active orders
+
+        if (ordersError) {
+          console.error("Error cancelling orders:", ordersError);
+          // Continue anyway
+        }
+      }
+
+      // Finally, end the session
       const { error } = await supabase
         .from("table_sessions")
         .update({
@@ -125,7 +165,7 @@ export default function TableSessionsPage() {
 
       setShowPanel(false);
       setSelectedTable(null);
-      // React Query will auto-update the tables list
+      // React Query will auto-update the tables list and KOTs
     } catch (error: any) {
       console.error("Error ending session:", error);
       alert("Failed to end session: " + error.message);
@@ -426,9 +466,9 @@ export default function TableSessionsPage() {
         </div>
       </div>
 
-      {/* Right Section - Table Detail Panel (Inline) */}
+      {/* Right Section - Table Detail Panel (Inline on Desktop, Modal on Mobile) */}
       {showPanel && selectedTable && selectedTable.session && (
-        <div className="hidden lg:block w-96 flex-shrink-0">
+        <div className="lg:w-96 lg:flex-shrink-0">
           <TableDetailPanel
             table={selectedTable}
             onClose={() => {

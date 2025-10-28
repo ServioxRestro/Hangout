@@ -22,18 +22,21 @@ Tests cover both **admin-side** (offer creation, configuration) and **guest-side
 ## Test Coverage
 
 ### Admin Side (3 Tests)
+
 ✅ Create Buy X Get Y offers with item/category qualification  
 ✅ Create Free Add-on offers with max price limits  
-✅ Create Combo Meal offers with bundled pricing  
+✅ Create Combo Meal offers with bundled pricing
 
 ### Guest Side (3 Tests)
+
 ✅ Buy X Get Y eligibility logic (quantity, cheapest item)  
 ✅ Free Add-on eligibility (qualifying items, max price)  
-✅ Combo Meal eligibility (savings calculation)  
+✅ Combo Meal eligibility (savings calculation)
 
 ### Integration (2 Tests)
+
 ✅ Order type toggle filtering (dine-in/takeaway)  
-✅ Complete guest flow (cart to discount application)  
+✅ Complete guest flow (cart to discount application)
 
 ---
 
@@ -61,18 +64,21 @@ Duration:    10.29s ⏱️
 ### 1. Buy X Get Y Free
 
 **Admin Creation:**
+
 - Configure buy quantity (e.g., buy 2)
 - Configure free quantity (e.g., get 1 free)
 - Add qualifying items/categories
 - Set order type toggles
 
 **Guest Experience:**
+
 - Validate cart has required quantity
 - Select cheapest qualifying item for free
 - Calculate discount
 - Handle mixed item carts
 
 **Example:**
+
 ```
 Cart: 2x Plain Dosa (₹99)
 Offer: Buy 2 Get 1 Free
@@ -83,18 +89,21 @@ Final: ₹99 instead of ₹198
 ### 2. Free Add-on
 
 **Admin Creation:**
+
 - Set qualifying items/categories
 - Configure max price for free item
 - Define available free items (items/categories)
 - Enable order type toggles
 
 **Guest Experience:**
+
 - Check for qualifying item in cart
 - Filter free items by max price
 - Require user selection via modal
 - Apply selected item discount
 
 **Example:**
+
 ```
 Cart: 1x Paneer Tikka (₹249)
 Offer: Free Starter (up to ₹150)
@@ -106,18 +115,21 @@ Result: ₹99 discount
 ### 3. Combo Meal
 
 **Admin Creation:**
+
 - Define combo items
 - Set combo price
 - Calculate savings vs regular price
 - Configure order type toggles
 
 **Guest Experience:**
+
 - Verify all combo items in cart
 - Calculate regular price
 - Apply combo price
 - Show savings
 
 **Example:**
+
 ```
 Combo: 1 Main Course + 1 Roll
 Regular: ₹249 + ₹149 = ₹398
@@ -137,10 +149,12 @@ All created offers support **dine-in/takeaway toggles**:
 ```
 
 **Guest-side filtering:**
+
 - Dine-in cart → Shows only dine-in enabled offers
 - Takeaway cart → Shows only takeaway enabled offers
 
 **Test Validation:**
+
 - 15 active offers in database
 - All have toggles enabled
 - Filtering logic works correctly
@@ -152,6 +166,7 @@ All created offers support **dine-in/takeaway toggles**:
 All tests use **Supabase MCP** (REST API):
 
 ### Create Offer
+
 ```javascript
 POST /rest/v1/offers
 {
@@ -165,15 +180,19 @@ POST /rest/v1/offers
 ```
 
 ### Create Offer Items
+
 ```javascript
-POST /rest/v1/offer_items
-[
-  { offer_id, menu_item_id, item_type: "buy", quantity: 1 },
-  { offer_id, menu_category_id, item_type: "addon", quantity: 1 }
-]
+POST /
+  rest /
+  v1 /
+  offer_items[
+    ({ offer_id, menu_item_id, item_type: "buy", quantity: 1 },
+    { offer_id, menu_category_id, item_type: "addon", quantity: 1 })
+  ];
 ```
 
 ### Query Offers
+
 ```javascript
 GET /rest/v1/offers?is_active=eq.true&offer_type=eq.item_buy_get_free
 ```
@@ -183,6 +202,7 @@ GET /rest/v1/offers?is_active=eq.true&offer_type=eq.item_buy_get_free
 ## Test Data
 
 ### Menu Items
+
 - Plain Dosa (₹99)
 - Masala Dosa (₹139)
 - Paneer Roll (₹149)
@@ -190,12 +210,14 @@ GET /rest/v1/offers?is_active=eq.true&offer_type=eq.item_buy_get_free
 - Paneer Tikka (₹249)
 
 ### Categories
+
 - Dosa
 - Rolls
 - Main Course
 - Starters
 
 ### Guest User
+
 - Phone: 8638774545
 - Visit count: 1
 - Total orders: 0
@@ -205,26 +227,32 @@ GET /rest/v1/offers?is_active=eq.true&offer_type=eq.item_buy_get_free
 ## Integration with Codebase
 
 ### Eligibility Logic
+
 **File:** `lib/offers/eligibility.ts`
 
 Functions tested:
+
 - `checkItemBuyGetFree()` - BOGO logic
 - `checkItemFreeAddon()` - Free addon with max price
 - `checkComboMeal()` - Combo pricing
 
 ### UI Components
+
 **File:** `components/guest/FreeItemSelector.tsx`
 
 Features:
+
 - Modal for free item selection
 - Max price filtering
 - Search functionality
 - Item selection confirmation
 
 ### Admin Pages
+
 **File:** `app/admin/offers/create/[offerType]/page.tsx`
 
 Features:
+
 - Offer type selection
 - Conditions/benefits configuration
 - Item/category selection
@@ -247,17 +275,21 @@ Features:
 ## Running the Tests
 
 ### Command
+
 ```bash
 npm run test:offers:free-items
 ```
 
 ### Prerequisites
+
 - Supabase credentials in `.env.local`
 - Menu items populated
 - Guest user exists (8638774545)
 
 ### Output
+
 Colored terminal output with:
+
 - ✅ Green for passed tests
 - ❌ Red for failed tests
 - ℹ️ Cyan for information
@@ -268,21 +300,23 @@ Colored terminal output with:
 ## Success Criteria
 
 ### All Tests Must:
+
 ✅ Connect to database successfully  
 ✅ Create offers without errors  
 ✅ Validate eligibility correctly  
 ✅ Calculate discounts accurately  
 ✅ Handle edge cases properly  
-✅ Clean up test data  
+✅ Clean up test data
 
 ### Specific Validations:
+
 ✅ Buy quantity enforcement  
 ✅ Cheapest item selection  
 ✅ Max price validation  
 ✅ User selection requirement  
 ✅ Combo savings calculation  
 ✅ Order type filtering  
-✅ Complete guest flow  
+✅ Complete guest flow
 
 ---
 
@@ -311,12 +345,14 @@ Colored terminal output with:
 ## Maintenance Notes
 
 ### When to Update Tests
+
 - Database schema changes
 - New offer types added
 - Eligibility logic modified
 - Benefits/conditions structure changes
 
 ### Regular Checks
+
 - Before deploying offer features
 - After modifying offer system
 - When adding menu items
@@ -336,6 +372,7 @@ Colored terminal output with:
 ## Contact & Support
 
 For issues or questions about the test suite:
+
 1. Check test documentation
 2. Review eligibility logic code
 3. Verify database schema
