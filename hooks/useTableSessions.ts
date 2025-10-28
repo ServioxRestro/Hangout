@@ -64,6 +64,8 @@ async function fetchTablesWithSessions(): Promise<TableWithSession[]> {
       session_ended_at,
       total_orders,
       total_amount,
+      locked_offer_id,
+      locked_offer_data,
       created_at,
       updated_at,
       guest_users (

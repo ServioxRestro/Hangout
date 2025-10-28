@@ -86,6 +86,7 @@ export default function CreateOrderPage() {
 
   // Offer state
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [isOfferLockedByGuest, setIsOfferLockedByGuest] = useState(false);
   const [eligibilityCache, setEligibilityCache] = useState<
     Record<string, OfferEligibility>
   >({});
@@ -119,6 +120,50 @@ export default function CreateOrderPage() {
       setSelectedOffer(null);
     }
   }, [cart, customerInfo.phone, offers]);
+
+  // Check for locked offers when table is selected
+  useEffect(() => {
+    const checkLockedOffer = async () => {
+      if (!selectedTable || orderType !== "dine-in" || offers.length === 0) {
+        return;
+      }
+
+      try {
+        const { data: sessionData, error } = await supabase
+          .from("table_sessions")
+          .select("locked_offer_id, locked_offer_data")
+          .eq("table_id", selectedTable)
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (error) {
+          console.error("Error checking locked offer:", error);
+          return;
+        }
+
+        if (sessionData?.locked_offer_id) {
+          // Find the locked offer
+          const lockedOffer = offers.find(
+            (o: Offer) => o.id === sessionData.locked_offer_id
+          );
+          if (lockedOffer) {
+            setSelectedOffer(lockedOffer);
+            setIsOfferLockedByGuest(true);
+            console.log(
+              `📌 Guest's locked offer detected: ${lockedOffer.name}`
+            );
+          }
+        } else {
+          // No locked offer, reset the flag
+          setIsOfferLockedByGuest(false);
+        }
+      } catch (error) {
+        console.error("Error checking locked offer:", error);
+      }
+    };
+
+    checkLockedOffer();
+  }, [selectedTable, orderType, offers]);
 
   const fetchData = async () => {
     try {
@@ -276,7 +321,7 @@ export default function CreateOrderPage() {
     }
   };
 
-  const formatOfferSummary = (offer: Offer, eligibility: OfferEligibility) => {
+  const formatOfferSummary = (offer: Offer, eligibility?: OfferEligibility) => {
     const benefits = offer.benefits as any;
     const conditions = offer.conditions as any;
 
@@ -327,7 +372,7 @@ export default function CreateOrderPage() {
         summary = offer.description || "Special offer";
     }
 
-    if (eligibility.isEligible && eligibility.discount > 0) {
+    if (eligibility?.isEligible && eligibility.discount > 0) {
       summary += ` • Save ${formatCurrency(eligibility.discount)}`;
     }
 
@@ -488,6 +533,14 @@ export default function CreateOrderPage() {
     return { available, almostThere, notEligible };
   }, [offers, eligibilityCache]);
 
+  // Helper function to handle table selection
+  const handleTableSelection = (tableId: string) => {
+    setSelectedTable(tableId);
+    // Reset locked offer flag when changing tables
+    setIsOfferLockedByGuest(false);
+    setSelectedOffer(null);
+  };
+
   const validateForm = () => {
     if (orderType === "dine-in" && !selectedTable) {
       setError("Please select a table for dine-in orders");
@@ -545,6 +598,7 @@ export default function CreateOrderPage() {
           // Use existing session
           existingSession = sessionData;
           sessionId = sessionData.id;
+          // Note: locked offer already set by useEffect when table was selected
         } else {
           // Create new session for dine-in
           const { data: newSession, error: sessionError } = await supabase
@@ -600,6 +654,12 @@ export default function CreateOrderPage() {
             ? `Manual order for ${customerInfo.name.trim()}`
             : `Order created by ${user.name || user.email}`);
 
+        // Determine which offer to use:
+        // 1. If session has locked offer (from guest), use it
+        // 2. Otherwise, use admin's selected offer
+        const offerToUse =
+          existingSession?.locked_offer_id || selectedOffer?.id || null;
+
         const { data: orderData, error: orderError } = await supabase
           .from("orders")
           .insert({
@@ -610,10 +670,9 @@ export default function CreateOrderPage() {
             customer_name: customerInfo.name.trim() || null,
             order_type: orderType,
             total_amount: getFinalAmount(), // Final amount after discount
-            session_offer_id: selectedOffer?.id || null, // Link to selected offer
+            session_offer_id: offerToUse, // Use locked offer or selected offer
             status: "placed",
             notes: orderNotes,
-            promo_code_used: promoCode || null,
             created_by_type: user.role === "super_admin" ? "admin" : "staff",
             created_by_admin_id: user.role === "super_admin" ? user.id : null,
             created_by_staff_id: user.role === "super_admin" ? null : user.id,
@@ -624,6 +683,35 @@ export default function CreateOrderPage() {
 
         if (orderError) throw orderError;
         orderId = orderData.id;
+
+        // Lock offer to session if this is a new order with an offer
+        // and session doesn't have a locked offer yet
+        if (
+          sessionId &&
+          offerToUse &&
+          !existingSession?.locked_offer_id &&
+          selectedOffer
+        ) {
+          await supabase
+            .from("table_sessions")
+            .update({
+              locked_offer_id: offerToUse,
+              locked_offer_data: {
+                offer_id: selectedOffer.id,
+                name: selectedOffer.name,
+                offer_type: selectedOffer.offer_type,
+                conditions: selectedOffer.conditions,
+                benefits: selectedOffer.benefits,
+                locked_at: new Date().toISOString(),
+              },
+              offer_applied_at: new Date().toISOString(),
+            })
+            .eq("id", sessionId);
+
+          console.log(
+            `🔒 Locked offer "${selectedOffer.name}" to session ${sessionId}`
+          );
+        }
       }
 
       if (!orderId) {
@@ -803,6 +891,9 @@ export default function CreateOrderPage() {
                     onClick={() => {
                       setOrderType("takeaway");
                       setSelectedTable("");
+                      // Reset offer state when switching to takeaway
+                      setIsOfferLockedByGuest(false);
+                      setSelectedOffer(null);
                     }}
                     className={`p-3 lg:p-4 rounded-lg border-2 text-center font-medium transition-colors ${
                       orderType === "takeaway"
@@ -834,7 +925,7 @@ export default function CreateOrderPage() {
                             .map((table) => (
                               <button
                                 key={table.id}
-                                onClick={() => setSelectedTable(table.id)}
+                                onClick={() => handleTableSelection(table.id)}
                                 className={`p-2 lg:p-3 rounded-lg border-2 text-center font-medium transition-colors min-h-[44px] ${
                                   selectedTable === table.id
                                     ? "border-blue-500 bg-blue-50 text-blue-700"
@@ -863,7 +954,7 @@ export default function CreateOrderPage() {
                             .map((table) => (
                               <button
                                 key={table.id}
-                                onClick={() => setSelectedTable(table.id)}
+                                onClick={() => handleTableSelection(table.id)}
                                 className={`p-2 lg:p-3 rounded-lg border-2 text-center font-medium transition-colors min-h-[44px] ${
                                   selectedTable === table.id
                                     ? "border-green-500 bg-green-50 text-green-700"
@@ -1018,6 +1109,7 @@ export default function CreateOrderPage() {
               offers={offers}
               selectedOffer={selectedOffer}
               setSelectedOffer={setSelectedOffer}
+              isOfferLockedByGuest={isOfferLockedByGuest}
               eligibilityCache={eligibilityCache}
               showOfferList={showOfferList}
               setShowOfferList={setShowOfferList}
@@ -1117,6 +1209,7 @@ export default function CreateOrderPage() {
                   offers={offers}
                   selectedOffer={selectedOffer}
                   setSelectedOffer={setSelectedOffer}
+                  isOfferLockedByGuest={isOfferLockedByGuest}
                   eligibilityCache={eligibilityCache}
                   showOfferList={showOfferList}
                   setShowOfferList={setShowOfferList}
@@ -1161,6 +1254,7 @@ interface OrderSummaryProps {
   offers: Offer[];
   selectedOffer: Offer | null;
   setSelectedOffer: (offer: Offer | null) => void;
+  isOfferLockedByGuest: boolean;
   eligibilityCache: Record<string, OfferEligibility>;
   showOfferList: boolean;
   setShowOfferList: (show: boolean) => void;
@@ -1171,7 +1265,7 @@ interface OrderSummaryProps {
   };
   handleOfferSelect: (offer: Offer) => void;
   getOfferIcon: (offerType: string) => JSX.Element;
-  formatOfferSummary: (offer: Offer, eligibility: OfferEligibility) => string;
+  formatOfferSummary: (offer: Offer, eligibility?: OfferEligibility) => string;
   getCartTotal: () => number;
   getTotalItems: () => number;
   getFinalAmount: () => number;
@@ -1200,6 +1294,7 @@ function OrderSummary({
   offers,
   selectedOffer,
   setSelectedOffer,
+  isOfferLockedByGuest,
   eligibilityCache,
   showOfferList,
   setShowOfferList,
@@ -1404,15 +1499,35 @@ function OrderSummary({
                 <div className="pt-2 lg:pt-3 border-t">
                   {/* Selected Offer Display */}
                   {selectedOffer && (
-                    <div className="mb-3 bg-green-50 border-2 border-green-200 rounded-lg p-3">
+                    <div
+                      className={`mb-3 border-2 rounded-lg p-3 ${
+                        isOfferLockedByGuest
+                          ? "bg-blue-50 border-blue-200"
+                          : "bg-green-50 border-green-200"
+                      }`}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-start gap-2 flex-1">
-                          <div className="p-1.5 bg-white rounded-lg shadow-sm text-green-600">
+                          <div
+                            className={`p-1.5 bg-white rounded-lg shadow-sm ${
+                              isOfferLockedByGuest
+                                ? "text-blue-600"
+                                : "text-green-600"
+                            }`}
+                          >
                             {getOfferIcon(selectedOffer.offer_type)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-gray-900 text-sm">
-                              {selectedOffer.name}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="font-semibold text-gray-900 text-sm">
+                                {selectedOffer.name}
+                              </div>
+                              {isOfferLockedByGuest && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+                                  <Users className="w-3 h-3" />
+                                  Guest Applied
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-gray-700 mt-0.5">
                               {formatOfferSummary(
@@ -1432,38 +1547,53 @@ function OrderSummary({
                             )}
                           </div>
                         </div>
-                        <button
-                          onClick={() => setSelectedOffer(null)}
-                          className="text-green-600 hover:text-green-800 p-1"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        {!isOfferLockedByGuest && (
+                          <button
+                            onClick={() => setSelectedOffer(null)}
+                            className="text-green-600 hover:text-green-800 p-1"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* Apply Offer Button */}
-                  <button
-                    onClick={() => setShowOfferList(!showOfferList)}
-                    className="w-full flex items-center justify-between p-2.5 lg:p-3 bg-gradient-to-r from-green-50 to-blue-50 border-2 border-dashed border-green-300 rounded-lg hover:from-green-100 hover:to-blue-100 transition-all"
-                  >
-                    <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                      <Gift className="w-4 h-4" />
-                      <span>
-                        {selectedOffer ? "Change Offer" : "Apply Offer"}
-                      </span>
-                      {categorizedOffers.available.length > 0 && (
-                        <span className="bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                          {categorizedOffers.available.length}
-                        </span>
-                      )}
+                  {/* Apply Offer Button or Locked Message */}
+                  {isOfferLockedByGuest ? (
+                    <div className="w-full p-2.5 lg:p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm font-medium text-blue-700">
+                        <Users className="w-4 h-4" />
+                        <span>Offer Already Applied by Guest</span>
+                      </div>
+                      <p className="text-xs text-blue-600 mt-1 ml-6">
+                        This offer was applied by the guest and cannot be
+                        changed
+                      </p>
                     </div>
-                    <ChevronDown
-                      className={`w-4 h-4 text-green-600 transition-transform ${
-                        showOfferList ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowOfferList(!showOfferList)}
+                      className="w-full flex items-center justify-between p-2.5 lg:p-3 bg-gradient-to-r from-green-50 to-blue-50 border-2 border-dashed border-green-300 rounded-lg hover:from-green-100 hover:to-blue-100 transition-all"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                        <Gift className="w-4 h-4" />
+                        <span>
+                          {selectedOffer ? "Change Offer" : "Apply Offer"}
+                        </span>
+                        {categorizedOffers.available.length > 0 && (
+                          <span className="bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                            {categorizedOffers.available.length}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 text-green-600 transition-transform ${
+                          showOfferList ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  )}
 
                   {/* Offer List */}
                   {showOfferList && (
@@ -1600,47 +1730,6 @@ function OrderSummary({
                           No offers available
                         </div>
                       )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Promo Code Section (kept for manual code entry) */}
-                <div className="pt-2 lg:pt-3 border-t">
-                  <div className="flex gap-2">
-                    <Input
-                      type="text"
-                      placeholder="Enter promo code"
-                      value={promoCodeInput}
-                      onChange={(e) =>
-                        setPromoCodeInput(e.target.value.toUpperCase())
-                      }
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter") {
-                          applyPromoCode();
-                        }
-                      }}
-                      className="flex-1 text-sm"
-                    />
-                    <Button
-                      onClick={applyPromoCode}
-                      disabled={!promoCodeInput.trim()}
-                      variant="secondary"
-                      className="px-3 py-1.5 text-sm"
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                  {promoCode && (
-                    <div className="mt-2 flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
-                      <span className="text-sm text-blue-700">
-                        Code: <strong>{promoCode}</strong>
-                      </span>
-                      <button
-                        onClick={removePromoCode}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
                     </div>
                   )}
                 </div>

@@ -36,7 +36,7 @@ A modern QR-based ordering system for restaurants built with Next.js 14, Supabas
 
 1. **Node.js** 18.17 or later
 2. **Supabase Account** - Create at [supabase.com](https://supabase.com)
-3. **MSG91 ACCOUNR** - For Phone OTP
+3. **MSG91 ACCOUNT** - For Phone OTP
 
 ### Installation
 
