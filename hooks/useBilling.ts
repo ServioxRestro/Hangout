@@ -155,30 +155,53 @@ async function fetchBillingData(): Promise<BillingData> {
       .map((b) => b.table_session_id)
       .filter(Boolean);
     if (sessionIds.length > 0) {
-      const { data: offerUsageData } = await supabase
-        .from("offer_usage")
-        .select(
+      // Fetch both offer_usage and session locked offers
+      const [offerUsageResult, sessionResult] = await Promise.all([
+        supabase
+          .from("offer_usage")
+          .select(
+            `
+            table_session_id,
+            discount_amount,
+            offers (
+              id,
+              name,
+              offer_type
+            )
           `
-          table_session_id,
-          discount_amount,
-          offers (
-            id,
-            name,
-            offer_type
           )
-        `
-        )
-        .in("table_session_id", sessionIds);
+          .in("table_session_id", sessionIds),
+        supabase
+          .from("table_sessions")
+          .select("id, locked_offer_id, locked_offer_data")
+          .in("id", sessionIds),
+      ]);
 
-      const offerMap = new Map(
-        offerUsageData?.map((ou) => [ou.table_session_id, ou]) || []
+      const offerUsageMap = new Map(
+        offerUsageResult.data?.map((ou) => [ou.table_session_id, ou]) || []
+      );
+      
+      const sessionOfferMap = new Map(
+        sessionResult.data?.map((s) => [s.id, s]) || []
       );
 
       billsData.forEach((bill) => {
         if (bill.table_session_id) {
-          const offerUsage = offerMap.get(bill.table_session_id);
-          if (offerUsage) {
+          // Try offer_usage first (guest orders)
+          const offerUsage = offerUsageMap.get(bill.table_session_id);
+          if (offerUsage && offerUsage.offers) {
             bill.offer = offerUsage.offers as any;
+          } else {
+            // Fallback to session locked offer (admin orders)
+            const sessionOffer = sessionOfferMap.get(bill.table_session_id);
+            if (sessionOffer?.locked_offer_data) {
+              const offerData = sessionOffer.locked_offer_data as any;
+              bill.offer = {
+                id: offerData.offer_id,
+                name: offerData.name,
+                offer_type: offerData.offer_type,
+              };
+            }
           }
         }
       });

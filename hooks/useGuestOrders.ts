@@ -98,6 +98,7 @@ async function fetchGuestOrders(
 
     // OPTIMIZED: Only fetch offer if there are active orders
     if (orders.length > 0) {
+      // First try offer_usage (guest orders)
       const { data: offerUsageData } = await supabase
         .from("offer_usage")
         .select("discount_amount, offers!inner(name)")
@@ -109,6 +110,37 @@ async function fetchGuestOrders(
           name: (offerUsageData.offers as any).name,
           discount: Number(offerUsageData.discount_amount) || 0,
         };
+      } else {
+        // Fallback: Check session's locked_offer_data (admin orders)
+        const { data: sessionWithOffer } = await supabase
+          .from("table_sessions")
+          .select("locked_offer_data")
+          .eq("id", sessionData.id)
+          .single();
+
+        if (sessionWithOffer?.locked_offer_data) {
+          const lockedOffer = sessionWithOffer.locked_offer_data as any;
+          
+          // Calculate discount based on offer type
+          const subtotal = orders.reduce(
+            (sum, order) => sum + Number(order.total_amount || 0),
+            0
+          );
+          
+          let discount = 0;
+          const benefits = lockedOffer.benefits || {};
+          
+          if (lockedOffer.offer_type === "cart_percentage" && benefits.discount_percentage) {
+            discount = Math.round((subtotal * benefits.discount_percentage) / 100);
+          } else if (lockedOffer.offer_type === "cart_flat_amount" && benefits.discount_amount) {
+            discount = Math.round(benefits.discount_amount);
+          }
+          
+          sessionOffer = {
+            name: lockedOffer.name,
+            discount: discount,
+          };
+        }
       }
     }
   } else {
