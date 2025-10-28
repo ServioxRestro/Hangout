@@ -567,35 +567,68 @@ export default function CreateOrderPage() {
       }
 
       // Create the order
-      const orderNotes =
-        customerInfo.notes.trim() ||
-        (customerInfo.name.trim()
-          ? `Manual order for ${customerInfo.name.trim()}`
-          : `Order created by ${user.name || user.email}`);
+      // Check for existing active order in this session
+      // (One session = One order with multiple KOTs)
+      let orderId: string | undefined;
+      let existingOrderAmount = 0;
+      let isAddingToExisting = false;
 
-      const { data: orderData, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          table_id: orderType === "dine-in" ? selectedTable : null,
-          table_session_id: sessionId,
-          customer_email: customerInfo.email.trim() || null,
-          customer_phone: customerInfo.phone.trim() || null,
-          customer_name: customerInfo.name.trim() || null,
-          order_type: orderType,
-          total_amount: getFinalAmount(), // Final amount after discount
-          session_offer_id: selectedOffer?.id || null, // Link to selected offer
-          status: "placed",
-          notes: orderNotes,
-          promo_code_used: promoCode || null,
-          created_by_type: user.role === "super_admin" ? "admin" : "staff",
-          created_by_admin_id: user.role === "super_admin" ? user.id : null,
-          created_by_staff_id: user.role === "super_admin" ? null : user.id,
-          created_by: user.id,
-        })
-        .select()
-        .single();
+      if (sessionId && orderType === "dine-in") {
+        const { data: existingOrder } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("table_session_id", sessionId)
+          .not("status", "in", '("completed","paid","cancelled")')
+          .maybeSingle();
 
-      if (orderError) throw orderError;
+        if (existingOrder) {
+          // ADD ITEMS TO EXISTING ORDER
+          orderId = existingOrder.id;
+          existingOrderAmount = existingOrder.total_amount || 0;
+          isAddingToExisting = true;
+          console.log(
+            `Adding items to existing order ${orderId} (current total: ₹${existingOrderAmount})`
+          );
+        }
+      }
+
+      // Create new order only if no existing active order found
+      if (!orderId) {
+        const orderNotes =
+          customerInfo.notes.trim() ||
+          (customerInfo.name.trim()
+            ? `Manual order for ${customerInfo.name.trim()}`
+            : `Order created by ${user.name || user.email}`);
+
+        const { data: orderData, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            table_id: orderType === "dine-in" ? selectedTable : null,
+            table_session_id: sessionId,
+            customer_email: customerInfo.email.trim() || null,
+            customer_phone: customerInfo.phone.trim() || null,
+            customer_name: customerInfo.name.trim() || null,
+            order_type: orderType,
+            total_amount: getFinalAmount(), // Final amount after discount
+            session_offer_id: selectedOffer?.id || null, // Link to selected offer
+            status: "placed",
+            notes: orderNotes,
+            promo_code_used: promoCode || null,
+            created_by_type: user.role === "super_admin" ? "admin" : "staff",
+            created_by_admin_id: user.role === "super_admin" ? user.id : null,
+            created_by_staff_id: user.role === "super_admin" ? null : user.id,
+            created_by: user.id,
+          })
+          .select()
+          .single();
+
+        if (orderError) throw orderError;
+        orderId = orderData.id;
+      }
+
+      if (!orderId) {
+        throw new Error("Failed to get or create order");
+      }
 
       // Get next KOT number
       const { data: kotData, error: kotError } = await supabase.rpc(
@@ -611,7 +644,7 @@ export default function CreateOrderPage() {
 
       // Create order items with KOT info
       const orderItems = cart.map((item) => ({
-        order_id: orderData.id,
+        order_id: orderId, // Use the orderId (either new or existing)
         menu_item_id: item.id,
         quantity: item.quantity,
         unit_price: item.price,
@@ -625,6 +658,23 @@ export default function CreateOrderPage() {
         .insert(orderItems);
 
       if (itemsError) throw itemsError;
+
+      // Update order total if adding to existing order
+      if (isAddingToExisting) {
+        const newOrderTotal = existingOrderAmount + getFinalAmount();
+        const { error: updateOrderError } = await supabase
+          .from("orders")
+          .update({ total_amount: newOrderTotal })
+          .eq("id", orderId);
+
+        if (updateOrderError) {
+          console.error("Failed to update order total:", updateOrderError);
+        } else {
+          console.log(
+            `Updated order total: ₹${existingOrderAmount} + ₹${getFinalAmount()} = ₹${newOrderTotal}`
+          );
+        }
+      }
 
       // Update offer usage count if offer was applied
       if (selectedOffer && eligibilityCache[selectedOffer.id]) {
@@ -640,10 +690,12 @@ export default function CreateOrderPage() {
 
       // Update session totals
       if (sessionId) {
+        const incrementOrders = isAddingToExisting ? 0 : 1; // Only increment if new order
         const { error: updateSessionError } = await supabase
           .from("table_sessions")
           .update({
-            total_orders: (existingSession?.total_orders || 0) + 1,
+            total_orders:
+              (existingSession?.total_orders || 0) + incrementOrders,
             total_amount:
               (existingSession?.total_amount || 0) + getFinalAmount(),
           })
@@ -654,9 +706,11 @@ export default function CreateOrderPage() {
         }
       }
 
-      setSuccess(
-        `Order created successfully! KOT #${kotNumber} sent to kitchen.`
-      );
+      const successMessage = isAddingToExisting
+        ? `Items added to existing order! KOT #${kotNumber} sent to kitchen.`
+        : `Order created successfully! KOT #${kotNumber} sent to kitchen.`;
+
+      setSuccess(successMessage);
 
       // Reset form
       clearCart();
