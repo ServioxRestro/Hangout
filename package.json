@@ -16,6 +16,7 @@
     "test:offers:admin": "node tests/admin-offer-creation-test.js",
     "test:offers:guest": "node tests/guest-offer-eligibility-test.js",
     "test:offers:selection": "node tests/guest-offer-selection-test.js",
+    "test:offers:free-items": "node tests/offer-types-free-items-test.js",
     "setup:offers": "node scripts/setup-real-offers.js"
   },
   "dependencies": {
