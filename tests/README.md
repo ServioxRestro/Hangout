@@ -15,8 +15,11 @@ npm run test:offers:admin
 # Test guest offer eligibility
 npm run test:offers:guest
 
-# Test guest offer selection (NEW!)
+# Test guest offer selection
 npm run test:offers:selection
+
+# Test free item offer types (NEW! - Buy X Get Y, Free Add-on, Combo)
+npm run test:offers:free-items
 ```
 
 ## What Gets Tested
@@ -34,6 +37,7 @@ npm run test:offers:selection
 ✅ **Usage Limits** (count validation)
 ✅ **Guest Selection** (offer selection flow)
 ✅ **Session Locking** (session-level offers)
+✅ **Free Item Types** (Buy X Get Y, Free Add-on, Combo Meal)
 ✅ **Critical Bugs** (item_free_addon detection)
 
 ## Expected Output
@@ -86,7 +90,7 @@ Total Tests: 17
 - Benefit calculations
 - Edge cases
 
-### 5. **Guest Selection Tests (`test:offers:selection`)** 🆕
+### 5. Guest Selection Tests (`test:offers:selection`)
 
 - **Dine-in/takeaway filtering**
 - **Existing/new guest scenarios**
@@ -95,23 +99,46 @@ Total Tests: 17
 - **Usage tracking**
 - **Complete end-to-end flow**
 
+### 6. **Free Item Offer Tests (`test:offers:free-items`)** 🆕
+
+- **Buy X Get Y Free** - Item-based BOGO offers
+- **Free Add-on** - Free item with qualifying purchase
+- **Combo Meal** - Bundled items at special price
+- **Admin creation flow** - Offer setup and configuration
+- **Guest eligibility** - Qualification logic
+- **Max price limits** - Free item price validation
+- **User selection** - Free item picker integration
+- **Order type filtering** - Dine-in/takeaway toggles
+
 ## Files
 
 - `tests/offers-test.js` - Main tests
 - `tests/offers-database-test.js` - Database tests
 - `tests/admin-offer-creation-test.js` - Admin tests
 - `tests/guest-offer-eligibility-test.js` - Eligibility tests
-- `tests/guest-offer-selection-test.js` - **Selection tests (NEW!)**
-- `tests/GUEST_OFFER_SELECTION_TEST.md` - **Selection test docs (NEW!)**
+- `tests/guest-offer-selection-test.js` - Selection tests
+- `tests/offer-types-free-items-test.js` - **Free item tests (NEW!)**
+- `tests/GUEST_OFFER_SELECTION_TEST.md` - Selection test docs
+- `tests/OFFER_FREE_ITEMS_TEST.md` - **Free item test docs (NEW!)**
 - `docs/TESTING_GUIDE.md` - Complete guide
 
 ## Quick Links
 
-- [Guest Selection Test Guide](./GUEST_OFFER_SELECTION_TEST.md) - **New comprehensive test**
+- [Free Item Offer Tests](./OFFER_FREE_ITEMS_TEST.md) - **New free item offer testing**
+- [Guest Selection Test Guide](./GUEST_OFFER_SELECTION_TEST.md) - Selection test documentation
 - [Testing Guide](../docs/TESTING_GUIDE.md) - Full documentation
 - [Offer System Design](../docs/GUEST_OFFER_SYSTEM_DESIGN.md) - System architecture
 
 ## Latest Features Tested
+
+✅ **Free Item Offer Types** (Oct 28, 2025)
+
+- Buy X Get Y Free - BOGO offers with item/category selection
+- Free Add-on - Free item with qualifying purchase
+- Combo Meal - Bundled pricing
+- Max price validation for free items
+- User selection flow (FreeItemSelector component)
+- Cheapest item logic for BOGO
 
 ✅ **Dine-in/Takeaway Toggles** (Oct 28, 2025)
 

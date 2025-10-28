@@ -99,10 +99,17 @@ export function TableDetailPanel({
 
   return (
     <>
-      {/* Compact Inline Panel */}
-      <div className="bg-white border border-gray-200 rounded-lg shadow-lg h-fit sticky top-4">
+      {/* Mobile Overlay Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Panel - Modal on Mobile, Inline on Desktop */}
+      <div className="fixed inset-x-0 bottom-0 lg:sticky lg:inset-auto bg-white border border-gray-200 rounded-t-2xl lg:rounded-lg shadow-lg h-[90vh] lg:h-fit lg:top-4 z-50 lg:z-auto flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+        <div className="flex items-center justify-between p-4 border-b bg-gray-50 flex-shrink-0 rounded-t-2xl lg:rounded-t-lg">
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-bold text-gray-900">
               Table {table.table.table_number}
@@ -118,47 +125,45 @@ export function TableDetailPanel({
           </div>
           <button
             onClick={onClose}
-            className="ml-2 p-1.5 hover:bg-gray-200 rounded-lg transition flex-shrink-0"
+            className="p-2 md:p-1.5 hover:bg-gray-200 active:bg-gray-300 rounded-lg transition touch-manipulation ml-3"
             aria-label="Close panel"
           >
-            <XCircle className="w-5 h-5 text-gray-500" />
+            <XCircle className="w-6 h-6 md:w-5 md:h-5 text-gray-500" />
           </button>
         </div>
 
-        {/* Content - Scrollable */}
-        <div className="p-4 space-y-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
-          {/* Session Info Compact */}
-          <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-            <div>
-              <div className="text-xs text-gray-600">Customer</div>
-              <div className="font-medium text-sm text-gray-900">
-                {table.session.guest_users?.name || "Guest"}
-              </div>
-              <div className="text-xs text-gray-600">
-                {table.session.customer_phone}
-              </div>
-            </div>
-
-            {table.session.guest_users && (
-              <div className="pt-2 border-t border-gray-200">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <div className="text-gray-600">Visits</div>
-                    <div className="font-medium text-gray-900">
-                      {table.session.guest_users.visit_count}x
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-600">Lifetime</div>
-                    <div className="font-medium text-gray-900">
-                      {formatCurrency(
-                        table.session.guest_users.total_spent || 0
-                      )}
-                    </div>
-                  </div>
+        {/* Content - Scrollable, flexible height */}
+        <div className="p-4 space-y-4 overflow-y-auto flex-1">
+          {/* Session Info Compact with End Session button */}
+          <div className="bg-gray-50 rounded-lg p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-gray-600">Customer</div>
+                <div className="font-medium text-sm text-gray-900">
+                  {table.session.guest_users?.name || "Guest"}
+                </div>
+                <div className="text-xs text-gray-600">
+                  {table.session.customer_phone}
                 </div>
               </div>
-            )}
+
+              {/* Emergency End Session Button - Positioned away from close button */}
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      '⚠️ End this session? This is for emergency use only. Use "Process Bill" for normal checkout.'
+                    )
+                  ) {
+                    onEndSession(table.session!.id);
+                  }
+                }}
+                className="px-2 py-1 text-xs bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 border border-red-200 rounded transition touch-manipulation whitespace-nowrap flex-shrink-0"
+                title="Emergency: End session without billing"
+              >
+                End Session
+              </button>
+            </div>
           </div>
 
           {/* Session Offer */}
@@ -234,25 +239,10 @@ export function TableDetailPanel({
           {/* Order Items */}
           {table.session.orders && table.session.orders.length > 0 && (
             <div className="border border-gray-200 rounded-lg">
-              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200">
                 <h4 className="font-semibold text-sm text-gray-900">
                   Order Items
                 </h4>
-                {table.session.orders.some((order) =>
-                  order.order_items.some((item) => item.status === "ready")
-                ) && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleMarkAsServed}
-                    disabled={changingOrderStatus === "marking_served"}
-                    leftIcon={<Utensils className="w-3 h-3" />}
-                  >
-                    {changingOrderStatus === "marking_served"
-                      ? "Marking..."
-                      : "Serve"}
-                  </Button>
-                )}
               </div>
               <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
                 {table.session.orders
@@ -365,28 +355,39 @@ export function TableDetailPanel({
           </div>
         </div>
 
-        {/* Footer - Sticky Actions */}
-        <div className="border-t p-4 bg-white">
+        {/* Footer - Sticky Actions, better spacing on mobile */}
+        <div className="border-t p-4 bg-white flex-shrink-0 rounded-b-2xl lg:rounded-b-lg">
           <div className="flex gap-2">
             {tableStatus === "ready-to-bill" ? (
               <Button
                 variant="primary"
                 onClick={() => setShowBillingModal(true)}
-                className="flex-1"
+                className="flex-1 min-h-[44px]"
                 size="sm"
                 leftIcon={<IndianRupee className="w-4 h-4" />}
               >
                 Process Bill
               </Button>
-            ) : (
+            ) : /* Show Serve button when items are ready */
+            table.session.orders?.some((order) =>
+                order.order_items.some((item) => item.status === "ready")
+              ) ? (
               <Button
-                variant="danger"
-                onClick={() => onEndSession(table.session!.id)}
-                className="flex-1"
+                variant="primary"
+                onClick={handleMarkAsServed}
+                disabled={changingOrderStatus === "marking_served"}
+                className="flex-1 min-h-[44px]"
                 size="sm"
+                leftIcon={<Utensils className="w-4 h-4" />}
               >
-                End Session
+                {changingOrderStatus === "marking_served"
+                  ? "Marking as Served..."
+                  : "Mark Items as Served"}
               </Button>
+            ) : (
+              <div className="flex-1 text-center text-sm text-gray-500 py-3">
+                Waiting for orders to be ready...
+              </div>
             )}
           </div>
         </div>
