@@ -8,6 +8,11 @@ import Button from "@/components/admin/Button";
 import { formatCurrency } from "@/lib/constants";
 import { getCurrentAuthUser, type UserRole } from "@/lib/auth";
 import {
+  generateHTMLReceipt,
+  printHTMLReceipt,
+  type BillItem,
+} from "@/lib/utils/billing";
+import {
   Receipt,
   CreditCard,
   Clock,
@@ -208,8 +213,6 @@ export default function PaymentHistoryPage() {
 
   const printReceipt = async (payment: PaymentHistory) => {
     try {
-      console.log("Starting print process for payment:", payment);
-
       // Fetch detailed bill information
       const { data: billData, error } = await supabase
         .from("bills")
@@ -217,21 +220,18 @@ export default function PaymentHistoryPage() {
           `
           *,
           bill_items (
-            *,
-            order_items (
-              menu_items (
-                name,
-                price,
-                is_veg
-              )
-            )
+            id,
+            item_name,
+            quantity,
+            unit_price,
+            total_price,
+            order_item_id
           ),
           table_sessions (
             customer_email,
             customer_phone,
             restaurant_tables (
-              table_number,
-              table_code
+              table_number
             )
           )
         `
@@ -239,313 +239,100 @@ export default function PaymentHistoryPage() {
         .eq("id", payment.id)
         .single();
 
-      if (error) {
-        console.error("Database error fetching bill data:", error);
-        throw error;
-      }
+      if (error) throw error;
+      if (!billData) throw new Error("Bill data not found");
 
-      console.log("Bill data fetched successfully:", billData);
-
-      // Get restaurant settings for receipt header
-      const { data: restaurantSettings, error: settingsError } = await supabase
+      // Fetch restaurant settings
+      const { data: settings } = await supabase
         .from("restaurant_settings")
         .select("*");
 
-      if (settingsError) {
-        console.error("Error fetching restaurant settings:", settingsError);
-      }
-
-      const settings =
-        restaurantSettings?.reduce((acc: Record<string, string>, setting) => {
+      const settingsMap =
+        settings?.reduce((acc: any, setting: any) => {
           acc[setting.setting_key] = setting.setting_value;
           return acc;
         }, {}) || {};
 
-      console.log("Restaurant settings:", settings);
+      // Prepare bill items for receipt
+      const billItems: BillItem[] = billData.bill_items.map((item: any) => ({
+        name: item.item_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        is_manual: !item.order_item_id,
+      }));
 
-      // Get tax settings
-      const { data: taxSettings, error: taxError } = await supabase
-        .from("tax_settings")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
+      // Reconstruct items_with_taxes for receipt printing
+      // Since old bills don't have per-item tax breakdown, we calculate it
+      const cgstRate = billData.cgst_rate || 0;
+      const sgstRate = billData.sgst_rate || 0;
+      const totalTaxRate = cgstRate + sgstRate;
 
-      if (taxError) {
-        console.error("Error fetching tax settings:", taxError);
-      }
+      const items_with_taxes = billItems.map((item) => {
+        // Reverse calculate base price from total (assuming tax-inclusive)
+        const base_price = item.total_price / (1 + totalTaxRate / 100);
+        const item_taxes: Array<{
+          name: string;
+          rate: number;
+          amount: number;
+        }> = [];
 
-      console.log("Tax settings:", taxSettings);
+        if (cgstRate > 0) {
+          item_taxes.push({
+            name: "CGST",
+            rate: cgstRate,
+            amount: (base_price * cgstRate) / 100,
+          });
+        }
+        if (sgstRate > 0) {
+          item_taxes.push({
+            name: "SGST",
+            rate: sgstRate,
+            amount: (base_price * sgstRate) / 100,
+          });
+        }
 
-      // Validate required data
-      if (!billData) {
-        throw new Error("Bill data not found");
-      }
+        return {
+          ...item,
+          base_price: Math.round(base_price * 100) / 100,
+          item_taxes: item_taxes.map((t) => ({
+            ...t,
+            amount: Math.round(t.amount * 100) / 100,
+          })),
+        };
+      });
 
-      // Format receipt content
-      const printContent = `
-        <html>
-          <head>
-            <title>Receipt - ${billData.bill_number || "Unknown"}</title>
-            <style>
-              body {
-                font-family: 'Courier New', monospace;
-                max-width: 300px;
-                margin: 0 auto;
-                padding: 15px;
-                line-height: 1.5;
-                font-size: 12px;
-                color: #000;
-                background: #fff;
-              }
-              .receipt-header {
-                text-align: center;
-                border-bottom: 1px dashed #000;
-                padding-bottom: 10px;
-                margin-bottom: 10px;
-              }
-              .restaurant-name {
-                font-size: 16px;
-                font-weight: bold;
-                margin-bottom: 5px;
-              }
-              .receipt-info {
-                margin-bottom: 10px;
-              }
-              .items-section {
-                border-bottom: 1px dashed #000;
-                padding-bottom: 10px;
-                margin-bottom: 10px;
-              }
-              .item-row {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 2px;
-              }
-              .item-name {
-                flex: 1;
-                margin-right: 10px;
-              }
-              .item-qty {
-                width: 30px;
-                text-align: center;
-              }
-              .item-price {
-                width: 60px;
-                text-align: right;
-              }
-              .totals-section {
-                margin-top: 10px;
-              }
-              .total-row {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 2px;
-              }
-              .final-total {
-                font-weight: bold;
-                font-size: 14px;
-                border-top: 1px solid #000;
-                padding-top: 5px;
-                margin-top: 5px;
-              }
-              .receipt-footer {
-                text-align: center;
-                margin-top: 20px;
-                border-top: 1px dashed #000;
-                padding-top: 10px;
-                font-size: 10px;
-              }
-              .veg-indicator {
-                color: green;
-                font-weight: bold;
-              }
-              .non-veg-indicator {
-                color: red;
-                font-weight: bold;
-              }
-              @media print {
-                body {
-                  margin: 0;
-                  padding: 10px;
-                  font-size: 11px;
-                }
-                @page {
-                  margin: 5mm;
-                  size: 80mm auto;
-                }
-              }
-              @media screen and (max-width: 400px) {
-                body {
-                  max-width: 95%;
-                  padding: 10px;
-                  font-size: 11px;
-                }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="receipt-header">
-              <div class="restaurant-name">${
-                settings.restaurant_name || "Restaurant Name"
-              }</div>
-              ${
-                settings.restaurant_address
-                  ? `<div>${settings.restaurant_address}</div>`
-                  : ""
-              }
-              ${
-                settings.restaurant_phone
-                  ? `<div>Phone: ${settings.restaurant_phone}</div>`
-                  : ""
-              }
-              ${
-                settings.gst_number
-                  ? `<div>GST: ${settings.gst_number}</div>`
-                  : ""
-              }
-            </div>
+      // Generate HTML receipt using the shared utility
+      const htmlReceipt = generateHTMLReceipt({
+        settings: {
+          restaurant_name: settingsMap.restaurant_name,
+          restaurant_address: settingsMap.restaurant_address,
+          restaurant_phone: settingsMap.restaurant_phone,
+          gst_number: settingsMap.gst_number,
+        },
+        billNumber: billData.bill_number || undefined,
+        tableNumber:
+          billData.table_sessions?.restaurant_tables?.table_number?.toString() ||
+          null,
+        orderType: billData.table_session_id ? "dine-in" : "takeaway",
+        customerPhone: billData.table_sessions?.customer_phone || undefined,
+        calculation: {
+          items_with_taxes,
+          subtotal: billData.subtotal || 0,
+          taxable_subtotal: billData.subtotal || 0,
+          total_gst: billData.total_tax_amount || 0,
+          subtotal_with_tax:
+            (billData.subtotal || 0) + (billData.total_tax_amount || 0),
+          discount_amount: billData.discount_amount || 0,
+          final_amount: billData.final_amount || 0,
+        },
+        paymentMethod: billData.payment_method || "Cash",
+        discountPercentage: billData.discount_percentage || undefined,
+        offerName: null, // Offer name not available in history query
+        date: new Date(billData.created_at || new Date()),
+      });
 
-            <div class="receipt-info">
-              <div>Bill No: ${billData.bill_number}</div>
-              <div>Date: ${
-                billData.created_at
-                  ? formatDateTime(billData.created_at)
-                  : "N/A"
-              }</div>
-              <div>Table: ${
-                billData.table_sessions?.restaurant_tables?.table_number ||
-                "Takeaway"
-              }</div>
-              ${
-                billData.table_sessions?.customer_phone
-                  ? `<div>Phone: ${billData.table_sessions.customer_phone}</div>`
-                  : billData.table_sessions?.customer_email
-                  ? `<div>Email: ${billData.table_sessions.customer_email}</div>`
-                  : ""
-              }
-              <div>Payment: ${
-                payment.payment_method?.toUpperCase() || "N/A"
-              }</div>
-            </div>
-
-            <div class="items-section">
-              <div style="font-weight: bold; margin-bottom: 5px;">ITEMS ORDERED</div>
-              ${
-                billData.bill_items
-                  ?.map(
-                    (item: any) => `
-                <div class="item-row">
-                  <div class="item-name">
-                    <span class="${
-                      item.order_items?.menu_items?.is_veg
-                        ? "veg-indicator"
-                        : "non-veg-indicator"
-                    }">
-                      ${item.order_items?.menu_items?.is_veg ? "●" : "▲"}
-                    </span>
-                    ${
-                      item.order_items?.menu_items?.name ||
-                      item.item_name ||
-                      "Unknown Item"
-                    }
-                  </div>
-                  <div class="item-qty">${item.quantity || 0}</div>
-                  <div class="item-price">${formatCurrency(
-                    Number(item.unit_price) || 0
-                  )}</div>
-                  <div class="item-price">${formatCurrency(
-                    Number(item.total_price) || 0
-                  )}</div>
-                </div>
-              `
-                  )
-                  .join("") || "<div>No items found</div>"
-              }
-            </div>
-
-            <div class="totals-section">
-              <div class="total-row">
-                <span>Subtotal:</span>
-                <span>${formatCurrency(Number(billData.subtotal) || 0)}</span>
-              </div>
-
-              ${
-                taxSettings
-                  ?.map(
-                    (tax: any) => `
-                <div class="total-row">
-                  <span>${tax.name} @ ${tax.rate}%:</span>
-                  <span>${formatCurrency(
-                    ((Number(billData.subtotal) || 0) *
-                      (Number(tax.rate) || 0)) /
-                      100
-                  )}</span>
-                </div>
-              `
-                  )
-                  .join("") || ""
-              }
-
-              <div class="total-row final-total">
-                <span>TOTAL:</span>
-                <span>${formatCurrency(
-                  Number(billData.final_amount) || 0
-                )}</span>
-              </div>
-            </div>
-
-            <div class="receipt-footer">
-              <div>Thank you for dining with us!</div>
-              <div>Paid at: ${formatDateTime(payment.paid_at)}</div>
-              <div style="margin-top: 10px;">● Veg | ▲ Non-Veg</div>
-            </div>
-          </body>
-        </html>
-      `;
-
-      console.log("Generated print content, opening print window...");
-
-      // Open print dialog
-      const printWindow = window.open("", "_blank");
-      if (printWindow) {
-        console.log("Print window opened successfully");
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-        printWindow.focus();
-
-        // Wait for content to load then print
-        // Add accessibility attributes
-        printWindow.document.body.setAttribute("role", "document");
-        printWindow.document.body.setAttribute(
-          "aria-label",
-          `Receipt for bill ${billData.bill_number}`
-        );
-
-        // Wait for content to load then print
-        setTimeout(() => {
-          try {
-            console.log("Attempting to print...");
-            printWindow.print();
-            console.log("Print dialog opened successfully");
-            // Close window after print dialog
-            setTimeout(() => {
-              printWindow.close();
-            }, 1000);
-          } catch (printError) {
-            console.error("Print error:", printError);
-            alert(
-              "Unable to open print dialog. Please check your browser settings."
-            );
-          }
-        }, 500);
-      } else {
-        console.error(
-          "Failed to open print window - likely blocked by popup blocker"
-        );
-        alert(
-          "Unable to open print window. Please check if pop-ups are blocked."
-        );
-      }
+      printHTMLReceipt(htmlReceipt);
     } catch (error) {
       console.error("Error printing receipt:", error);
       alert("Error printing receipt. Please try again.");
