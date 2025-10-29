@@ -8,6 +8,7 @@ import {
   type OfferEligibility,
   type CartItem as EligibilityCartItem,
 } from "@/lib/offers/eligibility";
+import { OfferSelector } from "@/components/guest/OfferSelector";
 import Card from "@/components/admin/Card";
 import Button from "@/components/admin/Button";
 import FormField from "@/components/admin/FormField";
@@ -57,6 +58,8 @@ interface CartItem {
   quantity: number;
   is_veg: boolean;
   category_id: string | null;
+  isFree?: boolean;
+  linkedOfferId?: string;
 }
 
 interface CustomerInfo {
@@ -87,17 +90,15 @@ export default function CreateOrderPage() {
   // Offer state
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [isOfferLockedByGuest, setIsOfferLockedByGuest] = useState(false);
+  const [sessionHasUsedOffer, setSessionHasUsedOffer] = useState(false);
   const [eligibilityCache, setEligibilityCache] = useState<
     Record<string, OfferEligibility>
   >({});
-  const [showOfferList, setShowOfferList] = useState(false);
 
   // UI state
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCart, setShowCart] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
-  const [promoCodeInput, setPromoCodeInput] = useState("");
 
   // Loading & status state
   const [loading, setLoading] = useState(true);
@@ -125,13 +126,17 @@ export default function CreateOrderPage() {
   useEffect(() => {
     const checkLockedOffer = async () => {
       if (!selectedTable || orderType !== "dine-in" || offers.length === 0) {
+        // Reset offer state when no table selected or takeaway
+        setIsOfferLockedByGuest(false);
+        setSelectedOffer(null);
+        setSessionHasUsedOffer(false);
         return;
       }
 
       try {
         const { data: sessionData, error } = await supabase
           .from("table_sessions")
-          .select("locked_offer_id, locked_offer_data")
+          .select("locked_offer_id, locked_offer_data, id")
           .eq("table_id", selectedTable)
           .eq("status", "active")
           .maybeSingle();
@@ -154,8 +159,27 @@ export default function CreateOrderPage() {
             );
           }
         } else {
-          // No locked offer, reset the flag
+          // No locked offer, reset the flag and clear selected offer
           setIsOfferLockedByGuest(false);
+          setSelectedOffer(null);
+        }
+
+        // Check if session has already used an offer
+        if (sessionData?.id) {
+          const { data: usedOffer, error: usageError } = await supabase
+            .from("offer_usage")
+            .select("offer_id")
+            .eq("table_session_id", sessionData.id)
+            .maybeSingle();
+
+          if (!usageError && usedOffer) {
+            setSessionHasUsedOffer(true);
+            console.log("⚠️ Session already has used offer");
+          } else {
+            setSessionHasUsedOffer(false);
+          }
+        } else {
+          setSessionHasUsedOffer(false);
         }
       } catch (error) {
         console.error("Error checking locked offer:", error);
@@ -235,7 +259,7 @@ export default function CreateOrderPage() {
         )
         .eq("is_active", true)
         .eq(filterField, true)
-        .eq("application_type", "session_level")
+        .in("application_type", ["session_level", "order_level"]) // ✅ Include both types
         .order("priority", { ascending: false });
 
       if (offersError) throw offersError;
@@ -282,114 +306,39 @@ export default function CreateOrderPage() {
     }
   };
 
-  const handleOfferSelect = (offer: Offer) => {
-    const eligibility = eligibilityCache[offer.id];
+  // Callback for OfferSelector to add free items
+  const handleFreeItemsAdd = (freeItems: any[]) => {
+    setCart((prev) => {
+      // Remove any existing free items
+      const withoutFree = prev.filter((item) => !item.isFree);
+      // Transform and add new free items
+      const transformedFreeItems: CartItem[] = freeItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        is_veg: item.is_veg || false,
+        category_id: item.category_id || null,
+        isFree: true,
+        linkedOfferId: item.linkedOfferId,
+      }));
+      return [...withoutFree, ...transformedFreeItems];
+    });
+  };
 
-    if (!eligibility || !eligibility.isEligible) {
+  // Wrapper to prevent changing offer when locked by guest
+  const handleOfferSelect = (offer: Offer | null) => {
+    if (isOfferLockedByGuest) {
+      console.warn("⚠️ Cannot change offer - locked by guest");
       return;
     }
 
-    // Toggle selection
-    if (selectedOffer?.id === offer.id) {
-      setSelectedOffer(null);
-    } else {
-      setSelectedOffer(offer);
-    }
-    setShowOfferList(false);
-  };
-
-  const getOfferIcon = (offerType: string) => {
-    switch (offerType) {
-      case "cart_percentage":
-      case "min_order_discount":
-      case "item_percentage":
-        return <Percent className="w-5 h-5" />;
-      case "cart_flat_amount":
-      case "item_free_addon":
-      case "item_buy_get_free":
-      case "cart_threshold_item":
-        return <Gift className="w-5 h-5" />;
-      case "time_based":
-        return <Clock className="w-5 h-5" />;
-      case "customer_based":
-        return <Users className="w-5 h-5" />;
-      case "promo_code":
-      case "combo_meal":
-        return <Tag className="w-5 h-5" />;
-      default:
-        return <Gift className="w-5 h-5" />;
-    }
-  };
-
-  const formatOfferSummary = (offer: Offer, eligibility?: OfferEligibility) => {
-    const benefits = offer.benefits as any;
-    const conditions = offer.conditions as any;
-
-    let summary = "";
-    switch (offer.offer_type) {
-      case "cart_percentage":
-        summary = `${benefits.discount_percentage}% off`;
-        if (benefits.max_discount_amount) {
-          summary += ` (max ${formatCurrency(benefits.max_discount_amount)})`;
-        }
-        break;
-      case "cart_flat_amount":
-        summary = `${formatCurrency(benefits.discount_amount)} off`;
-        break;
-      case "min_order_discount":
-        summary = `${formatCurrency(
-          benefits.discount_amount
-        )} off on orders above ${formatCurrency(conditions.threshold_amount)}`;
-        break;
-      case "cart_threshold_item":
-        summary = `Free item on orders above ${formatCurrency(
-          conditions.threshold_amount
-        )}`;
-        break;
-      case "item_buy_get_free":
-        summary = `Buy ${benefits.buy_quantity}, Get 1 free`;
-        break;
-      case "item_free_addon":
-        summary = `Free item with purchase`;
-        break;
-      case "item_percentage":
-        summary = `${benefits.discount_percentage}% off on selected items`;
-        break;
-      case "combo_meal":
-        summary = `Combo deal - ${formatCurrency(benefits.combo_price)}`;
-        break;
-      case "promo_code":
-        if (benefits.discount_percentage) {
-          summary = `${benefits.discount_percentage}% off`;
-          if (benefits.max_discount_amount) {
-            summary += ` (max ${formatCurrency(benefits.max_discount_amount)})`;
-          }
-        } else {
-          summary = `${formatCurrency(benefits.discount_amount)} off`;
-        }
-        break;
-      default:
-        summary = offer.description || "Special offer";
+    // If deselecting an offer, remove all free items from cart
+    if (!offer && selectedOffer) {
+      setCart((prev) => prev.filter((item) => !item.isFree));
     }
 
-    if (eligibility?.isEligible && eligibility.discount > 0) {
-      summary += ` • Save ${formatCurrency(eligibility.discount)}`;
-    }
-
-    return summary;
-  };
-
-  const applyPromoCode = () => {
-    const code = promoCodeInput.trim().toUpperCase();
-    if (code) {
-      setPromoCode(code);
-      setPromoCodeInput("");
-    }
-  };
-
-  const removePromoCode = () => {
-    setPromoCode("");
-    setPromoCodeInput("");
+    setSelectedOffer(offer);
   };
 
   // Get selected table info
@@ -440,14 +389,20 @@ export default function CreateOrderPage() {
     }
 
     setCart((prev) => {
-      const existingItem = prev.find((cartItem) => cartItem.id === item.id);
+      // Find existing regular (non-free) item with same id
+      const existingItem = prev.find(
+        (cartItem) => cartItem.id === item.id && !cartItem.isFree
+      );
+
       if (existingItem) {
+        // Increment quantity of existing regular item
         return prev.map((cartItem) =>
-          cartItem.id === item.id
+          cartItem.id === item.id && !cartItem.isFree
             ? { ...cartItem, quantity: cartItem.quantity + 1 }
             : cartItem
         );
       } else {
+        // Add as new regular item (even if free item with same id exists)
         return [
           ...prev,
           {
@@ -476,17 +431,37 @@ export default function CreateOrderPage() {
   };
 
   const removeFromCart = (itemId: string) => {
-    setCart((prev) => prev.filter((item) => item.id !== itemId));
+    setCart((prev) => {
+      const itemToRemove = prev.find((item) => item.id === itemId);
+      if (!itemToRemove) return prev;
+
+      // Case 1: Removing a free item - deselect offer and remove all free items
+      if (itemToRemove.isFree) {
+        setSelectedOffer(null);
+        return prev.filter((item) => !item.isFree);
+      }
+
+      // Case 2: Removing a regular item when free items exist - remove item + all free items, deselect offer
+      const hasFreeItems = prev.some((item) => item.isFree);
+      if (hasFreeItems) {
+        setSelectedOffer(null);
+        return prev.filter((item) => !item.isFree && item.id !== itemId);
+      }
+
+      // Case 3: Normal removal (no free items in cart)
+      return prev.filter((item) => item.id !== itemId);
+    });
   };
 
   const clearCart = () => {
     setCart([]);
-    setPromoCode("");
-    setPromoCodeInput("");
   };
 
   const getCartTotal = () => {
-    return cart.reduce((total, item) => total + item.price * item.quantity, 0);
+    // Only count non-free items (free items have price 0 anyway)
+    return cart
+      .filter((item) => !item.isFree)
+      .reduce((total, item) => total + item.price * item.quantity, 0);
   };
 
   const getTotalItems = () => {
@@ -495,8 +470,13 @@ export default function CreateOrderPage() {
 
   const getFinalAmount = () => {
     const cartTotal = getCartTotal();
+    // Simple logic: Always subtract discount calculated by eligibilityCache
+    // This works for ALL offer types (combo, BOGO, percentage, flat, etc.)
     if (selectedOffer && eligibilityCache[selectedOffer.id]) {
-      return cartTotal - eligibilityCache[selectedOffer.id].discount;
+      return Math.max(
+        0,
+        cartTotal - eligibilityCache[selectedOffer.id].discount
+      );
     }
     return cartTotal;
   };
@@ -507,38 +487,11 @@ export default function CreateOrderPage() {
     }
     return 0;
   };
-
-  // Categorize offers for display
-  const categorizedOffers = useMemo(() => {
-    const available: Offer[] = [];
-    const almostThere: Offer[] = [];
-    const notEligible: Offer[] = [];
-
-    offers.forEach((offer) => {
-      const eligibility = eligibilityCache[offer.id];
-      if (!eligibility) return;
-
-      if (eligibility.isEligible) {
-        available.push(offer);
-      } else if (
-        eligibility.reason?.includes("Add") ||
-        eligibility.reason?.includes("more")
-      ) {
-        almostThere.push(offer);
-      } else {
-        notEligible.push(offer);
-      }
-    });
-
-    return { available, almostThere, notEligible };
-  }, [offers, eligibilityCache]);
-
   // Helper function to handle table selection
   const handleTableSelection = (tableId: string) => {
     setSelectedTable(tableId);
-    // Reset locked offer flag when changing tables
-    setIsOfferLockedByGuest(false);
-    setSelectedOffer(null);
+    // Note: Don't reset isOfferLockedByGuest or selectedOffer here
+    // The useEffect will detect and set the locked offer automatically
   };
 
   const validateForm = () => {
@@ -684,18 +637,21 @@ export default function CreateOrderPage() {
         if (orderError) throw orderError;
         orderId = orderData.id;
 
-        // Lock offer to session if this is a new order with an offer
-        // and session doesn't have a locked offer yet
+        // Lock offer to session ONLY if:
+        // 1. This is a new order with an offer
+        // 2. Session doesn't already have a locked offer (guest hasn't locked one)
+        // 3. Admin selected an offer (not using guest's locked offer)
+        // IMPORTANT: Never overwrite a guest's locked offer!
         if (
           sessionId &&
-          offerToUse &&
           !existingSession?.locked_offer_id &&
-          selectedOffer
+          selectedOffer &&
+          !isOfferLockedByGuest
         ) {
           await supabase
             .from("table_sessions")
             .update({
-              locked_offer_id: offerToUse,
+              locked_offer_id: selectedOffer.id,
               locked_offer_data: {
                 offer_id: selectedOffer.id,
                 name: selectedOffer.name,
@@ -731,12 +687,13 @@ export default function CreateOrderPage() {
       const kotBatchId = crypto.randomUUID();
 
       // Create order items with KOT info
+      // For free items (BOGO), set unit_price and total_price to 0
       const orderItems = cart.map((item) => ({
         order_id: orderId, // Use the orderId (either new or existing)
         menu_item_id: item.id,
         quantity: item.quantity,
-        unit_price: item.price,
-        total_price: item.price * item.quantity,
+        unit_price: item.isFree ? 0 : item.price, // ✅ Free items have price 0
+        total_price: item.isFree ? 0 : item.price * item.quantity, // ✅ Free items total 0
         kot_number: kotNumber,
         kot_batch_id: kotBatchId,
       }));
@@ -764,15 +721,37 @@ export default function CreateOrderPage() {
         }
       }
 
-      // Update offer usage count if offer was applied
+      // Create offer_usage record if offer was applied
       if (selectedOffer && eligibilityCache[selectedOffer.id]) {
-        try {
-          await supabase.rpc("increment_offer_usage" as any, {
+        const discountAmount = getTotalDiscount();
+        const freeItems = cart
+          .filter((item) => item.isFree)
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+          }));
+
+        const { error: usageError } = await supabase
+          .from("offer_usage")
+          .insert({
             offer_id: selectedOffer.id,
+            order_id: orderId,
+            table_session_id: sessionId,
+            customer_phone: customerInfo.phone.trim() || null,
+            customer_email: customerInfo.email.trim() || null,
+            discount_amount: discountAmount,
+            free_items: freeItems.length > 0 ? freeItems : [],
           });
-        } catch (error) {
-          // RPC might not exist, that's okay - offer already linked via session_offer_id
-          console.log("increment_offer_usage RPC not available (optional)");
+
+        if (usageError) {
+          console.error("Failed to create offer_usage record:", usageError);
+          // Don't throw error - order is already created
+        } else {
+          console.log(
+            `✅ Created offer_usage record for ${selectedOffer.name}`
+          );
         }
       }
 
@@ -1101,22 +1080,11 @@ export default function CreateOrderPage() {
               orderType={orderType}
               selectedTable={selectedTable}
               tables={tables}
-              promoCode={promoCode}
-              promoCodeInput={promoCodeInput}
-              setPromoCodeInput={setPromoCodeInput}
-              applyPromoCode={applyPromoCode}
-              removePromoCode={removePromoCode}
-              offers={offers}
               selectedOffer={selectedOffer}
-              setSelectedOffer={setSelectedOffer}
+              setSelectedOffer={handleOfferSelect}
               isOfferLockedByGuest={isOfferLockedByGuest}
-              eligibilityCache={eligibilityCache}
-              showOfferList={showOfferList}
-              setShowOfferList={setShowOfferList}
-              categorizedOffers={categorizedOffers}
-              handleOfferSelect={handleOfferSelect}
-              getOfferIcon={getOfferIcon}
-              formatOfferSummary={formatOfferSummary}
+              sessionHasUsedOffer={sessionHasUsedOffer}
+              onFreeItemAdd={handleFreeItemsAdd}
               getCartTotal={getCartTotal}
               getTotalItems={getTotalItems}
               getFinalAmount={getFinalAmount}
@@ -1201,22 +1169,11 @@ export default function CreateOrderPage() {
                   orderType={orderType}
                   selectedTable={selectedTable}
                   tables={tables}
-                  promoCode={promoCode}
-                  promoCodeInput={promoCodeInput}
-                  setPromoCodeInput={setPromoCodeInput}
-                  applyPromoCode={applyPromoCode}
-                  removePromoCode={removePromoCode}
-                  offers={offers}
                   selectedOffer={selectedOffer}
                   setSelectedOffer={setSelectedOffer}
                   isOfferLockedByGuest={isOfferLockedByGuest}
-                  eligibilityCache={eligibilityCache}
-                  showOfferList={showOfferList}
-                  setShowOfferList={setShowOfferList}
-                  categorizedOffers={categorizedOffers}
-                  handleOfferSelect={handleOfferSelect}
-                  getOfferIcon={getOfferIcon}
-                  formatOfferSummary={formatOfferSummary}
+                  sessionHasUsedOffer={sessionHasUsedOffer}
+                  onFreeItemAdd={handleFreeItemsAdd}
                   getCartTotal={getCartTotal}
                   getTotalItems={getTotalItems}
                   getFinalAmount={getFinalAmount}
@@ -1246,26 +1203,11 @@ interface OrderSummaryProps {
   orderType: "dine-in" | "takeaway";
   selectedTable: string;
   tables: RestaurantTable[];
-  promoCode: string;
-  promoCodeInput: string;
-  setPromoCodeInput: (code: string) => void;
-  applyPromoCode: () => void;
-  removePromoCode: () => void;
-  offers: Offer[];
   selectedOffer: Offer | null;
   setSelectedOffer: (offer: Offer | null) => void;
   isOfferLockedByGuest: boolean;
-  eligibilityCache: Record<string, OfferEligibility>;
-  showOfferList: boolean;
-  setShowOfferList: (show: boolean) => void;
-  categorizedOffers: {
-    available: Offer[];
-    almostThere: Offer[];
-    notEligible: Offer[];
-  };
-  handleOfferSelect: (offer: Offer) => void;
-  getOfferIcon: (offerType: string) => JSX.Element;
-  formatOfferSummary: (offer: Offer, eligibility?: OfferEligibility) => string;
+  sessionHasUsedOffer: boolean;
+  onFreeItemAdd: (items: CartItem[]) => void;
   getCartTotal: () => number;
   getTotalItems: () => number;
   getFinalAmount: () => number;
@@ -1286,22 +1228,11 @@ function OrderSummary({
   orderType,
   selectedTable,
   tables,
-  promoCode,
-  promoCodeInput,
-  setPromoCodeInput,
-  applyPromoCode,
-  removePromoCode,
-  offers,
   selectedOffer,
   setSelectedOffer,
   isOfferLockedByGuest,
-  eligibilityCache,
-  showOfferList,
-  setShowOfferList,
-  categorizedOffers,
-  handleOfferSelect,
-  getOfferIcon,
-  formatOfferSummary,
+  sessionHasUsedOffer,
+  onFreeItemAdd,
   getCartTotal,
   getTotalItems,
   getFinalAmount,
@@ -1314,6 +1245,11 @@ function OrderSummary({
   isMobile = false,
   onClose,
 }: OrderSummaryProps) {
+  // Wrapper to transform CartItem types from guest OfferSelector to admin CartItem
+  const handleFreeItemsAddWrapper = (freeItems: any[]) => {
+    onFreeItemAdd(freeItems);
+  };
+
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Mobile Header */}
@@ -1418,122 +1354,86 @@ function OrderSummary({
                           {item.name}
                         </h4>
                         {item.is_veg && <span className="text-xs">🟢</span>}
+                        {item.isFree && (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                            FREE
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs lg:text-sm text-gray-600">
-                        {formatCurrency(item.price)} × {item.quantity} ={" "}
-                        {formatCurrency(item.price * item.quantity)}
+                        {item.isFree ? (
+                          <span className="text-green-600 font-medium">
+                            Free with offer
+                          </span>
+                        ) : (
+                          <>
+                            {formatCurrency(item.price)} × {item.quantity} ={" "}
+                            {formatCurrency(item.price * item.quantity)}
+                          </>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 lg:gap-2 ml-2">
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity - 1)
-                        }
-                        className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100 flex-shrink-0"
-                      >
-                        <Minus className="w-3 h-3 lg:w-4 lg:h-4" />
-                      </button>
-                      <span className="w-6 lg:w-8 text-center font-medium text-sm lg:text-base">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity + 1)
-                        }
-                        className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 flex-shrink-0"
-                      >
-                        <Plus className="w-3 h-3 lg:w-4 lg:h-4" />
-                      </button>
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="ml-1 lg:ml-2 p-1.5 lg:p-2 text-red-600 hover:text-red-800 flex-shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-                      </button>
+                      {!item.isFree && (
+                        <>
+                          <button
+                            onClick={() =>
+                              updateQuantity(item.id, item.quantity - 1)
+                            }
+                            className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100 flex-shrink-0"
+                          >
+                            <Minus className="w-3 h-3 lg:w-4 lg:h-4" />
+                          </button>
+                          <span className="w-6 lg:w-8 text-center font-medium text-sm lg:text-base">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() =>
+                              updateQuantity(item.id, item.quantity + 1)
+                            }
+                            className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 flex-shrink-0"
+                          >
+                            <Plus className="w-3 h-3 lg:w-4 lg:h-4" />
+                          </button>
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            className="ml-1 lg:ml-2 p-1.5 lg:p-2 text-red-600 hover:text-red-800 flex-shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+                          </button>
+                        </>
+                      )}
+                      {item.isFree && (
+                        <div className="text-xs text-green-700 font-medium px-2">
+                          Linked to offer
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
 
-                {/* Promo Code Section */}
-                <div className="pt-2 lg:pt-3 border-t">
-                  {!promoCode ? (
-                    <div className="flex gap-2">
-                      <Input
-                        type="text"
-                        value={promoCodeInput}
-                        onChange={(e) =>
-                          setPromoCodeInput(e.target.value.toUpperCase())
-                        }
-                        placeholder="Enter promo code"
-                        leftIcon={<Tag className="w-4 h-4" />}
-                        className="flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={applyPromoCode}
-                        disabled={!promoCodeInput.trim()}
-                      >
-                        Apply
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between p-2 bg-green-50 border border-green-200 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium text-green-700">
-                          {promoCode}
-                        </span>
-                      </div>
-                      <button
-                        onClick={removePromoCode}
-                        className="text-green-600 hover:text-green-800"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
                 {/* Offers Section */}
                 <div className="pt-2 lg:pt-3 border-t">
-                  {/* Selected Offer Display */}
-                  {selectedOffer && (
-                    <div
-                      className={`mb-3 border-2 rounded-lg p-3 ${
-                        isOfferLockedByGuest
-                          ? "bg-blue-50 border-blue-200"
-                          : "bg-green-50 border-green-200"
-                      }`}
-                    >
+                  {/* Selected Offer Display (if locked by guest) */}
+                  {selectedOffer && isOfferLockedByGuest && (
+                    <div className="mb-3 border-2 rounded-lg p-3 bg-blue-50 border-blue-200">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-start gap-2 flex-1">
-                          <div
-                            className={`p-1.5 bg-white rounded-lg shadow-sm ${
-                              isOfferLockedByGuest
-                                ? "text-blue-600"
-                                : "text-green-600"
-                            }`}
-                          >
-                            {getOfferIcon(selectedOffer.offer_type)}
+                          <div className="p-1.5 bg-white rounded-lg shadow-sm text-blue-600">
+                            <Gift className="w-5 h-5" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <div className="font-semibold text-gray-900 text-sm">
                                 {selectedOffer.name}
                               </div>
-                              {isOfferLockedByGuest && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
-                                  <Users className="w-3 h-3" />
-                                  Guest Applied
-                                </span>
-                              )}
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+                                <Users className="w-3 h-3" />
+                                Guest Applied
+                              </span>
                             </div>
                             <div className="text-xs text-gray-700 mt-0.5">
-                              {formatOfferSummary(
-                                selectedOffer,
-                                eligibilityCache[selectedOffer.id]
-                              )}
+                              {selectedOffer.description}
                             </div>
                             {selectedOffer.promo_code && (
                               <div className="mt-1.5">
@@ -1547,20 +1447,35 @@ function OrderSummary({
                             )}
                           </div>
                         </div>
-                        {!isOfferLockedByGuest && (
-                          <button
-                            onClick={() => setSelectedOffer(null)}
-                            className="text-green-600 hover:text-green-800 p-1"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* Apply Offer Button or Locked Message */}
-                  {isOfferLockedByGuest ? (
+                  {/* Offer Selector */}
+                  {!isOfferLockedByGuest && !sessionHasUsedOffer && (
+                    <OfferSelector
+                      cartItems={cart.map((item) => ({
+                        id: item.id,
+                        name: item.name,
+                        price: item.price,
+                        quantity: item.quantity,
+                        is_veg: item.is_veg,
+                        category_id: item.category_id || undefined,
+                        isFree: item.isFree,
+                        linkedOfferId: item.linkedOfferId,
+                      }))}
+                      cartTotal={getCartTotal()}
+                      customerPhone={customerInfo.phone}
+                      tableId={selectedTable}
+                      orderType={orderType}
+                      onOfferSelect={setSelectedOffer}
+                      selectedOffer={selectedOffer}
+                      onFreeItemAdd={handleFreeItemsAddWrapper}
+                    />
+                  )}
+
+                  {/* Locked Offer Message */}
+                  {isOfferLockedByGuest && (
                     <div className="w-full p-2.5 lg:p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
                       <div className="flex items-center gap-2 text-sm font-medium text-blue-700">
                         <Users className="w-4 h-4" />
@@ -1571,165 +1486,19 @@ function OrderSummary({
                         changed
                       </p>
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowOfferList(!showOfferList)}
-                      className="w-full flex items-center justify-between p-2.5 lg:p-3 bg-gradient-to-r from-green-50 to-blue-50 border-2 border-dashed border-green-300 rounded-lg hover:from-green-100 hover:to-blue-100 transition-all"
-                    >
-                      <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                        <Gift className="w-4 h-4" />
-                        <span>
-                          {selectedOffer ? "Change Offer" : "Apply Offer"}
-                        </span>
-                        {categorizedOffers.available.length > 0 && (
-                          <span className="bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                            {categorizedOffers.available.length}
-                          </span>
-                        )}
-                      </div>
-                      <ChevronDown
-                        className={`w-4 h-4 text-green-600 transition-transform ${
-                          showOfferList ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
                   )}
 
-                  {/* Offer List */}
-                  {showOfferList && (
-                    <div className="mt-2 bg-white border border-gray-200 rounded-lg p-3 space-y-3 max-h-96 overflow-y-auto">
-                      {/* Section 1: Available Now (Green) */}
-                      {categorizedOffers.available.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 text-xs lg:text-sm font-semibold text-green-700 mb-2">
-                            <CheckCircle className="w-4 h-4" />
-                            Available Now
-                          </div>
-                          <div className="space-y-2">
-                            {categorizedOffers.available.map((offer) => {
-                              const eligibility = eligibilityCache[offer.id];
-                              const isSelected = selectedOffer?.id === offer.id;
-                              return (
-                                <button
-                                  key={offer.id}
-                                  onClick={() => handleOfferSelect(offer)}
-                                  className={`w-full text-left rounded-lg p-2.5 transition-colors ${
-                                    isSelected
-                                      ? "bg-green-100 border-2 border-green-400"
-                                      : "bg-green-50 border-2 border-green-200 hover:bg-green-100 hover:border-green-300"
-                                  }`}
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <div className="p-1.5 bg-white rounded-lg shadow-sm text-green-600 flex-shrink-0">
-                                      {getOfferIcon(offer.offer_type)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-semibold text-gray-900 text-xs lg:text-sm">
-                                        {offer.name}
-                                      </div>
-                                      <div className="text-xs text-gray-700 mt-0.5">
-                                        {formatOfferSummary(offer, eligibility)}
-                                      </div>
-                                      {offer.promo_code && (
-                                        <div className="mt-1">
-                                          <span className="text-xs text-gray-600">
-                                            Code:{" "}
-                                          </span>
-                                          <span className="font-mono font-bold text-xs bg-white px-1.5 py-0.5 rounded border">
-                                            {offer.promo_code}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                    <ChevronRight className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Section 2: Almost There (Amber) */}
-                      {categorizedOffers.almostThere.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 text-xs lg:text-sm font-semibold text-amber-700 mb-2">
-                            <TrendingUp className="w-4 h-4" />
-                            Almost There
-                          </div>
-                          <div className="space-y-2">
-                            {categorizedOffers.almostThere.map((offer) => {
-                              const eligibility = eligibilityCache[offer.id];
-                              return (
-                                <div
-                                  key={offer.id}
-                                  className="bg-amber-50 border border-amber-200 rounded-lg p-2.5"
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <div className="p-1.5 bg-white rounded-lg shadow-sm text-amber-600 flex-shrink-0">
-                                      {getOfferIcon(offer.offer_type)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-semibold text-gray-900 text-xs lg:text-sm">
-                                        {offer.name}
-                                      </div>
-                                      <div className="flex items-center gap-1 mt-0.5">
-                                        <TrendingUp className="w-3 h-3 text-amber-600 flex-shrink-0" />
-                                        <div className="text-xs text-amber-700 font-medium">
-                                          {eligibility.reason}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Section 3: Not Eligible (Grey) */}
-                      {categorizedOffers.notEligible.length > 0 && (
-                        <div>
-                          <div className="text-xs lg:text-sm font-semibold text-gray-500 mb-2">
-                            Not Eligible
-                          </div>
-                          <div className="space-y-2">
-                            {categorizedOffers.notEligible.map((offer) => {
-                              const eligibility = eligibilityCache[offer.id];
-                              return (
-                                <div
-                                  key={offer.id}
-                                  className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 opacity-60"
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <div className="p-1.5 bg-white rounded-lg shadow-sm text-gray-400 flex-shrink-0">
-                                      {getOfferIcon(offer.offer_type)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-semibold text-gray-700 text-xs lg:text-sm">
-                                        {offer.name}
-                                      </div>
-                                      <div className="flex items-center gap-1 mt-0.5">
-                                        <Info className="w-3 h-3 text-gray-500 flex-shrink-0" />
-                                        <div className="text-xs text-gray-600">
-                                          {eligibility.reason}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {offers.length === 0 && (
-                        <div className="text-center text-sm text-gray-500 py-4">
-                          No offers available
-                        </div>
-                      )}
+                  {/* Session Offer Already Used Message */}
+                  {!isOfferLockedByGuest && sessionHasUsedOffer && (
+                    <div className="w-full p-2.5 lg:p-3 bg-amber-50 border-2 border-amber-200 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>Offer Already Applied in This Session</span>
+                      </div>
+                      <p className="text-xs text-amber-600 mt-1 ml-6">
+                        An offer has already been used in this session. Only one
+                        offer can be applied per session.
+                      </p>
                     </div>
                   )}
                 </div>

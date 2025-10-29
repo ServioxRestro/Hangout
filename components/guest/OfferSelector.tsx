@@ -101,7 +101,7 @@ export function OfferSelector({
       const filterField =
         orderType === "dine-in" ? "enabled_for_dinein" : "enabled_for_takeaway";
 
-      // Fetch active session-level offers (applied at billing)
+      // Fetch all active offers (both session-level and order-level)
       const { data: offersData, error: offersError } = await supabase
         .from("offers")
         .select(
@@ -111,12 +111,28 @@ export function OfferSelector({
             *,
             menu_items (*),
             menu_categories (*)
+          ),
+          combo_meals (
+            id,
+            combo_price,
+            is_customizable,
+            combo_meal_items (
+              id,
+              menu_item_id,
+              is_required,
+              quantity,
+              menu_items (
+                id,
+                name,
+                price
+              )
+            )
           )
         `
         )
         .eq("is_active", true)
         .eq(filterField, true) // Filter by order type
-        .eq("application_type", "session_level") // Only session-level offers
+        .in("application_type", ["session_level", "order_level"]) // Include both session and order level offers
         .order("priority", { ascending: false });
 
       if (offersError) throw offersError;

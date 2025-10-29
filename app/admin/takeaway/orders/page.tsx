@@ -77,11 +77,17 @@ export default function TakeawayOrdersPage() {
             menu_items (*)
           ),
           guest_users (*),
-          takeaway_qr_codes (*)
+          takeaway_qr_codes (*),
+          offers:session_offer_id (
+            id,
+            name,
+            offer_type,
+            description
+          )
         `
         )
         .eq("order_type", "takeaway")
-        .not("status", "in", '("cancelled","pending_payment","paid")')
+        .not("status", "in", '("cancelled","paid")')
         .order("created_at", { ascending: false });
 
       if (error) {

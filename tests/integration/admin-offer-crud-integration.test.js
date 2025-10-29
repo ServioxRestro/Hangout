@@ -157,10 +157,9 @@ const testBOGO = test('Create Buy X Get Y Free Offer - Real Scenario', async () 
     valid_hours_start: '10:00:00',
     valid_hours_end: '22:00:00',
     priority: 8,
-    conditions: {
-      buy_quantity: 2
-    },
+    conditions: {},
     benefits: {
+      buy_quantity: 2,
       get_quantity: 1,
       get_same_item: true
     }
@@ -176,7 +175,7 @@ const testBOGO = test('Create Buy X Get Y Free Offer - Real Scenario', async () 
   expect(offer).toBeTruthy();
   expect(offer.offer_type).toBe('item_buy_get_free');
   expect(offer.application_type).toBe('order_level');
-  expect(offer.conditions.buy_quantity).toBe(2);
+  expect(offer.benefits.buy_quantity).toBe(2);
   expect(offer.benefits.get_quantity).toBe(1);
   expect(offer.benefits.get_same_item).toBe(true);
   expect(offer.valid_days).toContain('saturday');
@@ -191,8 +190,8 @@ const testBOGOEdit = test('Edit BOGO Offer - Update quantities', async () => {
   const createData = buildOfferData('item_buy_get_free', {
     name: 'BOGO to Edit',
     application_type: 'order_level',
-    conditions: { buy_quantity: 2 },
-    benefits: { get_quantity: 1 }
+    conditions: {},
+    benefits: { buy_quantity: 2, get_quantity: 1 }
   });
 
   const { data: created } = await supabase
@@ -206,8 +205,8 @@ const testBOGOEdit = test('Edit BOGO Offer - Update quantities', async () => {
   // Now edit it (simulating frontend edit mode)
   const updateData = {
     name: 'BOGO Updated - Buy 3 Get 2',
-    conditions: { buy_quantity: 3 },
-    benefits: { get_quantity: 2, get_same_item: false },
+    conditions: {},
+    benefits: { buy_quantity: 3, get_quantity: 2, get_same_item: false },
     priority: 9
   };
 
@@ -220,7 +219,7 @@ const testBOGOEdit = test('Edit BOGO Offer - Update quantities', async () => {
 
   expect(error).toBeFalsy();
   expect(updated.name).toBe('BOGO Updated - Buy 3 Get 2');
-  expect(updated.conditions.buy_quantity).toBe(3);
+  expect(updated.benefits.buy_quantity).toBe(3);
   expect(updated.benefits.get_quantity).toBe(2);
   expect(updated.benefits.get_same_item).toBe(false);
   expect(updated.priority).toBe(9);

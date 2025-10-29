@@ -341,24 +341,44 @@ async function checkItemBuyGetFree(
     };
   }
 
-  const buyQuantity = conditions?.buy_quantity || 2;
-  const freeQuantity = benefits.free_quantity || 1;
+  const buyQuantity = benefits?.buy_quantity || 2;
+  const freeQuantity = benefits?.get_quantity || 1;
 
-  // Find qualifying items in cart
-  const qualifyingItemIds = offerItems
+  // Separate buy items and get items
+  const buyItems = offerItems.filter((oi) => oi.item_type === "buy");
+  const getItems = offerItems.filter((oi) => oi.item_type === "get" || oi.item_type === "get_free");
+
+  if (buyItems.length === 0) {
+    return {
+      isEligible: false,
+      reason: "Buy items not configured",
+      discount: 0,
+    };
+  }
+
+  if (getItems.length === 0) {
+    return {
+      isEligible: false,
+      reason: "Free items not configured",
+      discount: 0,
+    };
+  }
+
+  // Find qualifying BUY items in cart
+  const buyItemIds = buyItems
     .filter((oi) => oi.menu_item_id)
     .map((oi) => oi.menu_item_id!);
-  const qualifyingCategoryIds = offerItems
+  const buyCategoryIds = buyItems
     .filter((oi) => oi.menu_category_id)
     .map((oi) => oi.menu_category_id!);
 
-  const matchingItems = cartItems.filter(
+  const matchingBuyItems = cartItems.filter(
     (item) =>
-      qualifyingItemIds.includes(item.id) ||
-      (item.category_id && qualifyingCategoryIds.includes(item.category_id))
+      buyItemIds.includes(item.id) ||
+      (item.category_id && buyCategoryIds.includes(item.category_id))
   );
 
-  const totalQualifyingQty = matchingItems.reduce(
+  const totalQualifyingQty = matchingBuyItems.reduce(
     (sum, item) => sum + item.quantity,
     0
   );
@@ -372,25 +392,72 @@ async function checkItemBuyGetFree(
     };
   }
 
-  // Find cheapest item to give free (best value for restaurant)
-  const sortedItems = [...matchingItems].sort((a, b) => a.price - b.price);
-  const cheapestItem = sortedItems[0];
+  // Find the item to give free from GET items (not from buy items!)
+  const getItemIds = getItems
+    .filter((oi) => oi.menu_item_id)
+    .map((oi) => oi.menu_item_id!);
 
-  if (!cheapestItem) {
+  // If get_same_item is true, give the same item as bought
+  if (benefits.get_same_item) {
+    // Give the cheapest buy item as free
+    const sortedBuyItems = [...matchingBuyItems].sort((a, b) => a.price - b.price);
+    const cheapestItem = sortedBuyItems[0];
+
+    if (!cheapestItem) {
+      return {
+        isEligible: false,
+        reason: "No qualifying items found",
+        discount: 0,
+      };
+    }
+
+    const freeItems: CartItem[] = [
+      {
+        id: cheapestItem.id,
+        name: cheapestItem.name,
+        price: cheapestItem.price,
+        quantity: freeQuantity,
+        category_id: cheapestItem.category_id,
+        isFree: true,
+        linkedOfferId: offer.id,
+      },
+    ];
+
+    return {
+      isEligible: true,
+      discount: cheapestItem.price * freeQuantity,
+      freeItems,
+    };
+  }
+
+  // Get the FREE item from the "get" items list
+  // Fetch menu item details for the get items
+  const { data: freeMenuItems } = await supabase
+    .from("menu_items")
+    .select("id, name, price, category_id")
+    .in("id", getItemIds);
+
+  if (!freeMenuItems || freeMenuItems.length === 0) {
     return {
       isEligible: false,
-      reason: "No qualifying items found",
+      reason: "Free item not found",
       discount: 0,
     };
   }
 
+  // Give the first configured free item (or cheapest if multiple)
+  const sortedFreeItems = [...freeMenuItems].sort((a, b) => 
+    parseFloat(a.price as any) - parseFloat(b.price as any)
+  );
+  const freeMenuItem = sortedFreeItems[0];
+
   const freeItems: CartItem[] = [
     {
-      id: cheapestItem.id,
-      name: cheapestItem.name,
-      price: cheapestItem.price,
+      id: freeMenuItem.id,
+      name: freeMenuItem.name,
+      price: parseFloat(freeMenuItem.price as any),
       quantity: freeQuantity,
-      category_id: cheapestItem.category_id,
+      category_id: freeMenuItem.category_id || undefined,
       isFree: true,
       linkedOfferId: offer.id,
     },
@@ -398,7 +465,7 @@ async function checkItemBuyGetFree(
 
   return {
     isEligible: true,
-    discount: cheapestItem.price * freeQuantity,
+    discount: parseFloat(freeMenuItem.price as any) * freeQuantity,
     freeItems,
   };
 }
@@ -627,8 +694,23 @@ async function checkComboMeal(
   cartItems: CartItem[],
   benefits: any
 ): Promise<OfferEligibility> {
-  const comboId = benefits.combo_id;
-  if (!comboId) {
+  // Fetch combo meal by offer_id instead of combo_id from benefits
+  const { data: comboMeals } = await supabase
+    .from("combo_meals")
+    .select(`
+      id, 
+      combo_price, 
+      is_customizable,
+      combo_meal_items(
+        menu_item_id, 
+        quantity, 
+        is_required,
+        menu_items(id, name, price)
+      )
+    `)
+    .eq("offer_id", offer.id);
+
+  if (!comboMeals || comboMeals.length === 0) {
     return {
       isEligible: false,
       reason: "Combo not configured",
@@ -636,35 +718,26 @@ async function checkComboMeal(
     };
   }
 
-  // Fetch combo meal items
-  const { data: comboMeal } = await supabase
-    .from("combo_meals")
-    .select("id, combo_price, combo_meal_items(menu_item_id, quantity)")
-    .eq("id", comboId)
-    .single();
-
-  if (!comboMeal || !comboMeal.combo_meal_items) {
+  const comboMeal = comboMeals[0];
+  if (!comboMeal.combo_meal_items || comboMeal.combo_meal_items.length === 0) {
     return {
       isEligible: false,
-      reason: "Combo not found",
+      reason: "Combo items not found",
       discount: 0,
     };
   }
 
-  // Check if cart has all required items
-  const requiredItems = comboMeal.combo_meal_items as any[];
+  // Check only required items (ignore optional items for eligibility)
+  const requiredItems = comboMeal.combo_meal_items.filter(
+    (item: any) => item.is_required
+  );
   const missingItems: string[] = [];
 
   for (const reqItem of requiredItems) {
     const cartItem = cartItems.find((ci) => ci.id === reqItem.menu_item_id);
-    if (!cartItem || cartItem.quantity < reqItem.quantity) {
-      // Fetch item name
-      const { data } = await supabase
-        .from("menu_items")
-        .select("name")
-        .eq("id", reqItem.menu_item_id)
-        .single();
-      missingItems.push(data?.name || "item");
+    const requiredQty = reqItem.quantity || 1;
+    if (!cartItem || cartItem.quantity < requiredQty) {
+      missingItems.push(reqItem.menu_items?.name || "item");
     }
   }
 
@@ -676,13 +749,13 @@ async function checkComboMeal(
     };
   }
 
-  // Calculate regular price of items
-  const regularTotal = requiredItems.reduce((sum, reqItem) => {
-    const cartItem = cartItems.find((ci) => ci.id === reqItem.menu_item_id);
-    return sum + (cartItem?.price || 0) * reqItem.quantity;
+  // Calculate regular price of required items
+  const regularTotal = requiredItems.reduce((sum: number, reqItem: any) => {
+    const itemQuantity = reqItem.quantity || 1;
+    return sum + (parseFloat(reqItem.menu_items?.price || 0) * itemQuantity);
   }, 0);
 
-  const comboPrice = comboMeal.combo_price || 0;
+  const comboPrice = parseFloat(comboMeal.combo_price as any) || 0;
   const discount = regularTotal - comboPrice;
 
   return {

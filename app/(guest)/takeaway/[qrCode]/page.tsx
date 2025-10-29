@@ -241,12 +241,16 @@ export default function TakeawayMenuPage() {
   const addToCart = (item: MenuItem, quantity: number = 1) => {
     // No login check - allow adding to cart without login
     setCart((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
+      // Find existing regular (non-free) item with same id
+      const existing = prev.find((i) => i.id === item.id && !(i as any).isFree);
       if (existing) {
         return prev.map((i) =>
-          i.id === item.id ? { ...i, quantity: i.quantity + quantity } : i
+          i.id === item.id && !(i as any).isFree
+            ? { ...i, quantity: i.quantity + quantity }
+            : i
         );
       }
+      // Add as new regular item (even if free item with same id exists)
       return [
         ...prev,
         {
@@ -267,11 +271,17 @@ export default function TakeawayMenuPage() {
 
   const updateCartQuantity = (itemId: string, newQuantity: number) => {
     if (newQuantity <= 0) {
-      setCart((prev) => prev.filter((item) => item.id !== itemId));
+      // Only remove regular (non-free) items
+      setCart((prev) =>
+        prev.filter((item) => !(item.id === itemId && !(item as any).isFree))
+      );
     } else {
+      // Only update regular (non-free) items
       setCart((prev) =>
         prev.map((item) =>
-          item.id === itemId ? { ...item, quantity: newQuantity } : item
+          item.id === itemId && !(item as any).isFree
+            ? { ...item, quantity: newQuantity }
+            : item
         )
       );
     }
@@ -329,7 +339,9 @@ export default function TakeawayMenuPage() {
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <h1 className="text-lg font-bold text-gray-900">Takeaway Order</h1>
-            <p className="text-xs text-gray-600">{guestUser?.name || "Guest"}</p>
+            <p className="text-xs text-gray-600">
+              {guestUser?.name || "Guest"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5">
@@ -350,11 +362,16 @@ export default function TakeawayMenuPage() {
         menuItems={menuItems}
         showVegOnly={takeawayQR.is_veg_only ? true : showVegOnly}
         showNonVegOnly={showNonVegOnly}
-        onVegFilterToggle={() => !takeawayQR.is_veg_only && setShowVegOnly((prev) => !prev)}
+        onVegFilterToggle={() =>
+          !takeawayQR.is_veg_only && setShowVegOnly((prev) => !prev)
+        }
         onNonVegFilterToggle={() => setShowNonVegOnly((prev) => !prev)}
         hideNonVegFilter={takeawayQR.is_veg_only}
         renderMenuItem={(item) => {
-          const cartItem = cart.find((i) => i.id === item.id);
+          // Only count regular (non-free) items for menu display
+          const cartItem = cart.find(
+            (i) => i.id === item.id && !(i as any).isFree
+          );
           const currentQuantity = cartItem?.quantity || 0;
           // Find the full menu item from our state
           const fullItem = menuItems.find((mi) => mi.id === item.id);
@@ -400,7 +417,8 @@ export default function TakeawayMenuPage() {
               <User className="w-8 h-8 text-purple-600" />
             </div>
             <p className="text-gray-600">
-              Please enter your name so we can identify your order when you come to pick it up.
+              Please enter your name so we can identify your order when you come
+              to pick it up.
             </p>
           </div>
 

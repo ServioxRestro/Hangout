@@ -63,12 +63,56 @@ export function BillProcessingModal({
   const [discountPercentage, setDiscountPercentage] = useState(0);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
+  const [existingBill, setExistingBill] = useState<any>(null);
+  const [loadingBill, setLoadingBill] = useState(true);
 
   useEffect(() => {
+    fetchExistingBill();
     fetchTaxSettings();
     fetchOfferInfo();
     fetchTaxMode();
   }, []);
+
+  const fetchExistingBill = async () => {
+    if (!table.session) {
+      setLoadingBill(false);
+      return;
+    }
+
+    try {
+      const { data: billData, error: billError } = await supabase
+        .from("bills")
+        .select(
+          `
+          *,
+          bill_items (
+            id,
+            item_name,
+            quantity,
+            unit_price,
+            total_price
+          )
+        `
+        )
+        .eq("table_session_id", table.session.id)
+        .in("payment_status", ["pending", "paid"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (billError && billError.code !== "PGRST116") {
+        console.error("Error fetching existing bill:", billError);
+      }
+
+      if (billData) {
+        setExistingBill(billData);
+      }
+    } catch (error) {
+      console.error("Error fetching bill:", error);
+    } finally {
+      setLoadingBill(false);
+    }
+  };
 
   const fetchOfferInfo = async () => {
     try {
@@ -224,7 +268,7 @@ export function BillProcessingModal({
       };
     }
 
-    // Prepare bill items from orders and manual items
+    // Build bill items from order items (always use original prices from items)
     const orderItems: BillItem[] = (table.session.orders || []).flatMap(
       (order) =>
         (order.order_items || []).map((item) => ({
@@ -245,12 +289,42 @@ export function BillProcessingModal({
 
     const allItems = [...orderItems, ...manualBillItems];
 
-    // Calculate discount percentage from offer if available
-    const effectiveDiscountPercentage = offerInfo?.discount
-      ? (offerInfo.discount /
-          allItems.reduce((sum, item) => sum + item.total_price, 0)) *
-        100
-      : discountPercentage;
+    // Calculate actual discount for combo/BOGO orders
+    // Discount = (sum of item prices) - (order total)
+    let actualDiscountAmount = 0;
+
+    // Check if any order has combo or BOGO offer
+    const comboOrBogoOrder = (table.session.orders || []).find(
+      (order) =>
+        order.session_offer?.offer_type === "combo_meal" ||
+        order.session_offer?.offer_type === "item_buy_get_free"
+    );
+
+    if (comboOrBogoOrder) {
+      // Sum of all items in the combo/BOGO order at original prices
+      const itemsSum = (comboOrBogoOrder.order_items || []).reduce(
+        (sum, item) => sum + item.total_price,
+        0
+      );
+      // The difference is the discount
+      actualDiscountAmount = itemsSum - comboOrBogoOrder.total_amount;
+    }
+
+    // Calculate discount percentage for the billing utility
+    const itemsTotal = allItems.reduce(
+      (sum, item) => sum + item.total_price,
+      0
+    );
+
+    let effectiveDiscountPercentage = discountPercentage;
+
+    if (actualDiscountAmount > 0) {
+      // Use actual discount from combo/BOGO
+      effectiveDiscountPercentage = (actualDiscountAmount / itemsTotal) * 100;
+    } else if (offerInfo?.discount) {
+      // Use offer discount from session offers
+      effectiveDiscountPercentage = (offerInfo.discount / itemsTotal) * 100;
+    }
 
     // Use the utility function with tax_inclusive parameter
     const calculation = calculateBillUtil(
@@ -263,7 +337,27 @@ export function BillProcessingModal({
     return calculation;
   };
 
-  const billSummary = calculateBill();
+  // Use existing bill if it exists, otherwise calculate preview
+  const billSummary = existingBill
+    ? {
+        items_with_taxes: (existingBill.bill_items || []).map((item: any) => ({
+          name: item.item_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
+          base_price: item.unit_price,
+          item_taxes: [],
+        })),
+        subtotal: Number(existingBill.subtotal || 0),
+        taxable_subtotal: Number(existingBill.subtotal || 0),
+        total_gst: Number(existingBill.total_tax_amount || 0),
+        subtotal_with_tax:
+          Number(existingBill.subtotal || 0) +
+          Number(existingBill.total_tax_amount || 0),
+        discount_amount: Number(existingBill.discount_amount || 0),
+        final_amount: Number(existingBill.final_amount || 0),
+      }
+    : calculateBill();
 
   const handleProcessBill = async () => {
     if (!table.session) return;
@@ -317,9 +411,12 @@ export function BillProcessingModal({
 
       // Aggregate taxes from all items for bill table
       const aggregatedTaxes = billSummary.items_with_taxes.reduce(
-        (acc, item) => {
-          item.item_taxes.forEach((tax) => {
-            const existing = acc.find((t) => t.name === tax.name);
+        (
+          acc: Array<{ name: string; rate: number; amount: number }>,
+          item: any
+        ) => {
+          item.item_taxes.forEach((tax: any) => {
+            const existing = acc.find((t: any) => t.name === tax.name);
             if (existing) {
               existing.amount += tax.amount;
             } else {
@@ -341,18 +438,23 @@ export function BillProcessingModal({
           discount_percentage: offerInfo ? 0 : discountPercentage, // Set to 0 if offer, otherwise manual %
           discount_amount: billSummary.discount_amount,
           cgst_rate:
-            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.rate || 0,
-          cgst_amount:
-            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.amount || 0,
-          sgst_rate:
-            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.rate || 0,
-          sgst_amount:
-            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.amount || 0,
-          service_charge_rate:
-            aggregatedTaxes.find((t) => t.name.includes("Service"))?.rate || 0,
-          service_charge_amount:
-            aggregatedTaxes.find((t) => t.name.includes("Service"))?.amount ||
+            aggregatedTaxes.find((t: any) => t.name.includes("CGST"))?.rate ||
             0,
+          cgst_amount:
+            aggregatedTaxes.find((t: any) => t.name.includes("CGST"))?.amount ||
+            0,
+          sgst_rate:
+            aggregatedTaxes.find((t: any) => t.name.includes("SGST"))?.rate ||
+            0,
+          sgst_amount:
+            aggregatedTaxes.find((t: any) => t.name.includes("SGST"))?.amount ||
+            0,
+          service_charge_rate:
+            aggregatedTaxes.find((t: any) => t.name.includes("Service"))
+              ?.rate || 0,
+          service_charge_amount:
+            aggregatedTaxes.find((t: any) => t.name.includes("Service"))
+              ?.amount || 0,
           total_tax_amount: billSummary.total_gst,
           final_amount: billSummary.final_amount,
           payment_status: "pending", // Staff processed, awaiting manager confirmation
@@ -417,6 +519,22 @@ export function BillProcessingModal({
 
   if (!table.session) return null;
 
+  const isExistingBill = !!existingBill;
+  const billTitle = isExistingBill ? "View Bill" : "Process Bill";
+
+  if (loadingBill) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-xl p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading bill...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -424,8 +542,16 @@ export function BillProcessingModal({
         <div className="flex items-center justify-between p-6 border-b">
           <div>
             <h3 className="text-xl font-bold text-gray-900">
-              Process Bill - Table {table.table.table_number}
+              {billTitle} - Table {table.table.table_number}
             </h3>
+            {isExistingBill && (
+              <p className="text-sm text-gray-600 mt-1">
+                Bill #{existingBill.bill_number} •{" "}
+                <span className="capitalize">
+                  {existingBill.payment_status}
+                </span>
+              </p>
+            )}
             <p className="text-sm text-gray-600 mt-1">
               Bill will be sent to manager for confirmation
             </p>
@@ -452,79 +578,106 @@ export function BillProcessingModal({
         <div className="p-6 space-y-4">
           {/* Order Items */}
           <div>
-            <h4 className="font-semibold text-gray-900 mb-3">Order Items</h4>
+            <h4 className="font-semibold text-gray-900 mb-3">
+              {isExistingBill ? "Bill Items" : "Order Items"}
+            </h4>
             <div className="space-y-2">
-              {(table.session.orders || []).map((order) =>
-                (order.order_items || []).map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <span className="font-medium text-gray-900">
-                        {item.quantity}x {item.menu_items?.name}
-                      </span>
-                      <div className="text-sm text-gray-600">
-                        {formatCurrency(item.unit_price)} each
+              {isExistingBill
+                ? // Show items from existing bill
+                  (existingBill.bill_items || []).map((item: any) => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div>
+                        <span className="font-medium text-gray-900">
+                          {item.quantity}x {item.item_name}
+                        </span>
+                        <div className="text-sm text-gray-600">
+                          {formatCurrency(item.unit_price)} each
+                        </div>
                       </div>
-                    </div>
-                    <span className="font-semibold text-gray-900">
-                      {formatCurrency(item.total_price)}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Manual Items */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-gray-900">Additional Items</h4>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onAddManualItem}
-                leftIcon={<Plus className="w-3 h-3" />}
-              >
-                Add Item
-              </Button>
-            </div>
-            {manualItems.length > 0 ? (
-              <div className="space-y-2">
-                {manualItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex justify-between items-center p-3 bg-amber-50 border border-amber-200 rounded-lg"
-                  >
-                    <div>
-                      <span className="font-medium text-gray-900">
-                        {item.quantity}x {item.name}
-                      </span>
-                      <div className="text-sm text-gray-600">
-                        {formatCurrency(item.unit_price)} each
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
                       <span className="font-semibold text-gray-900">
                         {formatCurrency(item.total_price)}
                       </span>
-                      <button
-                        onClick={() => onRemoveManualItem(item.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 italic">
-                No additional items
-              </p>
-            )}
+                  ))
+                : // Show items from orders (preview mode)
+                  (table.session.orders || []).map((order) =>
+                    (order.order_items || []).map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
+                      >
+                        <div>
+                          <span className="font-medium text-gray-900">
+                            {item.quantity}x {item.menu_items?.name}
+                          </span>
+                          <div className="text-sm text-gray-600">
+                            {formatCurrency(item.unit_price)} each
+                          </div>
+                        </div>
+                        <span className="font-semibold text-gray-900">
+                          {formatCurrency(item.total_price)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+            </div>
           </div>
+
+          {/* Manual Items - Only show in preview mode */}
+          {!isExistingBill && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900">
+                  Additional Items
+                </h4>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={onAddManualItem}
+                  leftIcon={<Plus className="w-3 h-3" />}
+                >
+                  Add Item
+                </Button>
+              </div>
+              {manualItems.length > 0 ? (
+                <div className="space-y-2">
+                  {manualItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-center p-3 bg-amber-50 border border-amber-200 rounded-lg"
+                    >
+                      <div>
+                        <span className="font-medium text-gray-900">
+                          {item.quantity}x {item.name}
+                        </span>
+                        <div className="text-sm text-gray-600">
+                          {formatCurrency(item.unit_price)} each
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-gray-900">
+                          {formatCurrency(item.total_price)}
+                        </span>
+                        <button
+                          onClick={() => onRemoveManualItem(item.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic">
+                  No additional items
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Bill Summary */}
           <div className="border-t pt-4 space-y-3">
@@ -590,28 +743,38 @@ export function BillProcessingModal({
             </div>
           </div>
 
-          {/* Payment Method */}
-          <div className="border-t pt-4">
-            <h4 className="font-semibold text-gray-900 mb-3">Payment Method</h4>
-            <div className="grid grid-cols-3 gap-3">
-              {(["cash", "upi", "card"] as const).map((method) => (
-                <button
-                  key={method}
-                  onClick={() => setPaymentMethod(method)}
-                  className={`p-4 text-center border-2 rounded-lg transition-all ${
-                    paymentMethod === method
-                      ? "border-green-500 bg-green-50 text-green-700"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <div className="text-3xl mb-2">
-                    {method === "cash" ? "💵" : method === "upi" ? "📱" : "💳"}
-                  </div>
-                  <div className="text-sm font-medium capitalize">{method}</div>
-                </button>
-              ))}
+          {/* Payment Method - Only show in preview mode */}
+          {!isExistingBill && (
+            <div className="border-t pt-4">
+              <h4 className="font-semibold text-gray-900 mb-3">
+                Payment Method
+              </h4>
+              <div className="grid grid-cols-3 gap-3">
+                {(["cash", "upi", "card"] as const).map((method) => (
+                  <button
+                    key={method}
+                    onClick={() => setPaymentMethod(method)}
+                    className={`p-4 text-center border-2 rounded-lg transition-all ${
+                      paymentMethod === method
+                        ? "border-green-500 bg-green-50 text-green-700"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">
+                      {method === "cash"
+                        ? "💵"
+                        : method === "upi"
+                        ? "📱"
+                        : "💳"}
+                    </div>
+                    <div className="text-sm font-medium capitalize">
+                      {method}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -619,15 +782,19 @@ export function BillProcessingModal({
           <Button variant="secondary" onClick={onClose} className="flex-1">
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleProcessBill}
-            disabled={processing}
-            className="flex-1"
-            leftIcon={processing ? undefined : <Receipt className="w-4 h-4" />}
-          >
-            {processing ? "Processing..." : "Generate Bill"}
-          </Button>
+          {!isExistingBill && (
+            <Button
+              variant="primary"
+              onClick={handleProcessBill}
+              disabled={processing}
+              className="flex-1"
+              leftIcon={
+                processing ? undefined : <Receipt className="w-4 h-4" />
+              }
+            >
+              {processing ? "Processing..." : "Generate Bill"}
+            </Button>
+          )}
         </div>
       </div>
     </div>

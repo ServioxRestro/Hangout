@@ -10,6 +10,8 @@ interface CartItem {
   price: number;
   quantity: number;
   is_veg: boolean;
+  isFree?: boolean;
+  linkedOfferId?: string;
 }
 
 interface OrderConfirmationModalProps {
@@ -122,7 +124,9 @@ export default function OrderConfirmationModal({
                 <div className="relative z-10 flex items-center justify-center gap-3">
                   <Check className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
                   <span className="text-lg text-white">Place Order Now</span>
-                  <span className="ml-2 font-mono text-sm text-white opacity-95">({timeLeft}s)</span>
+                  <span className="ml-2 font-mono text-sm text-white opacity-95">
+                    ({timeLeft}s)
+                  </span>
                 </div>
               </button>
             </div>
@@ -133,11 +137,11 @@ export default function OrderConfirmationModal({
               disabled={isPlacingOrder}
               className={`w-full text-sm font-semibold py-2 px-4 rounded-lg transition-colors ${
                 isPlacingOrder
-                  ? 'text-gray-400 cursor-not-allowed bg-gray-100'
-                  : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+                  ? "text-gray-400 cursor-not-allowed bg-gray-100"
+                  : "text-red-500 hover:text-red-700 hover:bg-red-50"
               }`}
             >
-              {isPlacingOrder ? 'Processing order...' : 'Cancel Order'}
+              {isPlacingOrder ? "Processing order..." : "Cancel Order"}
             </button>
 
             {/* Order Summary */}
@@ -153,19 +157,32 @@ export default function OrderConfirmationModal({
               <div className="space-y-3 mb-4 max-h-48 overflow-y-auto">
                 {cartItems.map((item) => (
                   <div key={item.id} className="flex items-start gap-3 text-sm">
-                    <span className={`text-xs mt-0.5 ${item.is_veg ? 'text-green-600' : 'text-red-600'}`}>
-                      {item.is_veg ? '🟢' : '🔴'}
+                    <span
+                      className={`text-xs mt-0.5 ${
+                        item.is_veg ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {item.is_veg ? "🟢" : "🔴"}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 truncate">
                         {item.name}
+                        {item.isFree && (
+                          <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                            FREE
+                          </span>
+                        )}
                       </div>
                       <div className="text-gray-500 text-xs">
                         {formatCurrency(item.price)} × {item.quantity}
                       </div>
                     </div>
                     <div className="font-semibold text-gray-900 whitespace-nowrap">
-                      {formatCurrency(item.price * item.quantity)}
+                      {item.isFree ? (
+                        <span className="text-green-600">FREE</span>
+                      ) : (
+                        formatCurrency(item.price * item.quantity)
+                      )}
                     </div>
                   </div>
                 ))}
@@ -189,7 +206,9 @@ export default function OrderConfirmationModal({
                 </div>
                 <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span className="text-green-600">{formatCurrency(finalAmount)}</span>
+                  <span className="text-green-600">
+                    {formatCurrency(finalAmount)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -197,7 +216,9 @@ export default function OrderConfirmationModal({
             {/* Info Message */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-800">
-                <span className="font-semibold">Review your order:</span> You can cancel within {countdownSeconds} seconds or click "Place Order Now" to send it immediately.
+                <span className="font-semibold">Review your order:</span> You
+                can cancel within {countdownSeconds} seconds or click "Place
+                Order Now" to send it immediately.
               </p>
             </div>
           </div>

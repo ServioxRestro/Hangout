@@ -382,7 +382,7 @@ async function fetchMenuMetrics(startDate: string | null, endDate: string | null
 
 // Offers Analytics - Optimized with Supabase filtering
 async function fetchOffersMetrics(startDate: string | null, endDate: string | null) {
-  // Get all offers
+  // Get all offers (including inactive ones for historical data)
   const { data: offers, error } = await supabase
     .from("offers")
     .select("id, name, offer_type, usage_count, is_active, created_at");
@@ -390,9 +390,10 @@ async function fetchOffersMetrics(startDate: string | null, endDate: string | nu
   if (error) throw error;
 
   // Get offer usage with date filtering
+  // Use LEFT JOIN to include usage even if offer was deleted
   let usageQuery = supabase
     .from("offer_usage")
-    .select("offer_id, discount_amount, used_at, offers!inner(name)");
+    .select("offer_id, discount_amount, used_at, offers(name)");
 
   if (startDate) {
     usageQuery = usageQuery.gte("used_at", startDate);
@@ -405,20 +406,53 @@ async function fetchOffersMetrics(startDate: string | null, endDate: string | nu
 
   if (usageError) throw usageError;
 
-  // Calculate metrics per offer
-  const offerMetrics = offers?.map((offer) => {
+  // Create a map of offer IDs to names from existing offers
+  const offerMap = new Map(offers?.map(o => [o.id, o]) || []);
+
+  // Calculate metrics per offer (including deleted offers with usage)
+  const offerMetrics: Array<{
+    id: string;
+    name: string;
+    type: string;
+    usageCount: number;
+    totalDiscount: number;
+    isActive: boolean;
+  }> = [];
+
+  // Add metrics for existing offers
+  offers?.forEach((offer) => {
     const usages = offerUsage?.filter((u) => u.offer_id === offer.id) || [];
     const totalDiscount = usages.reduce((sum, u) => sum + Number(u.discount_amount), 0);
 
-    return {
+    offerMetrics.push({
       id: offer.id,
       name: offer.name,
       type: offer.offer_type,
       usageCount: usages.length,
       totalDiscount,
       isActive: offer.is_active,
-    };
-  }) || [];
+    });
+  });
+
+  // Add metrics for deleted offers that have usage
+  const deletedOfferUsage = offerUsage?.filter(u => !offerMap.has(u.offer_id)) || [];
+  const deletedOfferIds = new Set(deletedOfferUsage.map(u => u.offer_id));
+
+  deletedOfferIds.forEach((offerId) => {
+    const usages = deletedOfferUsage.filter(u => u.offer_id === offerId);
+    const totalDiscount = usages.reduce((sum, u) => sum + Number(u.discount_amount), 0);
+    // Try to get name from first usage record, fallback to "Deleted Offer"
+    const offerName = usages[0]?.offers?.name || "Deleted Offer";
+
+    offerMetrics.push({
+      id: offerId,
+      name: `${offerName} (Deleted)`,
+      type: "unknown",
+      usageCount: usages.length,
+      totalDiscount,
+      isActive: false,
+    });
+  });
 
   // Sort by usage
   const byOffer = offerMetrics

@@ -6,6 +6,9 @@ export interface BillItem {
   unit_price: number;
   total_price: number;
   is_manual?: boolean;
+  order_id?: string; // Track which order this item belongs to
+  order_total?: number; // The total amount of the order (for combo/BOGO handling)
+  order_offer_type?: string; // The offer type applied to this order
 }
 
 export interface BillItemWithTaxes extends BillItem {

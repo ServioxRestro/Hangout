@@ -77,12 +77,12 @@ export function TakeawayBillModal({
         .eq("setting_key", "tax_inclusive")
         .single();
 
-      if (error && error.code !== 'PGRST116') {
+      if (error && error.code !== "PGRST116") {
         console.error("Error fetching tax mode:", error);
         return;
       }
 
-      setTaxInclusive(data?.setting_value === 'true');
+      setTaxInclusive(data?.setting_value === "true");
     } catch (error) {
       console.error("Error fetching tax mode:", error);
     }
@@ -99,16 +99,68 @@ export function TakeawayBillModal({
       }))
     );
 
+    // Calculate actual discount for combo/BOGO orders
+    // Discount = (sum of item prices) - (order total)
+    let actualDiscountAmount = 0;
+
+    // Check if any order has combo or BOGO offer
+    const comboOrBogoOrder = customer.orders.find(
+      (order) =>
+        order.offers?.offer_type === "combo_meal" ||
+        order.offers?.offer_type === "item_buy_get_free"
+    );
+
+    if (comboOrBogoOrder) {
+      // Sum of all items in the combo/BOGO order at original prices
+      const itemsSum = (comboOrBogoOrder.order_items || []).reduce(
+        (sum: number, item: any) => sum + item.total_price,
+        0
+      );
+      // The difference is the discount
+      actualDiscountAmount = itemsSum - comboOrBogoOrder.total_amount;
+    }
+
+    // Calculate discount percentage for the billing utility
+    const itemsTotal = billItems.reduce(
+      (sum, item) => sum + item.total_price,
+      0
+    );
+
+    let effectiveDiscountPercentage = discountPercentage;
+
+    if (actualDiscountAmount > 0) {
+      // Use actual discount from combo/BOGO
+      effectiveDiscountPercentage = (actualDiscountAmount / itemsTotal) * 100;
+    } else if (offerDiscount > 0) {
+      // Use offer discount from other offer types
+      effectiveDiscountPercentage = (offerDiscount / itemsTotal) * 100;
+    }
+
     // Use the utility function with tax_inclusive parameter
     return calculateBillUtil(
       billItems,
-      discountPercentage,
-      taxSettings.map(tax => ({ name: tax.name, rate: tax.rate })),
+      effectiveDiscountPercentage,
+      taxSettings.map((tax) => ({ name: tax.name, rate: tax.rate })),
       taxInclusive
     );
   };
 
   const bill = calculateBill();
+
+  // Get offer information from first order (all orders have same offer for a customer)
+  const appliedOffer = customer.orders[0]?.offers || null;
+  const offerDiscount = customer.orders[0]?.total_amount
+    ? customer.orders.reduce((sum, order) => {
+        // Sum up the actual discount from order.total_amount
+        // which already accounts for all offer types (combo, BOGO, percentage, etc.)
+        const orderSubtotal = order.order_items.reduce(
+          (itemSum: number, item: any) =>
+            itemSum + (item.menu_items?.price || 0) * item.quantity,
+          0
+        );
+        return sum + (orderSubtotal - order.total_amount);
+      }, 0)
+    : 0;
 
   const handleProcessBill = async () => {
     setProcessing(true);
@@ -131,8 +183,8 @@ export function TakeawayBillModal({
 
       // Aggregate taxes from all items for bill table
       const aggregatedTaxes = bill.items_with_taxes.reduce((acc, item) => {
-        item.item_taxes.forEach(tax => {
-          const existing = acc.find(t => t.name === tax.name);
+        item.item_taxes.forEach((tax) => {
+          const existing = acc.find((t) => t.name === tax.name);
           if (existing) {
             existing.amount += tax.amount;
           } else {
@@ -162,7 +214,8 @@ export function TakeawayBillModal({
           service_charge_rate:
             aggregatedTaxes.find((t) => t.name.includes("Service"))?.rate || 0,
           service_charge_amount:
-            aggregatedTaxes.find((t) => t.name.includes("Service"))?.amount || 0,
+            aggregatedTaxes.find((t) => t.name.includes("Service"))?.amount ||
+            0,
           total_tax_amount: bill.total_gst,
           final_amount: bill.final_amount,
           payment_status: "pending", // Staff processed, awaiting manager confirmation
@@ -264,9 +317,26 @@ export function TakeawayBillModal({
                 </span>
               </div>
 
-              {/* Discount Input */}
+              {/* Offer Discount (if applied) */}
+              {appliedOffer && offerDiscount > 0 && (
+                <div className="flex justify-between items-center text-sm bg-green-50 -mx-4 px-4 py-2 border-y border-green-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-700 font-medium">
+                      Offer Applied:
+                    </span>
+                    <span className="text-green-600 text-xs">
+                      {appliedOffer.name}
+                    </span>
+                  </div>
+                  <span className="font-medium text-green-700">
+                    -{formatCurrency(offerDiscount)}
+                  </span>
+                </div>
+              )}
+
+              {/* Manual Discount Input */}
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600">Discount:</span>
+                <span className="text-gray-600">Additional Discount:</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
@@ -305,9 +375,7 @@ export function TakeawayBillModal({
 
             {/* Payment Method */}
             <div>
-              <h3 className="font-medium mb-3 text-gray-900">
-                Payment Method
-              </h3>
+              <h3 className="font-medium mb-3 text-gray-900">Payment Method</h3>
               <div className="grid grid-cols-3 gap-2">
                 {(["cash", "upi", "card"] as const).map((method) => (
                   <button

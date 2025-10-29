@@ -279,14 +279,17 @@ export default function TablePage() {
     is_veg?: boolean | null;
   }) => {
     setCart((prev) => {
-      const existingItem = prev.find((cartItem) => cartItem.id === item.id);
+      // Find existing regular (non-free) item with same id
+      const existingItem = prev.find(
+        (cartItem) => cartItem.id === item.id && !(cartItem as any).isFree
+      );
       if (existingItem) {
         const newQuantity = existingItem.quantity + 1;
         // Show toast with updated quantity
         setToastData({ itemName: item.name, quantity: newQuantity });
         setShowToast(true);
         return prev.map((cartItem) =>
-          cartItem.id === item.id
+          cartItem.id === item.id && !(cartItem as any).isFree
             ? { ...cartItem, quantity: newQuantity }
             : cartItem
         );
@@ -294,6 +297,7 @@ export default function TablePage() {
         // Show toast for new item
         setToastData({ itemName: item.name, quantity: 1 });
         setShowToast(true);
+        // Add as new regular item (even if free item with same id exists)
         return [
           ...prev,
           {
@@ -310,15 +314,21 @@ export default function TablePage() {
 
   const removeFromCart = (itemId: string) => {
     setCart((prev) => {
-      const existingItem = prev.find((cartItem) => cartItem.id === itemId);
+      // Only find and modify regular (non-free) items
+      const existingItem = prev.find(
+        (cartItem) => cartItem.id === itemId && !(cartItem as any).isFree
+      );
       if (existingItem && existingItem.quantity > 1) {
         return prev.map((cartItem) =>
-          cartItem.id === itemId
+          cartItem.id === itemId && !(cartItem as any).isFree
             ? { ...cartItem, quantity: cartItem.quantity - 1 }
             : cartItem
         );
       } else {
-        return prev.filter((cartItem) => cartItem.id !== itemId);
+        // Only remove regular items, leave free items untouched
+        return prev.filter(
+          (cartItem) => !(cartItem.id === itemId && !(cartItem as any).isFree)
+        );
       }
     });
   };
@@ -519,7 +529,10 @@ export default function TablePage() {
           }
         }}
         renderMenuItem={(item) => {
-          const cartItem = cart.find((cartItem) => cartItem.id === item.id);
+          // Only count regular (non-free) items for menu display
+          const cartItem = cart.find(
+            (cartItem) => cartItem.id === item.id && !(cartItem as any).isFree
+          );
           return (
             <MenuItemCard
               key={item.id}

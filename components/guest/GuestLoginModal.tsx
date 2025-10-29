@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { sendPhoneOTP, verifyPhoneOTP, resendPhoneOTP } from "@/lib/auth/msg91-widget";
+import {
+  sendPhoneOTP,
+  verifyPhoneOTP,
+  resendPhoneOTP,
+} from "@/lib/auth/msg91-widget";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { X, Smartphone, CheckCircle, AlertCircle } from "lucide-react";
@@ -16,7 +20,7 @@ interface GuestLoginModalProps {
 export function GuestLoginModal({
   isOpen,
   onClose,
-  onLoginSuccess
+  onLoginSuccess,
 }: GuestLoginModalProps) {
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [phone, setPhone] = useState("");
@@ -26,7 +30,7 @@ export function GuestLoginModal({
 
   const handleSendOTP = async () => {
     // Validate phone number (must be 10 digits)
-    const cleaned = phone.replace(/\D/g, '');
+    const cleaned = phone.replace(/\D/g, "");
     if (!cleaned || cleaned.length !== 10) {
       setError("Please enter a valid 10-digit phone number");
       return;
@@ -136,8 +140,10 @@ export function GuestLoginModal({
                     type="tel"
                     placeholder="Enter 10-digit mobile number"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendOTP()}
+                    onChange={(e) =>
+                      setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    }
+                    onKeyDown={(e) => e.key === "Enter" && handleSendOTP()}
                     className="text-center pl-14"
                     maxLength={10}
                   />
@@ -179,8 +185,10 @@ export function GuestLoginModal({
                   type="text"
                   placeholder="Enter 6-digit OTP"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  onKeyDown={(e) => e.key === 'Enter' && handleVerifyOTP()}
+                  onChange={(e) =>
+                    setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && handleVerifyOTP()}
                   className="text-center text-lg tracking-widest"
                   maxLength={6}
                 />

@@ -10,14 +10,7 @@
     "type-check": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:offers": "node tests/offers-test.js",
-    "test:offers:db": "node tests/offers-database-test.js",
-    "test:offers:admin": "node tests/admin-offer-creation-test.js",
-    "test:offers:guest": "node tests/guest-offer-eligibility-test.js",
-    "test:offers:selection": "node tests/guest-offer-selection-test.js",
-    "test:offers:free-items": "node tests/offer-types-free-items-test.js",
-    "setup:offers": "node scripts/setup-real-offers.js"
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
