@@ -43,14 +43,6 @@ const offerCategories = [
         applicationTypes: ["session_level"],
         example: "Get ₹100 off on orders above ₹500",
       },
-      {
-        id: "min_order_discount",
-        name: "Minimum Order Discount",
-        description: "Discount when minimum threshold is reached",
-        icon: Package,
-        applicationTypes: ["session_level"],
-        example: "Spend ₹300, get ₹50 off",
-      },
     ],
   },
   {
@@ -202,11 +194,7 @@ export default function CreateOfferPage() {
                     : "bg-blue-100 text-blue-600"
                 }`}
               >
-                {selectedCategory ? (
-                  <CheckCircle className="w-6 h-6" />
-                ) : (
-                  "1"
-                )}
+                {selectedCategory ? <CheckCircle className="w-6 h-6" /> : "1"}
               </div>
               <span className="ml-2 text-sm font-medium text-gray-700">
                 Choose Category
@@ -325,7 +313,9 @@ export default function CreateOfferPage() {
                                 : "bg-purple-100 text-purple-700"
                             }`}
                           >
-                            {type === "order_level" ? "At Checkout" : "At Billing"}
+                            {type === "order_level"
+                              ? "At Checkout"
+                              : "At Billing"}
                           </span>
                         ))}
                       </div>

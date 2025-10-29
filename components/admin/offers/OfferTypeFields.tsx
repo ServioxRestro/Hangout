@@ -29,6 +29,121 @@ export default function OfferTypeFields({
 
   return (
     <>
+      {/* Cart Percentage Discount Fields */}
+      {offerType === "cart_percentage" && (
+        <Card>
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Cart Percentage Discount Configuration
+            </h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Discount Percentage (%) *
+                  </label>
+                  <Input
+                    type="number"
+                    name="discount_percentage"
+                    value={formData.discount_percentage}
+                    onChange={handleChange}
+                    min="1"
+                    max="100"
+                    placeholder="10"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Percentage off on entire cart (1-100%)
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Discount Amount (₹)
+                  </label>
+                  <Input
+                    type="number"
+                    name="max_discount_amount"
+                    value={formData.max_discount_amount}
+                    onChange={handleChange}
+                    min="0"
+                    step="0.01"
+                    placeholder="500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Cap maximum discount (e.g., ₹500 max)
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Minimum Cart Value (₹)
+                </label>
+                <Input
+                  type="number"
+                  name="min_amount"
+                  value={formData.min_amount}
+                  onChange={handleChange}
+                  min="0"
+                  step="0.01"
+                  placeholder="500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Minimum cart value required to avail this offer
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Cart Flat Amount Discount Fields */}
+      {offerType === "cart_flat_amount" && (
+        <Card>
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Cart Flat Discount Configuration
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Flat Discount Amount (₹) *
+                </label>
+                <Input
+                  type="number"
+                  name="discount_amount"
+                  value={formData.discount_amount}
+                  onChange={handleChange}
+                  min="0"
+                  step="0.01"
+                  placeholder="100"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Fixed amount off on entire cart (e.g., ₹100 off)
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Minimum Cart Value (₹)
+                </label>
+                <Input
+                  type="number"
+                  name="min_amount"
+                  value={formData.min_amount}
+                  onChange={handleChange}
+                  min="0"
+                  step="0.01"
+                  placeholder="500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Minimum cart value required to avail this offer
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* BOGO Specific Fields */}
       {offerType === "item_buy_get_free" && (
         <Card>
@@ -111,14 +226,14 @@ export default function OfferTypeFields({
         </Card>
       )}
 
-      {/* Discount Fields */}
-      {(offerType === "promo_code" ||
-        offerType === "min_order_discount" ||
-        offerType === "item_percentage") && (
+      {/* Promo Code & Item Percentage Discount Fields */}
+      {(offerType === "promo_code" || offerType === "item_percentage") && (
         <Card>
           <div className="p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Discount Configuration
+              {offerType === "promo_code"
+                ? "Promo Code Configuration"
+                : "Item Discount Configuration"}
             </h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -169,24 +284,23 @@ export default function OfferTypeFields({
                   discounts)
                 </p>
               </div>
-
-              {offerType === "min_order_discount" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Minimum Order Amount (₹) *
-                  </label>
-                  <Input
-                    type="number"
-                    name="min_amount"
-                    value={formData.min_amount}
-                    onChange={handleChange}
-                    min="0"
-                    step="0.01"
-                    placeholder="500"
-                    required
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Minimum Cart Value (₹)
+                </label>
+                <Input
+                  type="number"
+                  name="min_amount"
+                  value={formData.min_amount}
+                  onChange={handleChange}
+                  min="0"
+                  step="0.01"
+                  placeholder="500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Optional: Minimum cart value to avail this offer
+                </p>
+              </div>
             </div>
           </div>
         </Card>

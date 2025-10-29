@@ -33,12 +33,6 @@ const offerTypeConfigs: Record<string, any> = {
     application_type: "session_level",
     icon: "Tag",
   },
-  min_order_discount: {
-    name: "Minimum Order Discount",
-    description: "Discount when minimum order amount is reached",
-    application_type: "session_level",
-    icon: "Package",
-  },
 
   // FREE ITEM OFFERS (Order-Level)
   item_buy_get_free: {
