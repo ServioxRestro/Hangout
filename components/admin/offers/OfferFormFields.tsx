@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import { Info } from "lucide-react";
 
 interface OfferFormFieldsProps {

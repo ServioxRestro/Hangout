@@ -411,9 +411,12 @@ export function BillProcessingModal({
 
       // Aggregate taxes from all items for bill table
       const aggregatedTaxes = billSummary.items_with_taxes.reduce(
-        (acc, item) => {
-          item.item_taxes.forEach((tax) => {
-            const existing = acc.find((t) => t.name === tax.name);
+        (
+          acc: Array<{ name: string; rate: number; amount: number }>,
+          item: any
+        ) => {
+          item.item_taxes.forEach((tax: any) => {
+            const existing = acc.find((t: any) => t.name === tax.name);
             if (existing) {
               existing.amount += tax.amount;
             } else {
@@ -435,18 +438,23 @@ export function BillProcessingModal({
           discount_percentage: offerInfo ? 0 : discountPercentage, // Set to 0 if offer, otherwise manual %
           discount_amount: billSummary.discount_amount,
           cgst_rate:
-            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.rate || 0,
-          cgst_amount:
-            aggregatedTaxes.find((t) => t.name.includes("CGST"))?.amount || 0,
-          sgst_rate:
-            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.rate || 0,
-          sgst_amount:
-            aggregatedTaxes.find((t) => t.name.includes("SGST"))?.amount || 0,
-          service_charge_rate:
-            aggregatedTaxes.find((t) => t.name.includes("Service"))?.rate || 0,
-          service_charge_amount:
-            aggregatedTaxes.find((t) => t.name.includes("Service"))?.amount ||
+            aggregatedTaxes.find((t: any) => t.name.includes("CGST"))?.rate ||
             0,
+          cgst_amount:
+            aggregatedTaxes.find((t: any) => t.name.includes("CGST"))?.amount ||
+            0,
+          sgst_rate:
+            aggregatedTaxes.find((t: any) => t.name.includes("SGST"))?.rate ||
+            0,
+          sgst_amount:
+            aggregatedTaxes.find((t: any) => t.name.includes("SGST"))?.amount ||
+            0,
+          service_charge_rate:
+            aggregatedTaxes.find((t: any) => t.name.includes("Service"))
+              ?.rate || 0,
+          service_charge_amount:
+            aggregatedTaxes.find((t: any) => t.name.includes("Service"))
+              ?.amount || 0,
           total_tax_amount: billSummary.total_gst,
           final_amount: billSummary.final_amount,
           payment_status: "pending", // Staff processed, awaiting manager confirmation

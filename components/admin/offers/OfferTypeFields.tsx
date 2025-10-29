@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Card } from "@/components/ui/Card";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/Input";
 
 interface OfferTypeFieldsProps {
   offerType: string;
