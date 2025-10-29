@@ -194,15 +194,87 @@ export default function OffersPage() {
     if (!confirm("Are you sure you want to delete this offer?")) return;
 
     try {
+      // First check if offer is being used
+      const { data: usageData, error: usageError } = await supabase
+        .from("offer_usage")
+        .select("id")
+        .eq("offer_id", offerId)
+        .limit(1);
+
+      if (usageError) {
+        console.error("Error checking offer usage:", usageError);
+        alert("Failed to check if offer is in use. Please try again.");
+        return;
+      }
+
+      if (usageData && usageData.length > 0) {
+        alert(
+          "Cannot delete this offer because it has been used by customers. " +
+            "You can deactivate it instead to hide it from new orders while preserving analytics data."
+        );
+        return;
+      }
+
+      // Check if offer is locked in any active sessions
+      const { data: sessionData, error: sessionError } = await supabase
+        .from("table_sessions")
+        .select("id")
+        .eq("locked_offer_id", offerId)
+        .eq("status", "active")
+        .limit(1);
+
+      if (sessionError) {
+        console.error("Error checking table sessions:", sessionError);
+        alert("Failed to check if offer is in use. Please try again.");
+        return;
+      }
+
+      if (sessionData && sessionData.length > 0) {
+        alert(
+          "Cannot delete this offer because it is currently locked in an active table session. " +
+            "Please wait for the session to complete or deactivate the offer instead."
+        );
+        return;
+      }
+
+      // Check if offer is referenced in any orders
+      const { data: orderData, error: orderError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("session_offer_id", offerId)
+        .limit(1);
+
+      if (orderError) {
+        console.error("Error checking orders:", orderError);
+        alert("Failed to check if offer is in use. Please try again.");
+        return;
+      }
+
+      if (orderData && orderData.length > 0) {
+        alert(
+          "Cannot delete this offer because it is referenced in order history. " +
+            "You can deactivate it instead to preserve analytics and order data."
+        );
+        return;
+      }
+
+      // If all checks pass, proceed with deletion
       const { error } = await supabase
         .from("offers")
         .delete()
         .eq("id", offerId);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error deleting offer:", error);
+        alert(`Failed to delete offer: ${error.message}`);
+        return;
+      }
+
       fetchOffers();
+      alert("Offer deleted successfully!");
     } catch (error) {
       console.error("Error deleting offer:", error);
+      alert("An unexpected error occurred while deleting the offer.");
     }
   };
 
@@ -254,16 +326,88 @@ export default function OffersPage() {
       return;
 
     try {
-      const { error } = await supabase
-        .from("offers")
-        .delete()
-        .in("id", selectedOffers);
+      // Check each offer for usage before deletion
+      const checkPromises = selectedOffers.map(async (offerId) => {
+        // Check offer_usage
+        const { data: usageData } = await supabase
+          .from("offer_usage")
+          .select("id")
+          .eq("offer_id", offerId)
+          .limit(1);
 
-      if (error) throw error;
+        // Check table_sessions
+        const { data: sessionData } = await supabase
+          .from("table_sessions")
+          .select("id")
+          .eq("locked_offer_id", offerId)
+          .eq("status", "active")
+          .limit(1);
+
+        // Check orders
+        const { data: orderData } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("session_offer_id", offerId)
+          .limit(1);
+
+        const isInUse =
+          (usageData && usageData.length > 0) ||
+          (sessionData && sessionData.length > 0) ||
+          (orderData && orderData.length > 0);
+
+        return { offerId, isInUse };
+      });
+
+      const checkResults = await Promise.all(checkPromises);
+      const offersInUse = checkResults.filter((r) => r.isInUse);
+      const offersThatCanBeDeleted = checkResults
+        .filter((r) => !r.isInUse)
+        .map((r) => r.offerId);
+
+      if (offersInUse.length > 0) {
+        const message =
+          offersInUse.length === selectedOffers.length
+            ? `Cannot delete ${offersInUse.length} offer(s) because they have been used or are in active sessions. ` +
+              "You can deactivate them instead to preserve analytics data."
+            : `${offersInUse.length} offer(s) cannot be deleted because they are in use. ` +
+              `${offersThatCanBeDeleted.length} offer(s) will be deleted. Continue?`;
+
+        if (offersInUse.length === selectedOffers.length) {
+          alert(message);
+          return;
+        }
+
+        if (!confirm(message)) {
+          return;
+        }
+      }
+
+      // Delete only offers that can be deleted
+      if (offersThatCanBeDeleted.length > 0) {
+        const { error } = await supabase
+          .from("offers")
+          .delete()
+          .in("id", offersThatCanBeDeleted);
+
+        if (error) {
+          console.error("Error bulk deleting offers:", error);
+          alert(`Failed to delete offers: ${error.message}`);
+          return;
+        }
+
+        alert(
+          `Successfully deleted ${offersThatCanBeDeleted.length} offer(s).` +
+            (offersInUse.length > 0
+              ? ` ${offersInUse.length} offer(s) could not be deleted.`
+              : "")
+        );
+      }
+
       setSelectedOffers([]);
       fetchOffers();
     } catch (error) {
       console.error("Error bulk deleting offers:", error);
+      alert("An unexpected error occurred while deleting offers.");
     }
   };
 
@@ -294,7 +438,7 @@ export default function OffersPage() {
       case "cart_threshold_item":
         return `Free ${benefits.free_category || "item"}`;
       case "item_buy_get_free":
-        return `Buy ${offer.conditions?.buy_quantity || 1} Get ${
+        return `Buy ${benefits.buy_quantity || 1} Get ${
           benefits.get_quantity || 1
         }`;
       case "time_based":
@@ -769,38 +913,10 @@ export default function OffersPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            // Navigate to create form with offer data as query params for editing
-                            const queryParams = new URLSearchParams({
-                              edit: "true",
-                              id: offer.id,
-                              name: offer.name || "",
-                              description: offer.description || "",
-                              is_active: offer.is_active.toString(),
-                              priority: (offer.priority || 0).toString(),
-                              start_date: offer.start_date || "",
-                              end_date: offer.end_date || "",
-                              usage_limit: (offer.usage_limit || 0).toString(),
-                              conditions: JSON.stringify(
-                                offer.conditions || {}
-                              ),
-                              benefits: JSON.stringify(offer.benefits || {}),
-                              valid_days: JSON.stringify(
-                                offer.valid_days || []
-                              ),
-                              valid_hours_start: offer.valid_hours_start || "",
-                              valid_hours_end: offer.valid_hours_end || "",
-                              target_customer_type:
-                                offer.target_customer_type || "",
-                              promo_code: offer.promo_code || "",
-                              image_url: offer.image_url || "",
-                              min_orders_count: (
-                                offer.min_orders_count || 0
-                              ).toString(),
-                            });
+                            // Navigate to edit page with just the offer ID
+                            // The form will load all data from database
                             router.push(
-                              `/admin/offers/create/${
-                                offer.offer_type
-                              }?${queryParams.toString()}`
+                              `/admin/offers/create/${offer.offer_type}?edit=true&id=${offer.id}`
                             );
                           }}
                           leftIcon={<Edit className="w-4 h-4" />}

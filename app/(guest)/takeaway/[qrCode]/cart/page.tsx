@@ -57,7 +57,7 @@ export default function TakeawayCartPage() {
 
   // Checkout State
   const [step, setStep] = useState<
-    "cart" | "phone" | "otp" | "confirming" | "placing" | "success"
+    "cart" | "phone" | "otp" | "name" | "confirming" | "placing" | "success"
   >("cart");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
@@ -155,32 +155,41 @@ export default function TakeawayCartPage() {
       return;
     }
 
+    // Only update regular (non-free) items
     const newCart = cart.map((item) =>
-      item.id === itemId ? { ...item, quantity: newQuantity } : item
+      item.id === itemId && !item.isFree
+        ? { ...item, quantity: newQuantity }
+        : item
     );
     updateCart(newCart);
   };
 
   const removeItem = (itemId: string) => {
-    // Check if this item is linked to an offer
     const itemToRemove = cart.find((item) => item.id === itemId);
+    if (!itemToRemove) return;
 
-    // If removing a free item or an item linked to an offer with free items, deselect the offer
-    if (
-      itemToRemove?.isFree ||
-      (selectedOffer &&
-        cart.some((item) => item.linkedOfferId === selectedOffer.id))
-    ) {
+    // Case 1: Removing a free item
+    if (itemToRemove.isFree) {
+      // Deselect the offer and remove all free items
       setSelectedOffer(null);
-      // Remove all items linked to this offer
-      const newCart = cart.filter(
-        (item) => !item.linkedOfferId && item.id !== itemId
-      );
+      const newCart = cart.filter((item) => !item.isFree);
       updateCart(newCart);
-    } else {
-      const newCart = cart.filter((item) => item.id !== itemId);
-      updateCart(newCart);
+      return;
     }
+
+    // Case 2: Removing a regular item when there are free items in cart
+    const hasFreeItems = cart.some((item) => item.isFree);
+    if (hasFreeItems) {
+      // Remove the item and all free items, deselect offer
+      setSelectedOffer(null);
+      const newCart = cart.filter((item) => !item.isFree && item.id !== itemId);
+      updateCart(newCart);
+      return;
+    }
+
+    // Case 3: Normal removal (no free items)
+    const newCart = cart.filter((item) => item.id !== itemId);
+    updateCart(newCart);
   };
 
   const handleFreeItemsAdd = async (
@@ -212,6 +221,15 @@ export default function TakeawayCartPage() {
 
     const newCart = [...cart, ...freeItemsWithVeg];
     updateCart(newCart);
+  };
+
+  const handleOfferSelect = (offer: Tables<"offers"> | null) => {
+    // If deselecting an offer, remove all free items
+    if (!offer && selectedOffer) {
+      const newCart = cart.filter((item) => !item.isFree);
+      updateCart(newCart);
+    }
+    setSelectedOffer(offer);
   };
 
   const clearCart = () => {
@@ -249,6 +267,18 @@ export default function TakeawayCartPage() {
       if (cartTotal >= (conditions?.threshold_amount || 0)) {
         discount = benefits.discount_amount || 0;
       }
+    } else if (selectedOffer.offer_type === "combo_meal") {
+      // For combo offers: discount = (regular total - combo price)
+      const comboPrice = parseFloat(benefits.combo_price || 0);
+      discount = Math.max(0, cartTotal - comboPrice);
+    } else if (selectedOffer.offer_type === "item_buy_get_free") {
+      // For BOGO offers: free items are already excluded from getTotalAmount()
+      // So no additional discount needed for final amount calculation
+      // The discount is just for tracking purposes in offer_usage table
+      const freeItemsTotal = cart
+        .filter((item) => item.isFree)
+        .reduce((sum, item) => sum + item.price * item.quantity, 0);
+      discount = 0; // ✅ Free items already excluded from total
     } else if (
       selectedOffer.offer_type === "promo_code" ||
       selectedOffer.offer_type === "time_based" ||
@@ -272,12 +302,6 @@ export default function TakeawayCartPage() {
   };
 
   const handleSendOTP = async () => {
-    // Validate name
-    if (!name.trim()) {
-      setError("Please enter your name");
-      return;
-    }
-
     // Validate phone number (must be 10 digits)
     const cleaned = phone.replace(/\D/g, "");
     if (!cleaned || cleaned.length !== 10) {
@@ -319,9 +343,22 @@ export default function TakeawayCartPage() {
         setCurrentUser({ phone: formattedPhone });
         setPhone(formattedPhone); // Update phone state to use formatted phone
 
-        // Show confirmation modal instead of placing order immediately
-        setStep("confirming");
-        setShowConfirmModal(true);
+        // Check if guest user already has a name
+        const { data: guestData } = await supabase
+          .from("guest_users")
+          .select("name")
+          .eq("phone", formattedPhone)
+          .single();
+
+        if (guestData?.name && guestData.name.trim() !== "") {
+          // User has a name, skip name step and go to confirmation
+          setName(guestData.name);
+          setStep("confirming");
+          setShowConfirmModal(true);
+        } else {
+          // User doesn't have a name, ask for it
+          setStep("name");
+        }
       } else {
         setError(result.message || "Invalid OTP");
       }
@@ -329,6 +366,45 @@ export default function TakeawayCartPage() {
       setError("Failed to verify OTP. Please try again.");
     } finally {
       setOtpVerifying(false);
+    }
+  };
+
+  const handleNameSubmit = async () => {
+    if (!name.trim()) {
+      setError("Please enter your name");
+      return;
+    }
+
+    setError("");
+
+    // Save name to guest_users table
+    try {
+      const { data: guestUser } = await supabase
+        .from("guest_users")
+        .select("id")
+        .eq("phone", phone)
+        .single();
+
+      if (guestUser) {
+        // Update existing guest user with name
+        await supabase
+          .from("guest_users")
+          .update({ name: name.trim() })
+          .eq("id", guestUser.id);
+      } else {
+        // Create new guest user with name
+        await supabase.from("guest_users").insert({
+          phone: phone,
+          name: name.trim(),
+        });
+      }
+
+      // Move to confirmation step
+      setStep("confirming");
+      setShowConfirmModal(true);
+    } catch (error) {
+      console.error("Error saving name:", error);
+      setError("Failed to save name. Please try again.");
     }
   };
 
@@ -367,41 +443,37 @@ export default function TakeawayCartPage() {
       }
 
       // Calculate discount amount if offer selected
-      let discountAmount = 0;
+      // Use the calculateDiscount() function which handles all offer types
+      const discountAmount = calculateDiscount();
+
+      // For BOGO offers, track the free item value for offer_usage
+      // even though it's not subtracted from the final amount
+      let trackingDiscountAmount = discountAmount;
+      if (selectedOffer?.offer_type === "item_buy_get_free") {
+        const freeItemsTotal = cart
+          .filter((item) => item.isFree)
+          .reduce((sum, item) => sum + item.price * item.quantity, 0);
+        trackingDiscountAmount = freeItemsTotal;
+      }
+
       if (selectedOffer) {
-        const cartTotal = getTotalAmount();
-        const benefits = selectedOffer.benefits as any;
-
-        switch (selectedOffer.offer_type) {
-          case "cart_percentage":
-          case "promo_code":
-            const percentage = benefits?.discount_percentage || 0;
-            discountAmount = (cartTotal * percentage) / 100;
-            break;
-
-          case "cart_flat_amount":
-            discountAmount = benefits?.discount_amount || 0;
-            break;
-
-          case "item_percentage":
-            const itemDiscount = benefits?.discount_percentage || 0;
-            discountAmount = (cartTotal * itemDiscount) / 100;
-            break;
-
-          default:
-            if (benefits?.discount_percentage) {
-              discountAmount = (cartTotal * benefits.discount_percentage) / 100;
-            } else if (benefits?.discount_amount) {
-              discountAmount = benefits.discount_amount;
-            }
-        }
+        console.log("💰 Offer applied:", {
+          offerName: selectedOffer.name,
+          offerType: selectedOffer.offer_type,
+          cartTotal: getTotalAmount(),
+          discountAmount,
+          trackingDiscountAmount,
+          finalAmount: getFinalAmount(),
+          benefits: selectedOffer.benefits,
+        });
       }
 
       // Prepare cart items for the database function
       const cartItems = cart.map((item) => ({
         id: item.id,
         quantity: item.quantity,
-        price: item.price,
+        price: item.isFree ? 0 : item.price, // Send 0 for free items
+        isFree: item.isFree || false, // Pass isFree flag
       }));
 
       // Call optimized database function (reduces multiple queries to 1!)
@@ -411,11 +483,11 @@ export default function TakeawayCartPage() {
           p_table_code: "", // Not needed for takeaway
           p_customer_phone: phone,
           p_cart_items: cartItems,
-          p_cart_total: getTotalAmount(),
+          p_cart_total: getFinalAmount(), // ✅ Final amount after discount
           p_guest_user_id: guestUserId || undefined,
           p_order_type: "takeaway",
           p_offer_id: selectedOffer?.id || undefined,
-          p_offer_discount: discountAmount,
+          p_offer_discount: trackingDiscountAmount, // Track free item value for BOGO
         }
       );
 
@@ -650,7 +722,7 @@ export default function TakeawayCartPage() {
                   customerPhone={currentUser?.phone}
                   tableId={undefined} // No table for takeaway
                   orderType="takeaway"
-                  onOfferSelect={setSelectedOffer}
+                  onOfferSelect={handleOfferSelect}
                   selectedOffer={selectedOffer}
                   onFreeItemAdd={handleFreeItemsAdd}
                 />
@@ -717,28 +789,14 @@ export default function TakeawayCartPage() {
             <div className="text-center">
               <Smartphone className="w-16 h-16 text-purple-600 mx-auto mb-4" />
               <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Enter Your Details
+                Enter Your Phone Number
               </h2>
               <p className="text-gray-600">
-                We need your name and phone number for the order
+                We'll send you an OTP to verify your number
               </p>
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Name
-                </label>
-                <Input
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full"
-                  autoFocus
-                />
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Phone Number
@@ -756,6 +814,7 @@ export default function TakeawayCartPage() {
                     }
                     className="w-full pl-14"
                     maxLength={10}
+                    autoFocus
                   />
                 </div>
               </div>
@@ -771,7 +830,7 @@ export default function TakeawayCartPage() {
                 variant="primary"
                 size="lg"
                 onClick={handleSendOTP}
-                disabled={otpSending || phone.length !== 10 || !name.trim()}
+                disabled={otpSending || phone.length !== 10}
                 className="w-full"
               >
                 {otpSending ? "Sending OTP..." : "Send OTP"}
@@ -828,6 +887,56 @@ export default function TakeawayCartPage() {
                 className="w-full"
               >
                 {otpSending ? "Resending..." : "Resend OTP"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Name Step */}
+        {step === "name" && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Smartphone className="w-8 h-8 text-purple-600" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                What's Your Name?
+              </h2>
+              <p className="text-gray-600">
+                We need your name to identify your takeaway order
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Your Name
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full"
+                  autoFocus
+                />
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 text-red-600 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={handleNameSubmit}
+                disabled={!name.trim()}
+                className="w-full"
+              >
+                Continue to Order
               </Button>
             </div>
           </div>

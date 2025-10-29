@@ -74,6 +74,10 @@ export default function CartPage() {
   const [selectedOffer, setSelectedOffer] = useState<Tables<"offers"> | null>(
     null
   );
+  const [sessionHasUsedOffer, setSessionHasUsedOffer] = useState(false);
+  const [sessionUsedOfferId, setSessionUsedOfferId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (tableCode) {
@@ -135,6 +139,31 @@ export default function CartPage() {
 
       setTable(tableData);
       setCart(cartItems);
+
+      // Check if session already has an offer used
+      if (activeSession && activeSession.customer_phone) {
+        const sessionData = await supabase
+          .from("table_sessions")
+          .select("id")
+          .eq("table_id", tableData.id)
+          .eq("status", "active")
+          .eq("customer_phone", activeSession.customer_phone)
+          .maybeSingle();
+
+        if (sessionData.data) {
+          const { data: usedOffer, error: usageError } = await supabase
+            .from("offer_usage")
+            .select("offer_id, offers(id, name)")
+            .eq("table_session_id", sessionData.data.id)
+            .maybeSingle();
+
+          if (!usageError && usedOffer) {
+            setSessionHasUsedOffer(true);
+            setSessionUsedOfferId(usedOffer.offer_id);
+            console.log("⚠️ Session already has used offer:", usedOffer);
+          }
+        }
+      }
     } catch (error) {
       console.error("Error:", error);
       setError("Failed to load cart");
@@ -160,32 +189,41 @@ export default function CartPage() {
       return;
     }
 
+    // Only update regular (non-free) items
     const newCart = cart.map((item) =>
-      item.id === itemId ? { ...item, quantity: newQuantity } : item
+      item.id === itemId && !item.isFree
+        ? { ...item, quantity: newQuantity }
+        : item
     );
     updateCart(newCart);
   };
 
   const removeItem = (itemId: string) => {
-    // Check if this item is linked to an offer
     const itemToRemove = cart.find((item) => item.id === itemId);
+    if (!itemToRemove) return;
 
-    // If removing a free item or an item linked to an offer with free items, deselect the offer
-    if (
-      itemToRemove?.isFree ||
-      (selectedOffer &&
-        cart.some((item) => item.linkedOfferId === selectedOffer.id))
-    ) {
+    // Case 1: Removing a free item
+    if (itemToRemove.isFree) {
+      // Deselect the offer and remove all free items
       setSelectedOffer(null);
-      // Remove all items linked to this offer
-      const newCart = cart.filter(
-        (item) => !item.linkedOfferId && item.id !== itemId
-      );
+      const newCart = cart.filter((item) => !item.isFree);
       updateCart(newCart);
-    } else {
-      const newCart = cart.filter((item) => item.id !== itemId);
-      updateCart(newCart);
+      return;
     }
+
+    // Case 2: Removing a regular item when there are free items in cart
+    const hasFreeItems = cart.some((item) => item.isFree);
+    if (hasFreeItems) {
+      // Remove the item and all free items, deselect offer
+      setSelectedOffer(null);
+      const newCart = cart.filter((item) => !item.isFree && item.id !== itemId);
+      updateCart(newCart);
+      return;
+    }
+
+    // Case 3: Normal removal (no free items)
+    const newCart = cart.filter((item) => item.id !== itemId);
+    updateCart(newCart);
   };
 
   const handleFreeItemsAdd = async (
@@ -217,6 +255,15 @@ export default function CartPage() {
 
     const newCart = [...cart, ...freeItemsWithVeg];
     updateCart(newCart);
+  };
+
+  const handleOfferSelect = (offer: Tables<"offers"> | null) => {
+    // If deselecting an offer, remove all free items
+    if (!offer && selectedOffer) {
+      const newCart = cart.filter((item) => !item.isFree);
+      updateCart(newCart);
+    }
+    setSelectedOffer(offer);
   };
 
   const clearCart = () => {
@@ -254,6 +301,18 @@ export default function CartPage() {
       if (cartTotal >= (conditions?.threshold_amount || 0)) {
         discount = benefits.discount_amount || 0;
       }
+    } else if (selectedOffer.offer_type === "combo_meal") {
+      // For combo offers: discount = (regular total - combo price)
+      const comboPrice = parseFloat(benefits.combo_price || 0);
+      discount = Math.max(0, cartTotal - comboPrice);
+    } else if (selectedOffer.offer_type === "item_buy_get_free") {
+      // For BOGO offers: free items are already excluded from getTotalAmount()
+      // So no additional discount needed for final amount calculation
+      // The discount is just for tracking purposes in offer_usage table
+      const freeItemsTotal = cart
+        .filter((item) => item.isFree)
+        .reduce((sum, item) => sum + item.price * item.quantity, 0);
+      discount = 0; // ✅ Free items already excluded from total
     } else if (
       selectedOffer.offer_type === "promo_code" ||
       selectedOffer.offer_type === "time_based" ||
@@ -349,41 +408,28 @@ export default function CartPage() {
       }
 
       // Calculate discount amount if offer selected
-      let discountAmount = 0;
+      // Use the calculateDiscount() function which handles all offer types
+      const discountAmount = calculateDiscount();
+
+      // For BOGO offers, track the free item value for offer_usage
+      // even though it's not subtracted from the final amount
+      let trackingDiscountAmount = discountAmount;
+      if (selectedOffer?.offer_type === "item_buy_get_free") {
+        const freeItemsTotal = cart
+          .filter((item) => item.isFree)
+          .reduce((sum, item) => sum + item.price * item.quantity, 0);
+        trackingDiscountAmount = freeItemsTotal;
+      }
+
       if (selectedOffer) {
-        const cartTotal = getTotalAmount();
-        const benefits = selectedOffer.benefits as any;
-
-        switch (selectedOffer.offer_type) {
-          case "cart_percentage":
-          case "promo_code":
-            const percentage = benefits?.discount_percentage || 0;
-            discountAmount = (cartTotal * percentage) / 100;
-            break;
-
-          case "cart_flat_amount":
-            discountAmount = benefits?.discount_amount || 0;
-            break;
-
-          case "item_percentage":
-            const itemDiscount = benefits?.discount_percentage || 0;
-            discountAmount = (cartTotal * itemDiscount) / 100;
-            break;
-
-          default:
-            if (benefits?.discount_percentage) {
-              discountAmount = (cartTotal * benefits.discount_percentage) / 100;
-            } else if (benefits?.discount_amount) {
-              discountAmount = benefits.discount_amount;
-            }
-        }
-
         console.log("💰 Offer applied:", {
           offerName: selectedOffer.name,
           offerType: selectedOffer.offer_type,
-          cartTotal,
+          cartTotal: getTotalAmount(),
           discountAmount,
-          benefits,
+          trackingDiscountAmount,
+          finalAmount: getFinalAmount(),
+          benefits: selectedOffer.benefits,
         });
       }
 
@@ -391,7 +437,8 @@ export default function CartPage() {
       const cartItems = cart.map((item) => ({
         id: item.id,
         quantity: item.quantity,
-        price: item.price,
+        price: item.isFree ? 0 : item.price, // Send 0 for free items
+        isFree: item.isFree || false, // Pass isFree flag
       }));
 
       // Call optimized database function (reduces 11 queries to 1!)
@@ -401,11 +448,11 @@ export default function CartPage() {
           p_table_code: tableCode,
           p_customer_phone: phone,
           p_cart_items: cartItems,
-          p_cart_total: getTotalAmount(),
+          p_cart_total: getFinalAmount(), // ✅ Final amount after discount
           p_guest_user_id: guestUserId || undefined,
           p_order_type: "dine-in",
           p_offer_id: selectedOffer?.id || undefined,
-          p_offer_discount: discountAmount,
+          p_offer_discount: trackingDiscountAmount, // Track free item value for BOGO
         }
       );
 
@@ -440,6 +487,15 @@ export default function CartPage() {
   const handlePlaceOrder = async () => {
     if (occupiedByDifferentUser) {
       setError("Table is currently occupied by another customer");
+      return;
+    }
+
+    // Validate cart has non-free items
+    const hasRegularItems = cart.some((item) => !item.isFree);
+    if (!hasRegularItems) {
+      setError(
+        "Cannot place order with only free items. Please add regular items to your cart."
+      );
       return;
     }
 
@@ -633,17 +689,39 @@ export default function CartPage() {
                   ))}
                 </div>
 
+                {/* Offer Already Used Message */}
+                {sessionHasUsedOffer && (
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-amber-100 rounded-lg">
+                        <AlertCircle className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-amber-900 text-sm">
+                          Offer Already Applied in This Session
+                        </div>
+                        <p className="text-xs text-amber-700 mt-1">
+                          You've already used an offer during this dining
+                          session. Only one offer can be applied per session.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Offer Selector */}
-                <OfferSelector
-                  cartItems={cart}
-                  cartTotal={getTotalAmount()}
-                  customerPhone={currentUser?.phone}
-                  tableId={table?.id}
-                  orderType="dine-in"
-                  onOfferSelect={setSelectedOffer}
-                  selectedOffer={selectedOffer}
-                  onFreeItemAdd={handleFreeItemsAdd}
-                />
+                {!sessionHasUsedOffer && (
+                  <OfferSelector
+                    cartItems={cart}
+                    cartTotal={getTotalAmount()}
+                    customerPhone={currentUser?.phone}
+                    tableId={table?.id}
+                    orderType="dine-in"
+                    onOfferSelect={handleOfferSelect}
+                    selectedOffer={selectedOffer}
+                    onFreeItemAdd={handleFreeItemsAdd}
+                  />
+                )}
 
                 {/* Order Summary */}
                 <div className="bg-white rounded-lg border border-gray-200 p-4">

@@ -188,8 +188,8 @@ export class OfferCalculator {
   }
 
   private hasRequiredItems(offer: any): boolean {
-    const conditions = offer.conditions || {};
-    const buyQuantity = conditions.buy_quantity || 1;
+    const benefits = offer.benefits || {};
+    const buyQuantity = benefits.buy_quantity || 1;
 
     // Get buy items from offer_items
     const buyItems = offer.offer_items?.filter((item: any) => item.item_type === 'buy') || [];
@@ -311,8 +311,7 @@ export class OfferCalculator {
 
   private calculateFreeItems(offer: any): any[] {
     const benefits = offer.benefits || {};
-    const conditions = offer.conditions || {};
-    const buyQuantity = conditions.buy_quantity || 1;
+    const buyQuantity = benefits.buy_quantity || 1;
     const getFreeQuantity = benefits.get_quantity || 1;
     const freeItems: any[] = [];
 
